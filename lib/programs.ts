@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getSupabaseReadClient, getSupabaseWriteClient } from "@/lib/supabase";
+import { getMissingSupabaseEnvVars, getSupabaseReadClient, getSupabaseWriteClient } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
 
@@ -420,6 +420,11 @@ export async function createProgram(formData: FormData) {
     return redirectWithError("/programs/new", "Please review required fields and input formats.");
   }
 
+  const missingEnv = getMissingSupabaseEnvVars();
+  if (missingEnv.length > 0) {
+    redirectWithError("/programs/new", `Supabase is not configured: ${missingEnv.join(", ")}`);
+  }
+
   const client = getSupabaseWriteClient();
 
   const baseSlug = slugify(parsed.title);
@@ -738,6 +743,11 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   const cleanBio = sanitizeRichText(parsed.bio);
   if (!richTextHasContent(cleanBio)) {
     redirectWithError(`/programs/${slug}/submit`, "Bio cannot be empty.");
+  }
+
+  const missingEnv = getMissingSupabaseEnvVars();
+  if (missingEnv.length > 0) {
+    redirectWithError(`/programs/${slug}/submit`, `Supabase is not configured: ${missingEnv.join(", ")}`);
   }
 
   const client = getSupabaseWriteClient();
