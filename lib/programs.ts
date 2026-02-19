@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getSupabaseReadClient, getSupabaseWriteClient } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
+import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
 
 const layoutTokenValues = [
   "poster",
@@ -38,6 +39,11 @@ type CustomPageRecord = {
   body: string;
 };
 
+type PerformanceRecord = {
+  date: string;
+  time?: string;
+};
+
 export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string }
@@ -54,9 +60,11 @@ const personLineSchema = z.object({
 });
 
 const payloadSchema = z.object({
-  title: z.string().min(3),
-  theatreName: z.string().min(2),
-  showDates: z.string().min(3),
+  title: z.string().min(1),
+  theatreName: z.string().optional().or(z.literal("")),
+  showDates: z.string().optional().or(z.literal("")),
+  showDatesOverride: z.string().optional().or(z.literal("")),
+  performanceSchedule: z.string().optional().or(z.literal("[]")),
   posterImageUrl: z.string().url().optional().or(z.literal("")),
   directorNotes: z.string().optional().or(z.literal("")),
   dramaturgicalNote: z.string().optional().or(z.literal("")),
@@ -97,10 +105,19 @@ function parsePeople(lines: string | undefined) {
       return personLineSchema.parse({
         name,
         role,
-        bio,
+        bio: sanitizeRichText(bio),
         headshotUrl: headshotUrl || undefined
       });
     });
+}
+
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function parseLayoutOrder(text: string): LayoutToken[] {
@@ -121,7 +138,7 @@ function parseProductionPhotos(text: string | undefined) {
   return text
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter((line) => Boolean(line) && isValidHttpUrl(line));
 }
 
 function parseCustomPages(text: string | undefined): CustomPageRecord[] {
@@ -144,10 +161,25 @@ function parseCustomPages(text: string | undefined): CustomPageRecord[] {
         throw new Error(`Invalid custom page type in line: ${line}`);
       }
 
+      const body = bodyParts.join(" | ");
+      if (normalizedKind === "image" && !isValidHttpUrl(body)) {
+        throw new Error(`Custom page image URL is invalid in line: ${line}`);
+      }
+
+      if (normalizedKind === "photos") {
+        const photos = body
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+        if (photos.some((item) => !isValidHttpUrl(item))) {
+          throw new Error(`Custom page photo URL is invalid in line: ${line}`);
+        }
+      }
+
       return {
         title,
         kind: normalizedKind,
-        body: bodyParts.join(" | ")
+        body: normalizedKind === "text" ? sanitizeRichText(body) : body
       };
     });
 }
@@ -184,6 +216,60 @@ function mapCustomPageToRenderable(page: CustomPageRecord, index: number): Progr
   };
 }
 
+function parsePerformanceSchedule(text: string | undefined): PerformanceRecord[] {
+  if (!text) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(text) as Array<{ date?: string; time?: string }>;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter((item) => item && typeof item.date === "string" && item.date.trim().length > 0)
+      .map((item) => ({
+        date: item.date!.trim(),
+        time: typeof item.time === "string" && item.time.trim().length > 0 ? item.time.trim() : undefined
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function formatPerformanceLabel(performance: PerformanceRecord) {
+  const [yearRaw, monthRaw, dayRaw] = performance.date.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!year || !month || !day) {
+    return "";
+  }
+
+  const [hourRaw, minuteRaw] = (performance.time ?? "00:00").split(":");
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  const dateObj = new Date(year, month - 1, day, Number.isFinite(hour) ? hour : 0, Number.isFinite(minute) ? minute : 0);
+
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(dateObj);
+
+  if (!performance.time) {
+    return datePart;
+  }
+
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(dateObj);
+
+  return `${datePart} ${timePart}`;
+}
+
 export async function createProgram(formData: FormData) {
   "use server";
 
@@ -191,6 +277,8 @@ export async function createProgram(formData: FormData) {
     title: formData.get("title"),
     theatreName: formData.get("theatreName"),
     showDates: formData.get("showDates"),
+    showDatesOverride: formData.get("showDatesOverride"),
+    performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
     posterImageUrl: formData.get("posterImageUrl"),
     directorNotes: formData.get("directorNotes"),
     dramaturgicalNote: formData.get("dramaturgicalNote"),
@@ -211,6 +299,12 @@ export async function createProgram(formData: FormData) {
   const baseSlug = slugify(parsed.title);
   const slug = `${baseSlug}-${Date.now().toString().slice(-5)}`;
   const layoutOrder = parseLayoutOrder(parsed.layoutOrder ?? "");
+  const performanceSchedule = parsePerformanceSchedule(parsed.performanceSchedule);
+  const autoShowDates = performanceSchedule.map((item) => formatPerformanceLabel(item)).filter(Boolean).join(" | ");
+  const resolvedShowDates = (parsed.showDatesOverride && parsed.showDatesOverride.trim()) || parsed.showDates || autoShowDates;
+  if (!resolvedShowDates) {
+    throw new Error("At least one show date is required.");
+  }
   const productionPhotoUrls = parseProductionPhotos(parsed.productionPhotoUrls);
   const customPages = parseCustomPages(parsed.customPages);
 
@@ -219,17 +313,18 @@ export async function createProgram(formData: FormData) {
     .insert({
       title: parsed.title,
       slug,
-      theatre_name: parsed.theatreName,
-      show_dates: parsed.showDates,
+      theatre_name: parsed.theatreName ?? "",
+      show_dates: resolvedShowDates,
+      performance_schedule: performanceSchedule,
       poster_image_url: parsed.posterImageUrl,
-      director_notes: parsed.directorNotes,
-      dramaturgical_note: parsed.dramaturgicalNote,
-      billing_page: parsed.billingPage,
-      acts_songs: parsed.actsAndSongs,
-      department_info: parsed.departmentInfo,
+      director_notes: sanitizeRichText(parsed.directorNotes),
+      dramaturgical_note: sanitizeRichText(parsed.dramaturgicalNote),
+      billing_page: sanitizeRichText(parsed.billingPage),
+      acts_songs: sanitizeRichText(parsed.actsAndSongs),
+      department_info: sanitizeRichText(parsed.departmentInfo),
       actf_ad_image_url: parsed.actfAdImageUrl,
-      acknowledgements: parsed.acknowledgements,
-      season_calendar: parsed.seasonCalendar,
+      acknowledgements: sanitizeRichText(parsed.acknowledgements),
+      season_calendar: sanitizeRichText(parsed.seasonCalendar),
       production_photo_urls: productionPhotoUrls,
       custom_pages: customPages,
       layout_order: layoutOrder
@@ -368,16 +463,16 @@ function buildRenderablePages(
     if (token === "poster" && !hasText(program.poster_image_url)) {
       continue;
     }
-    if (token === "director_note" && !hasText(program.director_notes)) {
+    if (token === "director_note" && !richTextHasContent(program.director_notes)) {
       continue;
     }
-    if (token === "dramaturgical_note" && !hasText(program.dramaturgical_note)) {
+    if (token === "dramaturgical_note" && !richTextHasContent(program.dramaturgical_note)) {
       continue;
     }
-    if (token === "billing" && !hasText(program.billing_page)) {
+    if (token === "billing" && !richTextHasContent(program.billing_page)) {
       continue;
     }
-    if (token === "acts_songs" && !hasText(program.acts_songs)) {
+    if (token === "acts_songs" && !richTextHasContent(program.acts_songs)) {
       continue;
     }
     if (token === "cast_bios" && cast.length === 0) {
@@ -386,13 +481,13 @@ function buildRenderablePages(
     if (token === "team_bios" && production.length === 0) {
       continue;
     }
-    if (token === "department_info" && !hasText(program.department_info)) {
+    if (token === "department_info" && !richTextHasContent(program.department_info)) {
       continue;
     }
-    if (token === "acknowledgements" && !hasText(program.acknowledgements)) {
+    if (token === "acknowledgements" && !richTextHasContent(program.acknowledgements)) {
       continue;
     }
-    if (token === "season_calendar" && !hasText(program.season_calendar)) {
+    if (token === "season_calendar" && !richTextHasContent(program.season_calendar)) {
       continue;
     }
 
@@ -412,61 +507,65 @@ function buildRenderablePages(
 }
 
 export async function getProgramBySlug(slug: string) {
-  const client = getSupabaseReadClient();
+  try {
+    const client = getSupabaseReadClient();
 
-  const { data: program, error } = await client
-    .from("programs")
-    .select(
-      "id, title, slug, theatre_name, show_dates, poster_image_url, director_notes, dramaturgical_note, billing_page, acts_songs, department_info, actf_ad_image_url, acknowledgements, season_calendar, production_photo_urls, custom_pages, layout_order"
-    )
-    .eq("slug", slug)
-    .single();
+    const { data: program, error } = await client
+      .from("programs")
+      .select(
+        "id, title, slug, theatre_name, show_dates, poster_image_url, director_notes, dramaturgical_note, billing_page, acts_songs, department_info, actf_ad_image_url, acknowledgements, season_calendar, performance_schedule, production_photo_urls, custom_pages, layout_order"
+      )
+      .eq("slug", slug)
+      .single();
 
-  if (error || !program) {
+    if (error || !program) {
+      return null;
+    }
+
+    const { data: people, error: peopleError } = await client
+      .from("people")
+      .select("id, full_name, role_title, bio, team_type, headshot_url")
+      .eq("program_id", program.id)
+      .order("full_name", { ascending: true });
+
+    if (peopleError) {
+      throw new Error(peopleError.message);
+    }
+
+    const castPeople = (people ?? []).filter((person) => person.team_type === "cast") as PersonRecord[];
+    const productionPeople = (people ?? []).filter((person) => person.team_type === "production") as PersonRecord[];
+
+    const pageSequence = buildRenderablePages(
+      {
+        ...program,
+        production_photo_urls: (program.production_photo_urls ?? []) as string[],
+        custom_pages: (program.custom_pages ?? []) as CustomPageRecord[],
+        layout_order: (program.layout_order ?? layoutTokenValues) as LayoutToken[]
+      },
+      castPeople,
+      productionPeople
+    );
+
+    const paddedPages = padToMultipleOf4<ProgramPage>(pageSequence, (index) => ({
+      id: `filler-${index}`,
+      type: "filler",
+      title: "Additional Information",
+      body: "Space reserved for additional production notes, photos, or sponsor content."
+    }));
+
+    const bookletSpreads = buildBookletSpreads(paddedPages);
+
+    return {
+      ...program,
+      castPeople,
+      productionPeople,
+      pageSequence,
+      paddedPages,
+      bookletSpreads
+    };
+  } catch {
     return null;
   }
-
-  const { data: people, error: peopleError } = await client
-    .from("people")
-    .select("id, full_name, role_title, bio, team_type, headshot_url")
-    .eq("program_id", program.id)
-    .order("full_name", { ascending: true });
-
-  if (peopleError) {
-    throw new Error(peopleError.message);
-  }
-
-  const castPeople = (people ?? []).filter((person) => person.team_type === "cast") as PersonRecord[];
-  const productionPeople = (people ?? []).filter((person) => person.team_type === "production") as PersonRecord[];
-
-  const pageSequence = buildRenderablePages(
-    {
-      ...program,
-      production_photo_urls: (program.production_photo_urls ?? []) as string[],
-      custom_pages: (program.custom_pages ?? []) as CustomPageRecord[],
-      layout_order: (program.layout_order ?? layoutTokenValues) as LayoutToken[]
-    },
-    castPeople,
-    productionPeople
-  );
-
-  const paddedPages = padToMultipleOf4<ProgramPage>(pageSequence, (index) => ({
-    id: `filler-${index}`,
-    type: "filler",
-    title: "Additional Information",
-    body: "Space reserved for additional production notes, photos, or sponsor content."
-  }));
-
-  const bookletSpreads = buildBookletSpreads(paddedPages);
-
-  return {
-    ...program,
-    castPeople,
-    productionPeople,
-    pageSequence,
-    paddedPages,
-    bookletSpreads
-  };
 }
 
 export async function submitBioForProgram(slug: string, formData: FormData) {
@@ -489,6 +588,10 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   });
 
   const client = getSupabaseWriteClient();
+  const cleanBio = sanitizeRichText(parsed.bio);
+  if (!richTextHasContent(cleanBio)) {
+    throw new Error("Bio cannot be empty.");
+  }
   const { data: program, error: programError } = await client
     .from("programs")
     .select("id, slug")
@@ -503,7 +606,7 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
     program_id: program.id,
     full_name: parsed.fullName,
     role_title: parsed.roleTitle,
-    bio: parsed.bio,
+    bio: cleanBio,
     team_type: parsed.teamType,
     headshot_url: parsed.headshotUrl
   });

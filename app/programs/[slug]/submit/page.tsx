@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { RichTextField } from "@/components/rich-text-field";
 import { getProgramBySlug, submitBioForProgram } from "@/lib/programs";
 
 export default async function BioSubmissionPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -44,10 +45,7 @@ export default async function BioSubmissionPage({ params }: { params: Promise<{ 
             </select>
           </label>
 
-          <label>
-            Bio
-            <textarea name="bio" required />
-          </label>
+          <RichTextField name="bio" label="Bio" required />
 
           <label>
             Headshot URL (optional)

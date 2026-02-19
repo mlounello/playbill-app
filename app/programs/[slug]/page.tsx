@@ -1,15 +1,15 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/print-button";
 import { getProgramBySlug } from "@/lib/programs";
+import { sanitizeRichText } from "@/lib/rich-text";
 import type { ProgramPage } from "@/lib/programs";
 
 function RenderPageContent({ page }: { page: ProgramPage }) {
   if (page.type === "poster") {
     return (
-      <article className="booklet-page poster-page">
-        <Image src={page.imageUrl} alt={page.title} width={1200} height={1800} className="poster-image" />
+        <article className="booklet-page poster-page">
+        <img src={page.imageUrl} alt={page.title} className="poster-image" />
         <div className="poster-overlay">
           <h2 className="poster-title">{page.title}</h2>
           <p>{page.subtitle}</p>
@@ -22,9 +22,7 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
     return (
       <article className="booklet-page">
         <h2 className="section-title playbill-title">{page.title}</h2>
-        <div className="page-body" style={{ whiteSpace: "pre-wrap" }}>
-          {page.body}
-        </div>
+        <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(page.body) }} />
       </article>
     );
   }
@@ -33,7 +31,7 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
     return (
       <article className="booklet-page">
         <h2 className="section-title playbill-title">{page.title}</h2>
-        <Image src={page.imageUrl} alt={page.title} width={1200} height={1800} className="full-page-image" />
+        <img src={page.imageUrl} alt={page.title} className="full-page-image" />
       </article>
     );
   }
@@ -44,7 +42,7 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
         <h2 className="section-title playbill-title">{page.title}</h2>
         <div className="photo-grid">
           {page.photos.map((photo, index) => (
-            <Image key={`${photo}-${index}`} src={photo} alt={`${page.title} ${index + 1}`} width={600} height={420} className="photo-grid-item" />
+            <img key={`${photo}-${index}`} src={photo} alt={`${page.title} ${index + 1}`} className="photo-grid-item" />
           ))}
         </div>
       </article>
@@ -58,11 +56,11 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
         <div className="bios-list">
           {page.people.map((person) => (
             <section key={person.id} className="bio-row">
-              {person.headshot_url ? <Image src={person.headshot_url} alt={person.full_name} width={140} height={140} className="headshot" /> : null}
+              {person.headshot_url ? <img src={person.headshot_url} alt={person.full_name} className="headshot" /> : null}
               <div>
                 <div className="bio-name">{person.full_name}</div>
                 <div className="bio-role">{person.role_title}</div>
-                <p className="page-body">{person.bio}</p>
+                <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(person.bio) }} />
               </div>
             </section>
           ))}
@@ -74,7 +72,7 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
   return (
     <article className="booklet-page">
       <h2 className="section-title playbill-title">{page.title}</h2>
-      <p className="page-body">{page.body}</p>
+      <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(page.body) }} />
     </article>
   );
 }

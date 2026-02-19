@@ -16,6 +16,7 @@ create table if not exists public.programs (
   actf_ad_image_url text not null default '',
   acknowledgements text not null default '',
   season_calendar text not null default '',
+  performance_schedule jsonb not null default '[]'::jsonb,
   production_photo_urls text[] not null default '{}',
   custom_pages jsonb not null default '[]'::jsonb,
   layout_order text[] not null default '{poster,director_note,dramaturgical_note,billing,acts_songs,cast_bios,team_bios,department_info,actf_ad,acknowledgements,season_calendar,production_photos,custom_pages}'
@@ -28,6 +29,7 @@ alter table public.programs add column if not exists acts_songs text not null de
 alter table public.programs add column if not exists department_info text not null default '';
 alter table public.programs add column if not exists actf_ad_image_url text not null default '';
 alter table public.programs add column if not exists season_calendar text not null default '';
+alter table public.programs add column if not exists performance_schedule jsonb not null default '[]'::jsonb;
 alter table public.programs add column if not exists production_photo_urls text[] not null default '{}';
 alter table public.programs add column if not exists custom_pages jsonb not null default '[]'::jsonb;
 alter table public.programs add column if not exists layout_order text[] not null default '{poster,director_note,dramaturgical_note,billing,acts_songs,cast_bios,team_bios,department_info,actf_ad,acknowledgements,season_calendar,production_photos,custom_pages}';

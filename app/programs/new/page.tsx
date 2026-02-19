@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PerformanceInputs } from "@/components/performance-inputs";
+import { RichTextField } from "@/components/rich-text-field";
 import { createProgram } from "@/lib/programs";
 
 const defaultLayoutOrder = [
@@ -33,53 +35,31 @@ export default function NewProgramPage() {
 
           <label>
             Theatre Company
-            <input name="theatreName" required placeholder="Main Street Players" />
+            <input name="theatreName" placeholder="Main Street Players" />
           </label>
 
-          <label>
-            Show Dates
-            <input name="showDates" required placeholder="March 14-23, 2026" />
-          </label>
+          <PerformanceInputs />
 
           <label>
             Poster Image URL (front page)
             <input name="posterImageUrl" placeholder="https://..." />
           </label>
 
-          <label>
-            Director&apos;s Note (full page)
-            <textarea name="directorNotes" />
-          </label>
-
-          <label>
-            Dramaturgical Note (full page)
-            <textarea name="dramaturgicalNote" />
-          </label>
-
-          <label>
-            Billing Page
-            <textarea name="billingPage" placeholder="Production credits, rights, unions, legal copy..." />
-          </label>
-
-          <label>
-            Acts & Songs (optional)
-            <textarea name="actsAndSongs" placeholder="Act I\n1. Opening Number...\n\nAct II\n..." />
-          </label>
-
-          <label>
-            Department Information
-            <textarea name="departmentInfo" />
-          </label>
-
-          <label>
-            Acknowledgements
-            <textarea name="acknowledgements" />
-          </label>
-
-          <label>
-            Season Calendar
-            <textarea name="seasonCalendar" placeholder="Show title | dates | location\n..." />
-          </label>
+          <RichTextField name="directorNotes" label="Director's Note (full page)" />
+          <RichTextField name="dramaturgicalNote" label="Dramaturgical Note (full page)" />
+          <RichTextField
+            name="billingPage"
+            label="Billing Page"
+            placeholder="Production credits, rights, unions, legal copy..."
+          />
+          <RichTextField
+            name="actsAndSongs"
+            label="Acts & Songs (optional)"
+            placeholder="Act I, song list, Act II, reprises..."
+          />
+          <RichTextField name="departmentInfo" label="Department Information" />
+          <RichTextField name="acknowledgements" label="Acknowledgements" />
+          <RichTextField name="seasonCalendar" label="Season Calendar" placeholder="Show title, dates, location..." />
 
           <label>
             ACTF Full Page Ad Image URL

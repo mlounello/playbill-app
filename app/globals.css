@@ -84,6 +84,36 @@ textarea {
   resize: vertical;
 }
 
+.rich-toolbar {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.rich-toolbar button {
+  background: #155c4b;
+  color: #fff;
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.rich-editor {
+  min-height: 130px;
+  border: 1px solid #c7baa5;
+  border-radius: 0.45rem;
+  padding: 0.6rem;
+  background: #fffcf5;
+  font: inherit;
+  outline: none;
+}
+
+.rich-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #8f8678;
+}
+
 button,
 .button-link {
   display: inline-block;
@@ -119,6 +149,16 @@ button,
   font-weight: 400;
   font-size: 10pt;
   line-height: 1.45;
+}
+
+.rich-render p {
+  margin: 0 0 0.55rem;
+}
+
+.rich-render ul,
+.rich-render ol {
+  margin: 0.3rem 0 0.55rem 1.15rem;
+  padding: 0;
 }
 
 .bio-name {
