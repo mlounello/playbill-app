@@ -1,11 +1,14 @@
+@import url("https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Oswald:wght@700&display=swap");
+
 :root {
   color-scheme: light;
   --bg: #f4efe4;
   --paper: #fffdf7;
-  --ink: #1e1b18;
-  --accent: #8c1f26;
-  --accent-2: #d7b56d;
+  --ink: #000000;
+  --accent: #006b54;
   --line: #d9cfbf;
+  --font-title: "Oswald", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Merriweather", Georgia, serif;
 }
 
 * {
@@ -18,7 +21,7 @@ body {
   padding: 0;
   background: radial-gradient(circle at 20% 0%, #fff7db, var(--bg));
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-body);
 }
 
 a {
@@ -30,25 +33,15 @@ main {
 }
 
 .container {
-  width: min(960px, 92vw);
+  width: min(1120px, 95vw);
   margin: 0 auto;
   padding: 2rem 0 4rem;
-}
-
-.banner {
-  background: linear-gradient(135deg, #2f1719, #5f1e26 50%, #7a2229);
-  color: #ffefc1;
-  border: 2px solid #231010;
-  border-radius: 1rem;
-  padding: 2.5rem 2rem;
-  box-shadow: 0 10px 40px rgba(25, 7, 7, 0.2);
 }
 
 h1,
 h2,
 h3 {
   margin-top: 0;
-  letter-spacing: 0.01em;
 }
 
 .card {
@@ -76,7 +69,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid #c7baa5;
   border-radius: 0.45rem;
@@ -97,28 +91,163 @@ button,
   border-radius: 999px;
   padding: 0.6rem 1rem;
   background: var(--accent);
-  color: #fff6e0;
+  color: #ffffff;
   text-decoration: none;
   cursor: pointer;
 }
 
 .section-title {
-  border-bottom: 3px double var(--accent-2);
-  padding-bottom: 0.2rem;
-  margin-top: 2rem;
+  border-bottom: 2px solid #c9c3b2;
+  padding-bottom: 0.15rem;
+  margin-top: 0;
+  margin-bottom: 0.45rem;
 }
 
-.columns {
-  columns: 2 260px;
-  column-gap: 2rem;
+.playbill-title {
+  color: var(--accent);
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: 14pt;
+  line-height: 1.15;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
-.person-block {
-  break-inside: avoid;
-  margin-bottom: 1rem;
+.page-body {
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 10pt;
+  line-height: 1.45;
+}
+
+.bio-name {
+  color: var(--accent);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 11pt;
+}
+
+.bio-role {
+  color: #1d1d1d;
+  font-family: var(--font-body);
+  font-size: 10pt;
+  margin-bottom: 0.3rem;
+}
+
+.sequence-view,
+.booklet-sheets {
+  display: grid;
+  gap: 1rem;
+}
+
+.sheet {
+  border: 1px dashed #baa;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  background: #fff;
+}
+
+.sheet-meta {
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 5.5in);
+  justify-content: center;
+  gap: 0.2in;
+}
+
+.booklet-page {
+  width: 5.5in;
+  height: 8.5in;
+  overflow: hidden;
+  border: 1px solid #bdb5a7;
+  background: #fffef9;
+  padding: 0.36in;
+  position: relative;
+}
+
+.poster-page {
+  padding: 0;
+}
+
+.poster-image,
+.full-page-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.poster-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.78));
+  color: #fff;
+  padding: 0.35in;
+}
+
+.poster-title {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 22pt;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.12in;
+}
+
+.photo-grid-item {
+  width: 100%;
+  height: 2.85in;
+  object-fit: cover;
+  border: 1px solid #c9c3b2;
+}
+
+.bios-list {
+  display: grid;
+  gap: 0.2in;
+  max-height: 7.4in;
+  overflow: auto;
+}
+
+.bio-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.16in;
+  align-items: start;
+}
+
+.headshot {
+  width: 1.2in;
+  height: 1.2in;
+  border: 1px solid #c9c3b2;
+  object-fit: cover;
+}
+
+.folio {
+  font-size: 0.85rem;
+  text-align: center;
+  margin-top: 0.35rem;
+}
+
+@media (max-width: 1200px) {
+  .sheet-grid {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
 }
 
 @media print {
+  @page {
+    size: 11in 8.5in;
+    margin: 0.25in;
+  }
+
   .hide-print {
     display: none !important;
   }
@@ -127,8 +256,27 @@ button,
     background: #fff;
   }
 
-  .banner {
-    box-shadow: none;
-    border-color: #000;
+  .container {
+    width: 100%;
+    padding: 0;
+  }
+
+  .sheet {
+    border: 0;
+    padding: 0;
+    break-after: page;
+  }
+
+  .sheet-grid {
+    gap: 0.2in;
+  }
+
+  .booklet-page {
+    border: 0;
+    background: #fff;
+  }
+
+  .folio {
+    display: none;
   }
 }

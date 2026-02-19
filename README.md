@@ -42,12 +42,27 @@ npm run dev
 ## Current MVP
 
 - `/programs/new` to create a program.
-- `/programs/[slug]` as the public online + print layout.
+- `/programs/[slug]` as public online layout with:
+  - program-order view
+  - booklet imposition view (2-up saddle stitch)
+- `/programs/[slug]/submit` as a bio intake form for cast/production entries.
+
+## Content model
+
+- Any section can be omitted (director note, dramaturgical note, billing, ACTF ad, etc.).
+- Empty sections are skipped automatically.
+- Page count is auto-padded to a multiple of 4 for booklet printing.
+- Cast and production bios are displayed alphabetically by name.
+- Supports optional:
+  - headshots
+  - production photo page
+  - custom pages (text, image, photo grid)
+  - acts and songs page
 
 ## Next recommended features
 
 - Auth + role-based editing
-- Rich text for sections
-- Photo uploads via Supabase Storage
-- Per-show templates/themes
-- Program export as PDF job
+- Rich text editor per page
+- Direct Google Forms integration (webhook/Sheets sync)
+- Photo uploads via Supabase Storage (instead of URLs)
+- Program versioning + approval workflow
