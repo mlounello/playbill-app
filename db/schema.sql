@@ -42,11 +42,17 @@ create table if not exists public.people (
   role_title text not null,
   bio text not null,
   team_type text not null default 'cast',
-  headshot_url text not null default ''
+  headshot_url text not null default '',
+  email text not null default '',
+  submission_status text not null default 'pending',
+  submitted_at timestamptz
 );
 
 alter table public.people add column if not exists team_type text not null default 'cast';
 alter table public.people add column if not exists headshot_url text not null default '';
+alter table public.people add column if not exists email text not null default '';
+alter table public.people add column if not exists submission_status text not null default 'pending';
+alter table public.people add column if not exists submitted_at timestamptz;
 
 alter table public.programs enable row level security;
 alter table public.people enable row level security;

@@ -30,6 +30,8 @@ type PersonRecord = {
   bio: string;
   team_type: "cast" | "production";
   headshot_url: string;
+  email: string;
+  submission_status: string;
 };
 
 type CustomPageRecord = {
@@ -47,6 +49,7 @@ type RosterPerson = {
   name: string;
   role: string;
   teamType: "cast" | "production";
+  email?: string;
   bio?: string;
   headshotUrl?: string;
 };
@@ -83,10 +86,9 @@ const payloadSchema = z.object({
 });
 
 const submissionSchema = z.object({
-  fullName: z.string().min(1),
-  roleTitle: z.string().min(1),
+  personId: z.string().uuid(),
+  email: z.string().email(),
   bio: z.string().min(1),
-  teamType: z.enum(["cast", "production"]),
   headshotUrl: z.string().url().optional().or(z.literal(""))
 });
 
@@ -102,6 +104,10 @@ function slugify(value: string) {
 
 function normalizeName(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function personKey(name: string, role: string, teamType: "cast" | "production") {
@@ -188,7 +194,7 @@ function parseRosterLines(lines: string | undefined): RosterPerson[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [name = "", role = "", team = "production"] = line.split("|").map((part) => part.trim());
+      const [name = "", role = "", team = "production", email = ""] = line.split("|").map((part) => part.trim());
       const lowered = team.toLowerCase();
       const teamType = lowered === "cast" ? "cast" : lowered === "production" ? "production" : null;
 
@@ -196,7 +202,11 @@ function parseRosterLines(lines: string | undefined): RosterPerson[] {
         throw new Error(`Invalid roster line: ${line}`);
       }
 
-      return { name, role, teamType };
+      if (email && !z.string().email().safeParse(email).success) {
+        throw new Error(`Invalid roster email: ${line}`);
+      }
+
+      return { name, role, teamType, email: email || undefined };
     });
 }
 
@@ -207,6 +217,7 @@ function mergeRoster(people: RosterPerson[]) {
     const existing = map.get(key);
     map.set(key, {
       ...person,
+      email: person.email ?? existing?.email,
       bio: person.bio && richTextHasContent(person.bio) ? person.bio : existing?.bio ?? "",
       headshotUrl: person.headshotUrl ?? existing?.headshotUrl
     });
@@ -442,9 +453,13 @@ export async function createProgram(formData: FormData) {
     const roster = parseRosterLines(parsed.rosterLines);
     const castDetailed = parsePeople(parsed.castLines, "cast");
     const productionDetailed = parsePeople(parsed.productionTeamLines, "production");
-    rosterPeople = mergeRoster([...roster, ...castDetailed, ...productionDetailed]);
+    rosterPeople = mergeRoster([
+      ...roster,
+      ...castDetailed.map((person) => ({ ...person, email: undefined })),
+      ...productionDetailed.map((person) => ({ ...person, email: undefined }))
+    ]);
   } catch {
-    redirectWithError("/programs/new", "Roster format is invalid. Use Name | Role | cast|production.");
+    redirectWithError("/programs/new", "Roster format is invalid. Use Name | Role | cast|production | optional@email.com.");
   }
 
   const productionPhotoUrls = parseProductionPhotos(parsed.productionPhotoUrls);
@@ -491,7 +506,10 @@ export async function createProgram(formData: FormData) {
         role_title: person.role,
         bio: person.bio ?? "",
         team_type: person.teamType,
-        headshot_url: person.headshotUrl ?? ""
+        headshot_url: person.headshotUrl ?? "",
+        email: person.email ?? "",
+        submission_status: richTextHasContent(person.bio ?? "") ? "submitted" : "pending",
+        submitted_at: richTextHasContent(person.bio ?? "") ? new Date().toISOString() : null
       },
       peopleColumns
     )
@@ -671,7 +689,9 @@ export async function getProgramBySlug(slug: string) {
       role_title: String(person.role_title ?? ""),
       bio: String(person.bio ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
-      headshot_url: String(person.headshot_url ?? "")
+      headshot_url: String(person.headshot_url ?? ""),
+      email: String(person.email ?? ""),
+      submission_status: String(person.submission_status ?? "pending")
     })) as PersonRecord[];
 
     const castPeople = normalizedPeople
@@ -730,10 +750,9 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   let parsed: z.infer<typeof submissionSchema>;
   try {
     parsed = submissionSchema.parse({
-      fullName: formData.get("fullName"),
-      roleTitle: formData.get("roleTitle"),
+      personId: formData.get("personId"),
+      email: formData.get("email"),
       bio: formData.get("bio"),
-      teamType: formData.get("teamType"),
       headshotUrl: formData.get("headshotUrl") ?? ""
     });
   } catch {
@@ -757,52 +776,40 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
     redirectWithError(`/programs/${slug}/submit`, "Program not found.");
   }
 
-  const { data: existingPeople } = await client.from("people").select("*").eq("program_id", program.id);
-  const rosterHasEntries = Boolean(existingPeople && existingPeople.length > 0);
+  const { data: targetPerson, error: personError } = await client
+    .from("people")
+    .select("*")
+    .eq("id", parsed.personId)
+    .eq("program_id", program.id)
+    .single();
 
-  if (rosterHasEntries) {
-    const match = existingPeople!.find(
-      (person) =>
-        normalizeName(String(person.full_name ?? "")) === normalizeName(parsed.fullName) &&
-        String(person.team_type ?? "production") === parsed.teamType
-    );
+  if (personError || !targetPerson) {
+    redirectWithError(`/programs/${slug}/submit`, "Selected person was not found.");
+  }
 
-    if (!match) {
-      redirectWithError(`/programs/${slug}/submit`, "Name not found in roster for this group.");
-    }
+  const rosterEmail = String(targetPerson.email ?? "").trim();
+  if (!rosterEmail) {
+    redirectWithError(`/programs/${slug}/submit`, "No email is on file for this person. Contact production admin.");
+  }
 
-    const peopleColumns = await getTableColumns(client, "people");
-    const updatePayload = filterToColumns(
-      {
-        role_title: parsed.roleTitle,
-        bio: cleanBio,
-        headshot_url: parsed.headshotUrl
-      },
-      peopleColumns
-    );
+  if (normalizeEmail(rosterEmail) !== normalizeEmail(parsed.email)) {
+    redirectWithError(`/programs/${slug}/submit`, "Email does not match roster record.");
+  }
 
-    const { error: updateError } = await client.from("people").update(updatePayload).eq("id", match.id);
-    if (updateError) {
-      redirectWithError(`/programs/${slug}/submit`, updateError.message);
-    }
-  } else {
-    const peopleColumns = await getTableColumns(client, "people");
-    const insertPayload = filterToColumns(
-      {
-        program_id: program.id,
-        full_name: parsed.fullName,
-        role_title: parsed.roleTitle,
-        bio: cleanBio,
-        team_type: parsed.teamType,
-        headshot_url: parsed.headshotUrl
-      },
-      peopleColumns
-    );
+  const peopleColumns = await getTableColumns(client, "people");
+  const updatePayload = filterToColumns(
+    {
+      bio: cleanBio,
+      headshot_url: parsed.headshotUrl,
+      submission_status: "submitted",
+      submitted_at: new Date().toISOString()
+    },
+    peopleColumns
+  );
 
-    const { error: peopleError } = await client.from("people").insert(insertPayload);
-    if (peopleError) {
-      redirectWithError(`/programs/${slug}/submit`, peopleError.message);
-    }
+  const { error: updateError } = await client.from("people").update(updatePayload).eq("id", targetPerson.id);
+  if (updateError) {
+    redirectWithError(`/programs/${slug}/submit`, updateError.message);
   }
 
   redirect(`/programs/${program.slug}`);

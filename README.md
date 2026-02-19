@@ -53,6 +53,10 @@ npm run dev
 - Empty sections are skipped automatically.
 - Page count is auto-padded to a multiple of 4 for booklet printing.
 - Cast and production bios are displayed alphabetically by name.
+- Roster-first workflow:
+  - upload roster with `Name | Role | cast|production | email`
+  - bio submissions must select a roster person and match roster email
+  - billing auto-generates from roster role/name if billing page is blank
 - Supports optional:
   - headshots
   - production photo page

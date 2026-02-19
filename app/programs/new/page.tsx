@@ -81,7 +81,7 @@ export default async function NewProgramPage({
             Production Roster (recommended)
             <textarea
               name="rosterLines"
-              placeholder="Jane Doe | Juliet | cast&#10;Mark Smith | Director | production&#10;..."
+              placeholder="Jane Doe | Juliet | cast | jane@example.com&#10;Mark Smith | Director | production | mark@example.com&#10;..."
             />
           </label>
 
@@ -120,7 +120,7 @@ export default async function NewProgramPage({
           </label>
 
           <div className="card" style={{ fontSize: "0.95rem" }}>
-            Roster format: <code>Name | Role | cast|production</code>
+            Roster format: <code>Name | Role | cast|production | optional@email.com</code>
             <br />
             Person format: <code>Name | Role | Bio | OptionalHeadshotURL</code>
             <br />

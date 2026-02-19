@@ -93,6 +93,10 @@ export default async function ProgramPage({
   }
 
   const isBookletView = view === "booklet";
+  const totalRoster = program.castPeople.length + program.productionPeople.length;
+  const submittedRoster = [...program.castPeople, ...program.productionPeople].filter(
+    (person) => person.submission_status === "submitted"
+  ).length;
 
   return (
     <main>
@@ -108,6 +112,8 @@ export default async function ProgramPage({
 
         <section className="card hide-print" style={{ marginBottom: "1rem" }}>
           <strong>Booklet Summary:</strong> {program.pageSequence.length} designed pages, padded to {program.paddedPages.length} for saddle-stitch (multiple of 4), {program.paddedPages.length / 4} sheets total.
+          <br />
+          <strong>Bio Submission Progress:</strong> {submittedRoster}/{totalRoster} submitted.
         </section>
 
         {isBookletView ? (

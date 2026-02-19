@@ -40,21 +40,27 @@ export default async function BioSubmissionPage({
 
         <form action={submitAction} className="form-grid card">
           <label>
-            Full Name
-            <input name="fullName" required list="known-names" />
-          </label>
-
-          <label>
-            Role
-            <input name="roleTitle" required placeholder="Actor, Director, Stage Manager..." />
-          </label>
-
-          <label>
-            Group
-            <select name="teamType" defaultValue="cast">
-              <option value="cast">Cast</option>
-              <option value="production">Production Team</option>
+            Select Yourself
+            <select name="personId" required defaultValue="">
+              <option value="" disabled>
+                Choose your name
+              </option>
+              {program.castPeople.map((person) => (
+                <option key={`cast-${person.id}`} value={person.id}>
+                  {person.full_name} - {person.role_title} (Cast)
+                </option>
+              ))}
+              {program.productionPeople.map((person) => (
+                <option key={`prod-${person.id}`} value={person.id}>
+                  {person.full_name} - {person.role_title} (Production)
+                </option>
+              ))}
             </select>
+          </label>
+
+          <label>
+            Email (must match roster)
+            <input name="email" type="email" required placeholder="you@example.com" />
           </label>
 
           <RichTextField name="bio" label="Bio" required />
@@ -66,14 +72,6 @@ export default async function BioSubmissionPage({
 
           <button type="submit">Submit Bio</button>
         </form>
-        <datalist id="known-names">
-          {program.castPeople.map((person) => (
-            <option key={`cast-${person.id}`} value={person.full_name} />
-          ))}
-          {program.productionPeople.map((person) => (
-            <option key={`prod-${person.id}`} value={person.full_name} />
-          ))}
-        </datalist>
       </div>
     </main>
   );
