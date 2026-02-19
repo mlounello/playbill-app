@@ -32,6 +32,48 @@ main {
   min-height: 100vh;
 }
 
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(8px);
+  background: rgba(255, 253, 247, 0.9);
+  border-bottom: 1px solid var(--line);
+}
+
+.site-header-inner {
+  width: min(1120px, 95vw);
+  margin: 0 auto;
+  padding: 0.65rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.site-brand {
+  font-family: var(--font-title);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.site-nav {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.site-nav-link {
+  text-decoration: none;
+  color: #fff;
+  background: #155c4b;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.88rem;
+}
+
 .container {
   width: min(1120px, 95vw);
   margin: 0 auto;
