@@ -19,7 +19,13 @@ const defaultLayoutOrder = [
   "custom_pages"
 ].join("\n");
 
-export default function NewProgramPage() {
+export default async function NewProgramPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+
   return (
     <main>
       <div className="container grid">
@@ -27,6 +33,11 @@ export default function NewProgramPage() {
           <Link href="/">Back</Link>
         </div>
         <h1>New Theatre Program</h1>
+        {error ? (
+          <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+            {error}
+          </div>
+        ) : null}
         <form action={createProgram} className="form-grid">
           <label>
             Show Title
@@ -67,6 +78,14 @@ export default function NewProgramPage() {
           </label>
 
           <label>
+            Production Roster (recommended)
+            <textarea
+              name="rosterLines"
+              placeholder="Jane Doe | Juliet | cast&#10;Mark Smith | Director | production&#10;..."
+            />
+          </label>
+
+          <label>
             Cast Bios (one per line)
             <textarea
               name="castLines"
@@ -101,6 +120,8 @@ export default function NewProgramPage() {
           </label>
 
           <div className="card" style={{ fontSize: "0.95rem" }}>
+            Roster format: <code>Name | Role | cast|production</code>
+            <br />
             Person format: <code>Name | Role | Bio | OptionalHeadshotURL</code>
             <br />
             Custom page format: <code>Title | text|image|photos | Content</code>

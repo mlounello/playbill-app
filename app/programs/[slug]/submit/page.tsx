@@ -3,8 +3,15 @@ import { notFound } from "next/navigation";
 import { RichTextField } from "@/components/rich-text-field";
 import { getProgramBySlug, submitBioForProgram } from "@/lib/programs";
 
-export default async function BioSubmissionPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function BioSubmissionPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { slug } = await params;
+  const { error } = await searchParams;
   const program = await getProgramBySlug(slug);
 
   if (!program) {
@@ -25,11 +32,16 @@ export default async function BioSubmissionPage({ params }: { params: Promise<{ 
         <p>
           Submissions are automatically sorted alphabetically in the playbill by group (cast or production team).
         </p>
+        {error ? (
+          <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+            {error}
+          </div>
+        ) : null}
 
         <form action={submitAction} className="form-grid card">
           <label>
             Full Name
-            <input name="fullName" required />
+            <input name="fullName" required list="known-names" />
           </label>
 
           <label>
@@ -54,6 +66,14 @@ export default async function BioSubmissionPage({ params }: { params: Promise<{ 
 
           <button type="submit">Submit Bio</button>
         </form>
+        <datalist id="known-names">
+          {program.castPeople.map((person) => (
+            <option key={`cast-${person.id}`} value={person.full_name} />
+          ))}
+          {program.productionPeople.map((person) => (
+            <option key={`prod-${person.id}`} value={person.full_name} />
+          ))}
+        </datalist>
       </div>
     </main>
   );

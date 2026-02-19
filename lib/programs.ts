@@ -21,7 +21,6 @@ const layoutTokenValues = [
 ] as const;
 
 const layoutTokenSchema = z.enum(layoutTokenValues);
-
 type LayoutToken = z.infer<typeof layoutTokenSchema>;
 
 type PersonRecord = {
@@ -44,6 +43,14 @@ type PerformanceRecord = {
   time?: string;
 };
 
+type RosterPerson = {
+  name: string;
+  role: string;
+  teamType: "cast" | "production";
+  bio?: string;
+  headshotUrl?: string;
+};
+
 export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string }
@@ -51,13 +58,6 @@ export type ProgramPage =
   | { id: string; type: "image"; title: string; imageUrl: string }
   | { id: string; type: "photo_grid"; title: string; photos: string[] }
   | { id: string; type: "filler"; title: string; body: string };
-
-const personLineSchema = z.object({
-  name: z.string().min(1),
-  role: z.string().min(1),
-  bio: z.string().min(1),
-  headshotUrl: z.string().optional()
-});
 
 const payloadSchema = z.object({
   title: z.string().min(1),
@@ -74,11 +74,20 @@ const payloadSchema = z.object({
   seasonCalendar: z.string().optional().or(z.literal("")),
   acknowledgements: z.string().optional().or(z.literal("")),
   actfAdImageUrl: z.string().url().optional().or(z.literal("")),
+  rosterLines: z.string().optional().or(z.literal("")),
   castLines: z.string().optional().or(z.literal("")),
   productionTeamLines: z.string().optional().or(z.literal("")),
   productionPhotoUrls: z.string().optional(),
   customPages: z.string().optional(),
   layoutOrder: z.string().optional().or(z.literal(""))
+});
+
+const submissionSchema = z.object({
+  fullName: z.string().min(1),
+  roleTitle: z.string().min(1),
+  bio: z.string().min(1),
+  teamType: z.enum(["cast", "production"]),
+  headshotUrl: z.string().url().optional().or(z.literal(""))
 });
 
 function slugify(value: string) {
@@ -91,7 +100,60 @@ function slugify(value: string) {
     .replace(/^-|-$/g, "");
 }
 
-function parsePeople(lines: string | undefined) {
+function normalizeName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function personKey(name: string, role: string, teamType: "cast" | "production") {
+  return `${normalizeName(name)}|${normalizeName(role)}|${teamType}`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function redirectWithError(path: string, message: string): never {
+  const qp = new URLSearchParams({ error: message });
+  redirect(`${path}?${qp.toString()}`);
+}
+
+async function getTableColumns(client: ReturnType<typeof getSupabaseWriteClient>, tableName: string) {
+  const { data, error } = await client
+    .from("information_schema.columns")
+    .select("column_name")
+    .eq("table_schema", "public")
+    .eq("table_name", tableName);
+
+  if (error || !data) {
+    return new Set<string>();
+  }
+
+  return new Set(data.map((item) => String(item.column_name)));
+}
+
+function filterToColumns(record: Record<string, unknown>, columns: Set<string>) {
+  if (columns.size === 0) {
+    return record;
+  }
+
+  return Object.fromEntries(Object.entries(record).filter(([key]) => columns.has(key)));
+}
+
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function parsePeople(lines: string | undefined, teamType: "cast" | "production"): RosterPerson[] {
   if (!lines) {
     return [];
   }
@@ -102,22 +164,79 @@ function parsePeople(lines: string | undefined) {
     .filter(Boolean)
     .map((line) => {
       const [name = "", role = "", bio = "", headshotUrl = ""] = line.split("|").map((part) => part.trim());
-      return personLineSchema.parse({
+      if (!name || !role) {
+        throw new Error(`Invalid people line: ${line}`);
+      }
+
+      return {
         name,
         role,
+        teamType,
         bio: sanitizeRichText(bio),
         headshotUrl: headshotUrl || undefined
-      });
+      };
     });
 }
 
-function isValidHttpUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
+function parseRosterLines(lines: string | undefined): RosterPerson[] {
+  if (!lines) {
+    return [];
   }
+
+  return lines
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name = "", role = "", team = "production"] = line.split("|").map((part) => part.trim());
+      const lowered = team.toLowerCase();
+      const teamType = lowered === "cast" ? "cast" : lowered === "production" ? "production" : null;
+
+      if (!name || !role || !teamType) {
+        throw new Error(`Invalid roster line: ${line}`);
+      }
+
+      return { name, role, teamType };
+    });
+}
+
+function mergeRoster(people: RosterPerson[]) {
+  const map = new Map<string, RosterPerson>();
+  for (const person of people) {
+    const key = personKey(person.name, person.role, person.teamType);
+    const existing = map.get(key);
+    map.set(key, {
+      ...person,
+      bio: person.bio && richTextHasContent(person.bio) ? person.bio : existing?.bio ?? "",
+      headshotUrl: person.headshotUrl ?? existing?.headshotUrl
+    });
+  }
+  return [...map.values()];
+}
+
+function generateAutoBilling(people: RosterPerson[]) {
+  if (!people.length) {
+    return "";
+  }
+
+  const cast = people
+    .filter((person) => person.teamType === "cast")
+    .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
+  const production = people
+    .filter((person) => person.teamType === "production")
+    .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
+
+  const section = (title: string, rows: RosterPerson[]) => {
+    if (!rows.length) {
+      return "";
+    }
+    const listItems = rows
+      .map((row) => `<li><strong>${escapeHtml(row.role)}</strong>: ${escapeHtml(row.name)}</li>`)
+      .join("");
+    return `<h3>${escapeHtml(title)}</h3><ul>${listItems}</ul>`;
+  };
+
+  return section("Cast", cast) + section("Production Team", production);
 }
 
 function parseLayoutOrder(text: string): LayoutToken[] {
@@ -178,7 +297,7 @@ function parseCustomPages(text: string | undefined): CustomPageRecord[] {
 
       return {
         title,
-        kind: normalizedKind,
+        kind: normalizedKind as "text" | "image" | "photos",
         body: normalizedKind === "text" ? sanitizeRichText(body) : body
       };
     });
@@ -273,29 +392,36 @@ function formatPerformanceLabel(performance: PerformanceRecord) {
 export async function createProgram(formData: FormData) {
   "use server";
 
-  const parsed = payloadSchema.parse({
-    title: formData.get("title"),
-    theatreName: formData.get("theatreName"),
-    showDates: formData.get("showDates"),
-    showDatesOverride: formData.get("showDatesOverride"),
-    performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
-    posterImageUrl: formData.get("posterImageUrl"),
-    directorNotes: formData.get("directorNotes"),
-    dramaturgicalNote: formData.get("dramaturgicalNote"),
-    billingPage: formData.get("billingPage"),
-    actsAndSongs: formData.get("actsAndSongs"),
-    departmentInfo: formData.get("departmentInfo"),
-    seasonCalendar: formData.get("seasonCalendar"),
-    acknowledgements: formData.get("acknowledgements"),
-    actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
-    castLines: formData.get("castLines"),
-    productionTeamLines: formData.get("productionTeamLines"),
-    productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
-    customPages: formData.get("customPages")?.toString(),
-    layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
-  });
+  let parsed: z.infer<typeof payloadSchema>;
+  try {
+    parsed = payloadSchema.parse({
+      title: formData.get("title"),
+      theatreName: formData.get("theatreName"),
+      showDates: formData.get("showDates"),
+      showDatesOverride: formData.get("showDatesOverride"),
+      performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
+      posterImageUrl: formData.get("posterImageUrl"),
+      directorNotes: formData.get("directorNotes"),
+      dramaturgicalNote: formData.get("dramaturgicalNote"),
+      billingPage: formData.get("billingPage"),
+      actsAndSongs: formData.get("actsAndSongs"),
+      departmentInfo: formData.get("departmentInfo"),
+      seasonCalendar: formData.get("seasonCalendar"),
+      acknowledgements: formData.get("acknowledgements"),
+      actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
+      rosterLines: formData.get("rosterLines"),
+      castLines: formData.get("castLines"),
+      productionTeamLines: formData.get("productionTeamLines"),
+      productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
+      customPages: formData.get("customPages")?.toString(),
+      layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
+    });
+  } catch {
+    return redirectWithError("/programs/new", "Please review required fields and input formats.");
+  }
 
   const client = getSupabaseWriteClient();
+
   const baseSlug = slugify(parsed.title);
   const slug = `${baseSlug}-${Date.now().toString().slice(-5)}`;
   const layoutOrder = parseLayoutOrder(parsed.layoutOrder ?? "");
@@ -303,60 +429,74 @@ export async function createProgram(formData: FormData) {
   const autoShowDates = performanceSchedule.map((item) => formatPerformanceLabel(item)).filter(Boolean).join(" | ");
   const resolvedShowDates = (parsed.showDatesOverride && parsed.showDatesOverride.trim()) || parsed.showDates || autoShowDates;
   if (!resolvedShowDates) {
-    throw new Error("At least one show date is required.");
+    redirectWithError("/programs/new", "At least one performance date is required.");
   }
+
+  let rosterPeople: RosterPerson[] = [];
+  try {
+    const roster = parseRosterLines(parsed.rosterLines);
+    const castDetailed = parsePeople(parsed.castLines, "cast");
+    const productionDetailed = parsePeople(parsed.productionTeamLines, "production");
+    rosterPeople = mergeRoster([...roster, ...castDetailed, ...productionDetailed]);
+  } catch {
+    redirectWithError("/programs/new", "Roster format is invalid. Use Name | Role | cast|production.");
+  }
+
   const productionPhotoUrls = parseProductionPhotos(parsed.productionPhotoUrls);
   const customPages = parseCustomPages(parsed.customPages);
 
-  const { data: program, error: programError } = await client
-    .from("programs")
-    .insert({
-      title: parsed.title,
-      slug,
-      theatre_name: parsed.theatreName ?? "",
-      show_dates: resolvedShowDates,
-      performance_schedule: performanceSchedule,
-      poster_image_url: parsed.posterImageUrl,
-      director_notes: sanitizeRichText(parsed.directorNotes),
-      dramaturgical_note: sanitizeRichText(parsed.dramaturgicalNote),
-      billing_page: sanitizeRichText(parsed.billingPage),
-      acts_songs: sanitizeRichText(parsed.actsAndSongs),
-      department_info: sanitizeRichText(parsed.departmentInfo),
-      actf_ad_image_url: parsed.actfAdImageUrl,
-      acknowledgements: sanitizeRichText(parsed.acknowledgements),
-      season_calendar: sanitizeRichText(parsed.seasonCalendar),
-      production_photo_urls: productionPhotoUrls,
-      custom_pages: customPages,
-      layout_order: layoutOrder
-    })
-    .select("id, slug")
-    .single();
+  const billingHtml = sanitizeRichText(parsed.billingPage);
+  const resolvedBilling = richTextHasContent(billingHtml) ? billingHtml : generateAutoBilling(rosterPeople);
+
+  const programsColumns = await getTableColumns(client, "programs");
+  const rawProgramInsert: Record<string, unknown> = {
+    title: parsed.title,
+    slug,
+    theatre_name: parsed.theatreName ?? "",
+    show_dates: resolvedShowDates,
+    performance_schedule: performanceSchedule,
+    poster_image_url: parsed.posterImageUrl,
+    director_notes: sanitizeRichText(parsed.directorNotes),
+    dramaturgical_note: sanitizeRichText(parsed.dramaturgicalNote),
+    billing_page: resolvedBilling,
+    acts_songs: sanitizeRichText(parsed.actsAndSongs),
+    department_info: sanitizeRichText(parsed.departmentInfo),
+    actf_ad_image_url: parsed.actfAdImageUrl,
+    acknowledgements: sanitizeRichText(parsed.acknowledgements),
+    season_calendar: sanitizeRichText(parsed.seasonCalendar),
+    production_photo_urls: productionPhotoUrls,
+    custom_pages: customPages,
+    layout_order: layoutOrder
+  };
+
+  const programInsert = filterToColumns(rawProgramInsert, programsColumns);
+
+  const { data: program, error: programError } = await client.from("programs").insert(programInsert).select("id, slug").single();
 
   if (programError || !program) {
-    throw new Error(programError?.message ?? "Could not create program.");
+    redirectWithError("/programs/new", programError?.message ?? "Could not create program.");
   }
 
-  const castPeople = parsePeople(parsed.castLines).map((person) => ({
-    program_id: program.id,
-    full_name: person.name,
-    role_title: person.role,
-    bio: person.bio,
-    team_type: "cast",
-    headshot_url: person.headshotUrl ?? ""
-  }));
+  const peopleColumns = await getTableColumns(client, "people");
+  const peopleRows = rosterPeople.map((person) =>
+    filterToColumns(
+      {
+        program_id: program.id,
+        full_name: person.name,
+        role_title: person.role,
+        bio: person.bio ?? "",
+        team_type: person.teamType,
+        headshot_url: person.headshotUrl ?? ""
+      },
+      peopleColumns
+    )
+  );
 
-  const productionPeople = parsePeople(parsed.productionTeamLines).map((person) => ({
-    program_id: program.id,
-    full_name: person.name,
-    role_title: person.role,
-    bio: person.bio,
-    team_type: "production",
-    headshot_url: person.headshotUrl ?? ""
-  }));
-
-  const { error: peopleError } = await client.from("people").insert([...castPeople, ...productionPeople]);
-  if (peopleError) {
-    throw new Error(peopleError.message);
+  if (peopleRows.length > 0) {
+    const { error: peopleError } = await client.from("people").insert(peopleRows);
+    if (peopleError) {
+      redirectWithError("/programs/new", peopleError.message);
+    }
   }
 
   redirect(`/programs/${program.slug}`);
@@ -510,42 +650,51 @@ export async function getProgramBySlug(slug: string) {
   try {
     const client = getSupabaseReadClient();
 
-    const { data: program, error } = await client
-      .from("programs")
-      .select(
-        "id, title, slug, theatre_name, show_dates, poster_image_url, director_notes, dramaturgical_note, billing_page, acts_songs, department_info, actf_ad_image_url, acknowledgements, season_calendar, performance_schedule, production_photo_urls, custom_pages, layout_order"
-      )
-      .eq("slug", slug)
-      .single();
-
+    const { data: program, error } = await client.from("programs").select("*").eq("slug", slug).single();
     if (error || !program) {
       return null;
     }
 
-    const { data: people, error: peopleError } = await client
-      .from("people")
-      .select("id, full_name, role_title, bio, team_type, headshot_url")
-      .eq("program_id", program.id)
-      .order("full_name", { ascending: true });
-
+    const { data: people, error: peopleError } = await client.from("people").select("*").eq("program_id", program.id);
     if (peopleError) {
       throw new Error(peopleError.message);
     }
 
-    const castPeople = (people ?? []).filter((person) => person.team_type === "cast") as PersonRecord[];
-    const productionPeople = (people ?? []).filter((person) => person.team_type === "production") as PersonRecord[];
+    const normalizedPeople = (people ?? []).map((person) => ({
+      id: String(person.id),
+      full_name: String(person.full_name ?? ""),
+      role_title: String(person.role_title ?? ""),
+      bio: String(person.bio ?? ""),
+      team_type: person.team_type === "cast" ? "cast" : "production",
+      headshot_url: String(person.headshot_url ?? "")
+    })) as PersonRecord[];
 
-    const pageSequence = buildRenderablePages(
-      {
-        ...program,
-        production_photo_urls: (program.production_photo_urls ?? []) as string[],
-        custom_pages: (program.custom_pages ?? []) as CustomPageRecord[],
-        layout_order: (program.layout_order ?? layoutTokenValues) as LayoutToken[]
-      },
-      castPeople,
-      productionPeople
-    );
+    const castPeople = normalizedPeople
+      .filter((person) => person.team_type === "cast")
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    const productionPeople = normalizedPeople
+      .filter((person) => person.team_type === "production")
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
+    const safeProgram = {
+      title: String(program.title ?? "Untitled Show"),
+      theatre_name: String(program.theatre_name ?? ""),
+      show_dates: String(program.show_dates ?? ""),
+      poster_image_url: String(program.poster_image_url ?? ""),
+      director_notes: String(program.director_notes ?? ""),
+      dramaturgical_note: String(program.dramaturgical_note ?? ""),
+      billing_page: String(program.billing_page ?? ""),
+      acts_songs: String(program.acts_songs ?? ""),
+      department_info: String(program.department_info ?? ""),
+      actf_ad_image_url: String(program.actf_ad_image_url ?? ""),
+      acknowledgements: String(program.acknowledgements ?? ""),
+      season_calendar: String(program.season_calendar ?? ""),
+      production_photo_urls: Array.isArray(program.production_photo_urls) ? (program.production_photo_urls as string[]) : [],
+      custom_pages: Array.isArray(program.custom_pages) ? (program.custom_pages as CustomPageRecord[]) : [],
+      layout_order: Array.isArray(program.layout_order) ? (program.layout_order as LayoutToken[]) : [...layoutTokenValues]
+    };
+
+    const pageSequence = buildRenderablePages(safeProgram, castPeople, productionPeople);
     const paddedPages = padToMultipleOf4<ProgramPage>(pageSequence, (index) => ({
       id: `filler-${index}`,
       type: "filler",
@@ -556,7 +705,9 @@ export async function getProgramBySlug(slug: string) {
     const bookletSpreads = buildBookletSpreads(paddedPages);
 
     return {
-      ...program,
+      id: String(program.id),
+      slug: String(program.slug),
+      ...safeProgram,
       castPeople,
       productionPeople,
       pageSequence,
@@ -571,48 +722,77 @@ export async function getProgramBySlug(slug: string) {
 export async function submitBioForProgram(slug: string, formData: FormData) {
   "use server";
 
-  const submissionSchema = z.object({
-    fullName: z.string().min(1),
-    roleTitle: z.string().min(1),
-    bio: z.string().min(1),
-    teamType: z.enum(["cast", "production"]),
-    headshotUrl: z.string().url().optional().or(z.literal(""))
-  });
+  let parsed: z.infer<typeof submissionSchema>;
+  try {
+    parsed = submissionSchema.parse({
+      fullName: formData.get("fullName"),
+      roleTitle: formData.get("roleTitle"),
+      bio: formData.get("bio"),
+      teamType: formData.get("teamType"),
+      headshotUrl: formData.get("headshotUrl") ?? ""
+    });
+  } catch {
+    return redirectWithError(`/programs/${slug}/submit`, "Please complete all required fields.");
+  }
 
-  const parsed = submissionSchema.parse({
-    fullName: formData.get("fullName"),
-    roleTitle: formData.get("roleTitle"),
-    bio: formData.get("bio"),
-    teamType: formData.get("teamType"),
-    headshotUrl: formData.get("headshotUrl") ?? ""
-  });
-
-  const client = getSupabaseWriteClient();
   const cleanBio = sanitizeRichText(parsed.bio);
   if (!richTextHasContent(cleanBio)) {
-    throw new Error("Bio cannot be empty.");
+    redirectWithError(`/programs/${slug}/submit`, "Bio cannot be empty.");
   }
-  const { data: program, error: programError } = await client
-    .from("programs")
-    .select("id, slug")
-    .eq("slug", slug)
-    .single();
+
+  const client = getSupabaseWriteClient();
+  const { data: program, error: programError } = await client.from("programs").select("id, slug").eq("slug", slug).single();
 
   if (programError || !program) {
-    throw new Error(programError?.message ?? "Program not found.");
+    redirectWithError(`/programs/${slug}/submit`, "Program not found.");
   }
 
-  const { error: peopleError } = await client.from("people").insert({
-    program_id: program.id,
-    full_name: parsed.fullName,
-    role_title: parsed.roleTitle,
-    bio: cleanBio,
-    team_type: parsed.teamType,
-    headshot_url: parsed.headshotUrl
-  });
+  const { data: existingPeople } = await client.from("people").select("*").eq("program_id", program.id);
+  const rosterHasEntries = Boolean(existingPeople && existingPeople.length > 0);
 
-  if (peopleError) {
-    throw new Error(peopleError.message);
+  if (rosterHasEntries) {
+    const match = existingPeople!.find(
+      (person) =>
+        normalizeName(String(person.full_name ?? "")) === normalizeName(parsed.fullName) &&
+        String(person.team_type ?? "production") === parsed.teamType
+    );
+
+    if (!match) {
+      redirectWithError(`/programs/${slug}/submit`, "Name not found in roster for this group.");
+    }
+
+    const peopleColumns = await getTableColumns(client, "people");
+    const updatePayload = filterToColumns(
+      {
+        role_title: parsed.roleTitle,
+        bio: cleanBio,
+        headshot_url: parsed.headshotUrl
+      },
+      peopleColumns
+    );
+
+    const { error: updateError } = await client.from("people").update(updatePayload).eq("id", match.id);
+    if (updateError) {
+      redirectWithError(`/programs/${slug}/submit`, updateError.message);
+    }
+  } else {
+    const peopleColumns = await getTableColumns(client, "people");
+    const insertPayload = filterToColumns(
+      {
+        program_id: program.id,
+        full_name: parsed.fullName,
+        role_title: parsed.roleTitle,
+        bio: cleanBio,
+        team_type: parsed.teamType,
+        headshot_url: parsed.headshotUrl
+      },
+      peopleColumns
+    );
+
+    const { error: peopleError } = await client.from("people").insert(insertPayload);
+    if (peopleError) {
+      redirectWithError(`/programs/${slug}/submit`, peopleError.message);
+    }
   }
 
   redirect(`/programs/${program.slug}`);
