@@ -48,6 +48,10 @@ npm run dev
   - program-order view
   - booklet imposition view (2-up saddle stitch)
 - `/programs/[slug]/submit` as a bio intake form for cast/production entries.
+- Platform route scaffolds:
+  - `/app/shows` admin workspace shell
+  - `/contribute` contributor portal shell
+  - `/p/[showSlug]` public viewer shell
 
 ## Content model
 
@@ -73,3 +77,7 @@ npm run dev
 - Direct Google Forms integration (webhook/Sheets sync)
 - Photo uploads via Supabase Storage (instead of URLs)
 - Program versioning + approval workflow
+
+## Platform roadmap
+
+- See `/Users/mikelounello/playbill-app/docs/IMPLEMENTATION_PLAN.md`

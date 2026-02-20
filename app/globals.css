@@ -250,6 +250,24 @@ button,
   background: #fff;
 }
 
+.status-pill {
+  display: inline-block;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  background: #e0efe9;
+  color: #0f4c3f;
+  text-transform: capitalize;
+  font-size: 0.82rem;
+}
+
+.tab-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 0.45rem;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.9rem;
+}
+
 .sheet-grid {
   display: grid;
   grid-template-columns: repeat(2, 5.5in);
@@ -336,6 +354,12 @@ button,
   .sheet-grid {
     grid-template-columns: 1fr;
     justify-items: center;
+  }
+}
+
+@media (max-width: 900px) {
+  .container.grid[style*="grid-template-columns: 240px 1fr"] {
+    grid-template-columns: 1fr !important;
   }
 }
 

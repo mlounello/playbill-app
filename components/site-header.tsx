@@ -4,6 +4,8 @@ const navItems = [
   { href: "/", label: "Home" },
   { href: "/programs", label: "Programs" },
   { href: "/programs/new", label: "New Program" },
+  { href: "/app/shows", label: "Admin" },
+  { href: "/contribute", label: "Contribute" },
   { href: "/api/health", label: "System Health" }
 ];
 

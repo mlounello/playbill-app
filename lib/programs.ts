@@ -82,6 +82,12 @@ export type ProgramSummary = {
   created_at: string;
 };
 
+export type ProgramWorkspaceSummary = ProgramSummary & {
+  submission_total: number;
+  submission_submitted: number;
+  status: "draft" | "collecting" | "in_review" | "locked" | "published";
+};
+
 const payloadSchema = z.object({
   title: z.string().min(1),
   theatreName: z.string().optional().or(z.literal("")),
@@ -838,6 +844,69 @@ export async function getProgramsList() {
   }
 }
 
+function deriveProgramStatus(submitted: number, total: number): ProgramWorkspaceSummary["status"] {
+  if (total === 0) {
+    return "draft";
+  }
+  if (submitted === 0) {
+    return "collecting";
+  }
+  if (submitted < total) {
+    return "in_review";
+  }
+  return "locked";
+}
+
+export async function getProgramWorkspaceList() {
+  const programs = await getProgramsList();
+  if (programs.length === 0) {
+    return [] as ProgramWorkspaceSummary[];
+  }
+
+  try {
+    const missingEnv = getMissingSupabaseEnvVars();
+    if (missingEnv.length > 0) {
+      return programs.map((program) => ({
+        ...program,
+        submission_total: 0,
+        submission_submitted: 0,
+        status: "draft"
+      }));
+    }
+
+    const client = getSupabaseReadClient();
+    const { data: peopleRows } = await client.from("people").select("program_id, submission_status");
+
+    const summaryByProgram = new Map<string, { total: number; submitted: number }>();
+    for (const row of peopleRows ?? []) {
+      const programId = String(row.program_id ?? "");
+      const current = summaryByProgram.get(programId) ?? { total: 0, submitted: 0 };
+      current.total += 1;
+      if (String(row.submission_status ?? "") === "submitted") {
+        current.submitted += 1;
+      }
+      summaryByProgram.set(programId, current);
+    }
+
+    return programs.map((program) => {
+      const summary = summaryByProgram.get(program.id) ?? { total: 0, submitted: 0 };
+      return {
+        ...program,
+        submission_total: summary.total,
+        submission_submitted: summary.submitted,
+        status: deriveProgramStatus(summary.submitted, summary.total)
+      };
+    });
+  } catch {
+    return programs.map((program) => ({
+      ...program,
+      submission_total: 0,
+      submission_submitted: 0,
+      status: "draft"
+    }));
+  }
+}
+
 export async function updateProgram(slug: string, formData: FormData) {
   "use server";
 
@@ -979,6 +1048,11 @@ export async function updateProgram(slug: string, formData: FormData) {
   }
 
   redirect(`/programs/${existingProgram.slug}`);
+}
+
+export async function getProgramWorkspaceById(showId: string) {
+  const workspace = await getProgramWorkspaceList();
+  return workspace.find((item) => item.id === showId) ?? null;
 }
 
 export async function submitBioForProgram(slug: string, formData: FormData) {
