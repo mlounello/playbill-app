@@ -35,8 +35,18 @@ const formatDateTime = (date: string, time: string) => {
   }
 };
 
-export function PerformanceInputs() {
-  const [performances, setPerformances] = useState<Performance[]>([{ date: "", time: "" }]);
+export function PerformanceInputs({
+  initialPerformances,
+  initialShowDatesOverride
+}: {
+  initialPerformances?: Array<{ date?: string; time?: string }>;
+  initialShowDatesOverride?: string;
+}) {
+  const seeded =
+    initialPerformances && initialPerformances.length > 0
+      ? initialPerformances.map((item) => ({ date: item.date ?? "", time: item.time ?? "" }))
+      : [{ date: "", time: "" }];
+  const [performances, setPerformances] = useState<Performance[]>(seeded);
 
   const summary = useMemo(() => {
     return performances
@@ -100,6 +110,7 @@ export function PerformanceInputs() {
           type="text"
           name="showDatesOverride"
           placeholder="If empty, this is auto-generated from selected dates/times."
+          defaultValue={initialShowDatesOverride ?? ""}
         />
       </label>
 

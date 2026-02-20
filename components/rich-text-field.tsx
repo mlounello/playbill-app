@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef } from "react";
 
 type Props = {
   name: string;
@@ -10,65 +10,56 @@ type Props = {
   initialValue?: string;
 };
 
+function wrapSelection(
+  textarea: HTMLTextAreaElement,
+  before: string,
+  after: string,
+  fallbackSelectedText = "text"
+) {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selected = textarea.value.slice(start, end) || fallbackSelectedText;
+  const next = `${textarea.value.slice(0, start)}${before}${selected}${after}${textarea.value.slice(end)}`;
+  textarea.value = next;
+
+  const cursor = start + before.length + selected.length + after.length;
+  textarea.selectionStart = cursor;
+  textarea.selectionEnd = cursor;
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  textarea.focus();
+}
+
 export function RichTextField({ name, label, placeholder, required = false, initialValue = "" }: Props) {
-  const editorRef = useRef<HTMLDivElement | null>(null);
-  const [value, setValue] = useState(initialValue);
-
-  const apply = (command: string) => {
-    editorRef.current?.focus();
-    document.execCommand(command);
-    setValue(editorRef.current?.innerHTML ?? "");
-  };
-
-  const createLink = () => {
-    const url = window.prompt("Enter URL (https://...)");
-    if (!url) {
-      return;
-    }
-    editorRef.current?.focus();
-    document.execCommand("createLink", false, url);
-    setValue(editorRef.current?.innerHTML ?? "");
-  };
-
-  const requiredAttr = useMemo(() => (required ? "true" : undefined), [required]);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
 
   return (
     <label>
       {label}
       <div className="rich-toolbar">
-        <button type="button" onClick={() => apply("bold")}>
-          B
+        <button type="button" onClick={() => ref.current && wrapSelection(ref.current, "<strong>", "</strong>")}>
+          Bold
         </button>
-        <button type="button" onClick={() => apply("italic")}>
-          I
+        <button type="button" onClick={() => ref.current && wrapSelection(ref.current, "<em>", "</em>")}>
+          Italic
         </button>
-        <button type="button" onClick={() => apply("underline")}>
-          U
+        <button type="button" onClick={() => ref.current && wrapSelection(ref.current, "<u>", "</u>")}>
+          Underline
         </button>
-        <button type="button" onClick={() => apply("insertUnorderedList")}>
+        <button type="button" onClick={() => ref.current && wrapSelection(ref.current, "<ul>\n<li>", "</li>\n</ul>", "item") }>
           Bullets
         </button>
-        <button type="button" onClick={() => apply("insertOrderedList")}>
-          Numbered
-        </button>
-        <button type="button" onClick={createLink}>
+        <button type="button" onClick={() => ref.current && wrapSelection(ref.current, "<a href=\"https://\" target=\"_blank\">", "</a>", "link") }>
           Link
         </button>
-        <button type="button" onClick={() => apply("removeFormat")}>
-          Clear
-        </button>
       </div>
-      <div
-        ref={editorRef}
-        className="rich-editor"
-        contentEditable
-        suppressContentEditableWarning
-        data-placeholder={placeholder ?? "Start typing..."}
-        data-required={requiredAttr}
-        onInput={(event) => setValue(event.currentTarget.innerHTML)}
-        dangerouslySetInnerHTML={{ __html: initialValue }}
+      <textarea
+        ref={ref}
+        className="rich-textarea"
+        name={name}
+        required={required}
+        placeholder={placeholder ?? "Type here..."}
+        defaultValue={initialValue}
       />
-      <input type="hidden" name={name} value={value} required={required} />
     </label>
   );
 }

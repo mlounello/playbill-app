@@ -45,6 +45,18 @@ type PerformanceRecord = {
   time?: string;
 };
 
+type ExistingPersonRow = {
+  id: string;
+  full_name: string;
+  role_title: string;
+  team_type: "cast" | "production";
+  bio: string;
+  headshot_url: string;
+  email: string;
+  submission_status: string;
+  submitted_at: string | null;
+};
+
 type RosterPerson = {
   name: string;
   role: string;
@@ -61,6 +73,14 @@ export type ProgramPage =
   | { id: string; type: "image"; title: string; imageUrl: string }
   | { id: string; type: "photo_grid"; title: string; photos: string[] }
   | { id: string; type: "filler"; title: string; body: string };
+
+export type ProgramSummary = {
+  id: string;
+  slug: string;
+  title: string;
+  show_dates: string;
+  created_at: string;
+};
 
 const payloadSchema = z.object({
   title: z.string().min(1),
@@ -223,6 +243,46 @@ function mergeRoster(people: RosterPerson[]) {
     });
   }
   return [...map.values()];
+}
+
+function normalizeExistingPeopleRows(rows: Record<string, unknown>[]) {
+  return rows.map((person) => ({
+    id: String(person.id ?? ""),
+    full_name: String(person.full_name ?? ""),
+    role_title: String(person.role_title ?? ""),
+    team_type: person.team_type === "cast" ? "cast" : "production",
+    bio: String(person.bio ?? ""),
+    headshot_url: String(person.headshot_url ?? ""),
+    email: String(person.email ?? ""),
+    submission_status: String(person.submission_status ?? "pending"),
+    submitted_at: person.submitted_at ? String(person.submitted_at) : null
+  })) as ExistingPersonRow[];
+}
+
+function mergeRosterWithExisting(rosterPeople: RosterPerson[], existingPeople: ExistingPersonRow[]) {
+  const existingByKey = new Map<string, ExistingPersonRow>();
+  for (const person of existingPeople) {
+    const key = personKey(person.full_name, person.role_title, person.team_type);
+    existingByKey.set(key, person);
+  }
+
+  return rosterPeople.map((person) => {
+    const key = personKey(person.name, person.role, person.teamType);
+    const existing = existingByKey.get(key);
+    const finalBio = person.bio && richTextHasContent(person.bio) ? person.bio : existing?.bio ?? "";
+    const submitted = richTextHasContent(finalBio);
+
+    return {
+      full_name: person.name,
+      role_title: person.role,
+      team_type: person.teamType,
+      bio: finalBio,
+      headshot_url: person.headshotUrl ?? existing?.headshot_url ?? "",
+      email: person.email ?? existing?.email ?? "",
+      submission_status: submitted ? "submitted" : "pending",
+      submitted_at: submitted ? existing?.submitted_at ?? new Date().toISOString() : null
+    };
+  });
 }
 
 function generateAutoBilling(people: RosterPerson[]) {
@@ -498,18 +558,19 @@ export async function createProgram(formData: FormData) {
   }
 
   const peopleColumns = await getTableColumns(client, "people");
-  const peopleRows = rosterPeople.map((person) =>
+  const mergedPeopleRows = mergeRosterWithExisting(rosterPeople, []);
+  const peopleRows = mergedPeopleRows.map((person) =>
     filterToColumns(
       {
         program_id: program.id,
-        full_name: person.name,
-        role_title: person.role,
-        bio: person.bio ?? "",
-        team_type: person.teamType,
-        headshot_url: person.headshotUrl ?? "",
-        email: person.email ?? "",
-        submission_status: richTextHasContent(person.bio ?? "") ? "submitted" : "pending",
-        submitted_at: richTextHasContent(person.bio ?? "") ? new Date().toISOString() : null
+        full_name: person.full_name,
+        role_title: person.role_title,
+        bio: person.bio,
+        team_type: person.team_type,
+        headshot_url: person.headshot_url,
+        email: person.email,
+        submission_status: person.submission_status,
+        submitted_at: person.submitted_at
       },
       peopleColumns
     )
@@ -705,6 +766,9 @@ export async function getProgramBySlug(slug: string) {
       title: String(program.title ?? "Untitled Show"),
       theatre_name: String(program.theatre_name ?? ""),
       show_dates: String(program.show_dates ?? ""),
+      performance_schedule: Array.isArray(program.performance_schedule)
+        ? (program.performance_schedule as PerformanceRecord[])
+        : [],
       poster_image_url: String(program.poster_image_url ?? ""),
       director_notes: String(program.director_notes ?? ""),
       dramaturgical_note: String(program.dramaturgical_note ?? ""),
@@ -732,6 +796,7 @@ export async function getProgramBySlug(slug: string) {
     return {
       id: String(program.id),
       slug: String(program.slug),
+      created_at: String(program.created_at ?? ""),
       ...safeProgram,
       castPeople,
       productionPeople,
@@ -742,6 +807,178 @@ export async function getProgramBySlug(slug: string) {
   } catch {
     return null;
   }
+}
+
+export async function getProgramsList() {
+  try {
+    const missingEnv = getMissingSupabaseEnvVars();
+    if (missingEnv.length > 0) {
+      return [] as ProgramSummary[];
+    }
+
+    const client = getSupabaseReadClient();
+    const { data, error } = await client
+      .from("programs")
+      .select("id, slug, title, show_dates, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error || !data) {
+      return [] as ProgramSummary[];
+    }
+
+    return data.map((row) => ({
+      id: String(row.id),
+      slug: String(row.slug),
+      title: String(row.title ?? "Untitled Show"),
+      show_dates: String(row.show_dates ?? ""),
+      created_at: String(row.created_at ?? "")
+    })) as ProgramSummary[];
+  } catch {
+    return [] as ProgramSummary[];
+  }
+}
+
+export async function updateProgram(slug: string, formData: FormData) {
+  "use server";
+
+  let parsed: z.infer<typeof payloadSchema>;
+  try {
+    parsed = payloadSchema.parse({
+      title: formData.get("title"),
+      theatreName: formData.get("theatreName"),
+      showDates: formData.get("showDates"),
+      showDatesOverride: formData.get("showDatesOverride"),
+      performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
+      posterImageUrl: formData.get("posterImageUrl"),
+      directorNotes: formData.get("directorNotes"),
+      dramaturgicalNote: formData.get("dramaturgicalNote"),
+      billingPage: formData.get("billingPage"),
+      actsAndSongs: formData.get("actsAndSongs"),
+      departmentInfo: formData.get("departmentInfo"),
+      seasonCalendar: formData.get("seasonCalendar"),
+      acknowledgements: formData.get("acknowledgements"),
+      actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
+      rosterLines: formData.get("rosterLines"),
+      castLines: formData.get("castLines"),
+      productionTeamLines: formData.get("productionTeamLines"),
+      productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
+      customPages: formData.get("customPages")?.toString(),
+      layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
+    });
+  } catch {
+    return redirectWithError(`/programs/${slug}/edit`, "Please review required fields and input formats.");
+  }
+
+  const missingEnv = getMissingSupabaseEnvVars();
+  if (missingEnv.length > 0) {
+    redirectWithError(`/programs/${slug}/edit`, `Supabase is not configured: ${missingEnv.join(", ")}`);
+  }
+
+  const client = getSupabaseWriteClient();
+
+  const { data: existingProgram, error: existingProgramError } = await client
+    .from("programs")
+    .select("id, slug")
+    .eq("slug", slug)
+    .single();
+  if (existingProgramError || !existingProgram) {
+    redirectWithError("/programs", "Program not found.");
+  }
+
+  const { data: existingPeopleRows } = await client.from("people").select("*").eq("program_id", existingProgram.id);
+  const existingPeople = normalizeExistingPeopleRows((existingPeopleRows ?? []) as Record<string, unknown>[]);
+
+  const layoutOrder = parseLayoutOrder(parsed.layoutOrder ?? "");
+  const performanceSchedule = parsePerformanceSchedule(parsed.performanceSchedule);
+  const autoShowDates = performanceSchedule.map((item) => formatPerformanceLabel(item)).filter(Boolean).join(" | ");
+  const resolvedShowDates = (parsed.showDatesOverride && parsed.showDatesOverride.trim()) || parsed.showDates || autoShowDates;
+  if (!resolvedShowDates) {
+    redirectWithError(`/programs/${slug}/edit`, "At least one performance date is required.");
+  }
+
+  let rosterPeople: RosterPerson[] = [];
+  try {
+    const roster = parseRosterLines(parsed.rosterLines);
+    if (roster.length === 0 && existingPeople.length > 0) {
+      rosterPeople = existingPeople.map((person) => ({
+        name: person.full_name,
+        role: person.role_title,
+        teamType: person.team_type,
+        email: person.email,
+        bio: person.bio,
+        headshotUrl: person.headshot_url
+      }));
+    } else {
+      rosterPeople = mergeRoster(roster);
+    }
+  } catch {
+    redirectWithError(`/programs/${slug}/edit`, "Roster format is invalid. Use Name | Role | cast|production | optional@email.com.");
+  }
+
+  const mergedPeople = mergeRosterWithExisting(rosterPeople, existingPeople);
+  const productionPhotoUrls = parseProductionPhotos(parsed.productionPhotoUrls);
+  const customPages = parseCustomPages(parsed.customPages);
+  const billingHtml = sanitizeRichText(parsed.billingPage);
+  const resolvedBilling = richTextHasContent(billingHtml) ? billingHtml : generateAutoBilling(rosterPeople);
+
+  const programsColumns = await getTableColumns(client, "programs");
+  const programUpdate = filterToColumns(
+    {
+      title: parsed.title,
+      theatre_name: parsed.theatreName ?? "",
+      show_dates: resolvedShowDates,
+      performance_schedule: performanceSchedule,
+      poster_image_url: parsed.posterImageUrl,
+      director_notes: sanitizeRichText(parsed.directorNotes),
+      dramaturgical_note: sanitizeRichText(parsed.dramaturgicalNote),
+      billing_page: resolvedBilling,
+      acts_songs: sanitizeRichText(parsed.actsAndSongs),
+      department_info: sanitizeRichText(parsed.departmentInfo),
+      actf_ad_image_url: parsed.actfAdImageUrl,
+      acknowledgements: sanitizeRichText(parsed.acknowledgements),
+      season_calendar: sanitizeRichText(parsed.seasonCalendar),
+      production_photo_urls: productionPhotoUrls,
+      custom_pages: customPages,
+      layout_order: layoutOrder
+    },
+    programsColumns
+  );
+
+  const { error: programUpdateError } = await client.from("programs").update(programUpdate).eq("id", existingProgram.id);
+  if (programUpdateError) {
+    redirectWithError(`/programs/${slug}/edit`, programUpdateError.message);
+  }
+
+  const { error: deletePeopleError } = await client.from("people").delete().eq("program_id", existingProgram.id);
+  if (deletePeopleError) {
+    redirectWithError(`/programs/${slug}/edit`, deletePeopleError.message);
+  }
+
+  const peopleColumns = await getTableColumns(client, "people");
+  if (mergedPeople.length > 0) {
+    const peopleRows = mergedPeople.map((person) =>
+      filterToColumns(
+        {
+          program_id: existingProgram.id,
+          full_name: person.full_name,
+          role_title: person.role_title,
+          team_type: person.team_type,
+          email: person.email,
+          bio: person.bio,
+          headshot_url: person.headshot_url,
+          submission_status: person.submission_status,
+          submitted_at: person.submitted_at
+        },
+        peopleColumns
+      )
+    );
+    const { error: peopleInsertError } = await client.from("people").insert(peopleRows);
+    if (peopleInsertError) {
+      redirectWithError(`/programs/${slug}/edit`, peopleInsertError.message);
+    }
+  }
+
+  redirect(`/programs/${existingProgram.slug}`);
 }
 
 export async function submitBioForProgram(slug: string, formData: FormData) {

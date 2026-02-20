@@ -102,8 +102,8 @@ export default async function ProgramPage({
     <main>
       <div className="container">
         <div className="hide-print" style={{ display: "flex", gap: "0.8rem", marginBottom: "1rem", flexWrap: "wrap" }}>
-          <Link href="/">Home</Link>
-          <Link href="/programs/new">Create another</Link>
+          <Link href="/programs">All Programs</Link>
+          <Link href={`/programs/${program.slug}/edit`}>Edit Program</Link>
           <Link href={`/programs/${program.slug}/submit`}>Share Bio Submission Form</Link>
           <Link href={`/programs/${program.slug}`}>Program order view</Link>
           <Link href={`/programs/${program.slug}?view=booklet`}>Booklet imposition view</Link>

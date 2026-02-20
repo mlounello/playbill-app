@@ -1,23 +1,8 @@
 import Link from "next/link";
 import { PerformanceInputs } from "@/components/performance-inputs";
 import { RichTextField } from "@/components/rich-text-field";
+import { SectionOrderBuilder } from "@/components/section-order-builder";
 import { createProgram } from "@/lib/programs";
-
-const defaultLayoutOrder = [
-  "poster",
-  "director_note",
-  "dramaturgical_note",
-  "billing",
-  "acts_songs",
-  "cast_bios",
-  "team_bios",
-  "department_info",
-  "actf_ad",
-  "acknowledgements",
-  "season_calendar",
-  "production_photos",
-  "custom_pages"
-].join("\n");
 
 export default async function NewProgramPage({
   searchParams
@@ -86,22 +71,6 @@ export default async function NewProgramPage({
           </label>
 
           <label>
-            Cast Bios (one per line)
-            <textarea
-              name="castLines"
-              placeholder="Jane Doe | Lady Bracknell | Jane is delighted to return to the stage. | https://headshot-url"
-            />
-          </label>
-
-          <label>
-            Production Team Bios (one per line)
-            <textarea
-              name="productionTeamLines"
-              placeholder="Mark Smith | Director | Mark has directed over 20 productions. | https://headshot-url"
-            />
-          </label>
-
-          <label>
             Production Photo URLs (one per line)
             <textarea name="productionPhotoUrls" placeholder="https://...\nhttps://..." />
           </label>
@@ -114,15 +83,12 @@ export default async function NewProgramPage({
             />
           </label>
 
-          <label>
-            Layout Order Blueprint (one token per line)
-            <textarea name="layoutOrder" defaultValue={defaultLayoutOrder} />
-          </label>
+          <SectionOrderBuilder />
 
           <div className="card" style={{ fontSize: "0.95rem" }}>
             Roster format: <code>Name | Role | cast|production | optional@email.com</code>
             <br />
-            Person format: <code>Name | Role | Bio | OptionalHeadshotURL</code>
+            Bios are now submitted through the bio submission form linked on each program page.
             <br />
             Custom page format: <code>Title | text|image|photos | Content</code>
             <br />

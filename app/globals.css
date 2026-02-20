@@ -141,6 +141,10 @@ textarea {
   font-size: 0.85rem;
 }
 
+.rich-textarea {
+  min-height: 150px;
+}
+
 .rich-editor {
   min-height: 130px;
   border: 1px solid #c7baa5;
@@ -233,6 +237,17 @@ button,
 .sheet-meta {
   font-size: 0.9rem;
   margin-bottom: 0.5rem;
+}
+
+.order-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  background: #fff;
 }
 
 .sheet-grid {

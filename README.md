@@ -42,6 +42,8 @@ npm run dev
 ## Current MVP
 
 - `/programs/new` to create a program.
+- `/programs` to view all programs.
+- `/programs/[slug]/edit` to edit a program.
 - `/programs/[slug]` as public online layout with:
   - program-order view
   - booklet imposition view (2-up saddle stitch)
@@ -54,9 +56,10 @@ npm run dev
 - Page count is auto-padded to a multiple of 4 for booklet printing.
 - Cast and production bios are displayed alphabetically by name.
 - Roster-first workflow:
-  - upload roster with `Name | Role | cast|production | email`
+  - upload roster with `Name | Role | cast|production | optional@email`
   - bio submissions must select a roster person and match roster email
   - billing auto-generates from roster role/name if billing page is blank
+- Layout ordering is now managed with a reorderable checklist UI (not manual token typing).
 - Supports optional:
   - headshots
   - production photo page
