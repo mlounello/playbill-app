@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getProgramWorkspaceById } from "@/lib/programs";
+import { getShowById } from "@/lib/shows";
 
 const tabs = [
   "Overview",
@@ -15,7 +15,7 @@ const tabs = [
 
 export default async function ShowWorkspacePage({ params }: { params: Promise<{ showId: string }> }) {
   const { showId } = await params;
-  const show = await getProgramWorkspaceById(showId);
+  const show = await getShowById(showId);
 
   if (!show) {
     notFound();
@@ -23,8 +23,8 @@ export default async function ShowWorkspacePage({ params }: { params: Promise<{ 
 
   return (
     <main>
-      <div className="container grid" style={{ gridTemplateColumns: "240px 1fr", alignItems: "start" }}>
-        <aside className="card grid" style={{ gap: "0.45rem", position: "sticky", top: "4.6rem" }}>
+      <div className="container grid workspace-grid">
+        <aside className="card grid workspace-sidebar" style={{ gap: "0.45rem" }}>
           {tabs.map((tab) => (
             <div key={tab} className="tab-chip">
               {tab}
@@ -38,10 +38,10 @@ export default async function ShowWorkspacePage({ params }: { params: Promise<{ 
             <div>Status: <span className="status-pill">{show.status}</span></div>
             <div>Submissions complete: {show.submission_submitted}/{show.submission_total}</div>
             <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
-              <Link href={`/programs/${show.slug}/edit`}>Edit Program Data</Link>
-              <Link href={`/programs/${show.slug}`}>Open Preview</Link>
-              <Link href={`/programs/${show.slug}?view=booklet`}>Open Print Imposition View</Link>
-              <Link href={`/programs/${show.slug}/submit`}>Contributor Form</Link>
+              {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
+              {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Preview</Link> : null}
+              {show.program_slug ? <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition View</Link> : null}
+              {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
             </div>
           </section>
         </section>

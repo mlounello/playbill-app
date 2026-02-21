@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { getProgramWorkspaceList } from "@/lib/programs";
+import { getShowsForDashboard } from "@/lib/shows";
 
 export default async function AdminShowsPage() {
-  const shows = await getProgramWorkspaceList();
+  const shows = await getShowsForDashboard();
 
   return (
     <main>
@@ -21,14 +21,18 @@ export default async function AdminShowsPage() {
             {shows.map((show) => (
               <article key={show.id} className="card" style={{ display: "grid", gap: "0.4rem" }}>
                 <strong>{show.title}</strong>
-                <div>{show.show_dates}</div>
+                <div>
+                  {show.start_date ?? "TBD"}
+                  {show.end_date ? ` to ${show.end_date}` : ""}
+                  {show.venue ? ` • ${show.venue}` : ""}
+                </div>
                 <div>
                   Status: <span className="status-pill">{show.status}</span> • Submissions: {show.submission_submitted}/{show.submission_total}
                 </div>
                 <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
                   <Link href={`/app/shows/${show.id}`}>Open Workspace</Link>
-                  <Link href={`/programs/${show.slug}`}>Open Program</Link>
-                  <Link href={`/programs/${show.slug}/edit`}>Edit Program</Link>
+                  {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Program</Link> : null}
+                  {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
                 </div>
               </article>
             ))}

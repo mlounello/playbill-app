@@ -67,6 +67,7 @@ create table if not exists public.shows (
   updated_at timestamptz not null default now(),
   title text not null,
   slug text not null unique,
+  program_id uuid references public.programs (id) on delete set null,
   start_date date,
   end_date date,
   venue text not null default '',
@@ -75,6 +76,8 @@ create table if not exists public.shows (
   is_published boolean not null default false,
   published_at timestamptz
 );
+
+alter table public.shows add column if not exists program_id uuid references public.programs (id) on delete set null;
 
 create table if not exists public.show_style_settings (
   id uuid primary key default gen_random_uuid(),
@@ -207,3 +210,91 @@ drop policy if exists "public read published shows" on public.shows;
 create policy "public read published shows" on public.shows
   for select
   using (is_published = true);
+
+drop policy if exists "authenticated read own profile" on public.user_profiles;
+drop policy if exists "authenticated upsert own profile" on public.user_profiles;
+create policy "authenticated read own profile" on public.user_profiles
+  for select
+  to authenticated
+  using (auth.uid() = user_id);
+create policy "authenticated upsert own profile" on public.user_profiles
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "authenticated manage shows" on public.shows;
+create policy "authenticated manage shows" on public.shows
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage show_style_settings" on public.show_style_settings;
+create policy "authenticated manage show_style_settings" on public.show_style_settings
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage program_modules" on public.program_modules;
+create policy "authenticated manage program_modules" on public.program_modules
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage show_roles" on public.show_roles;
+create policy "authenticated manage show_roles" on public.show_roles
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage submission_requests" on public.submission_requests;
+create policy "authenticated manage submission_requests" on public.submission_requests
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage submissions" on public.submissions;
+create policy "authenticated manage submissions" on public.submissions
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage assets" on public.assets;
+create policy "authenticated manage assets" on public.assets
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated read audit_log" on public.audit_log;
+create policy "authenticated read audit_log" on public.audit_log
+  for select
+  to authenticated
+  using (true);
+
+drop policy if exists "authenticated manage exports" on public.exports;
+create policy "authenticated manage exports" on public.exports
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage programs" on public.programs;
+create policy "authenticated manage programs" on public.programs
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage people" on public.people;
+create policy "authenticated manage people" on public.people
+  for all
+  to authenticated
+  using (true)
+  with check (true);

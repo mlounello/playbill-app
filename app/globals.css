@@ -268,6 +268,16 @@ button,
   font-size: 0.9rem;
 }
 
+.workspace-grid {
+  grid-template-columns: 240px 1fr;
+  align-items: start;
+}
+
+.workspace-sidebar {
+  position: sticky;
+  top: 4.6rem;
+}
+
 .sheet-grid {
   display: grid;
   grid-template-columns: repeat(2, 5.5in);
@@ -358,8 +368,12 @@ button,
 }
 
 @media (max-width: 900px) {
-  .container.grid[style*="grid-template-columns: 240px 1fr"] {
-    grid-template-columns: 1fr !important;
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-sidebar {
+    position: static;
   }
 }
 

@@ -49,9 +49,28 @@ npm run dev
   - booklet imposition view (2-up saddle stitch)
 - `/programs/[slug]/submit` as a bio intake form for cast/production entries.
 - Platform route scaffolds:
-  - `/app/shows` admin workspace shell
-  - `/contribute` contributor portal shell
+  - `/app/login` magic-link login
+  - `/app/shows` role-gated admin workspace
+  - `/contribute` role-gated contributor portal shell
   - `/p/[showSlug]` public viewer shell
+
+## Milestone 1 implemented
+
+- Supabase magic-link auth flow with callback:
+  - `/app/login`
+  - `/auth/callback`
+  - `/auth/signout`
+- Role-gated route areas:
+  - Admin roles (`owner`, `admin`, `editor`) for `/app/shows*`
+  - Contributor access for `/contribute`
+- User profile bootstrap:
+  - First authenticated user becomes `owner`
+  - Later users default to `contributor`
+- Show creation now writes to:
+  - `shows`
+  - `show_style_settings`
+  - `program_modules`
+  - linked base `programs` record for current editor/viewer compatibility
 
 ## Content model
 
