@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getMissingSupabaseEnvVars, getSupabaseReadClient, getSupabaseWriteClient } from "@/lib/supabase";
+import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 export type ShowSummary = {
   id: string;
@@ -161,7 +161,7 @@ export async function getShowsForDashboard() {
   }
 
   try {
-    const client = getSupabaseReadClient();
+    const client = getSupabaseWriteClient();
     const { data: shows } = await client
       .from("shows")
       .select("id, title, slug, status, start_date, end_date, venue, program_id")
@@ -214,7 +214,7 @@ export async function getShowById(showId: string) {
   }
 
   try {
-    const client = getSupabaseReadClient();
+    const client = getSupabaseWriteClient();
     const { data: show, error } = await client
       .from("shows")
       .select("id, title, slug, status, start_date, end_date, venue, program_id")
