@@ -37,6 +37,129 @@ function normalizeModules(modules: ShowModule[]): ModuleItem[] {
   }));
 }
 
+function moveItem<T>(array: T[], from: number, to: number) {
+  const next = [...array];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+function ModuleSettings({
+  item,
+  onUpdate
+}: {
+  item: ModuleItem;
+  onUpdate: (next: Record<string, unknown>) => void;
+}) {
+  const setSetting = (key: string, value: unknown) => {
+    onUpdate({ ...item.settings, [key]: value });
+  };
+
+  if (item.module_type === "bios") {
+    return (
+      <div className="module-settings-grid">
+        <label>
+          Sort mode
+          <select
+            value={String(item.settings.sort_mode ?? "alpha")}
+            onChange={(e) => setSetting("sort_mode", e.target.value)}
+          >
+            <option value="alpha">Alphabetical</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+
+        <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={Boolean(item.settings.include_headshots ?? true)}
+            onChange={(e) => setSetting("include_headshots", e.target.checked)}
+          />
+          Include headshots
+        </label>
+      </div>
+    );
+  }
+
+  if (item.module_type === "cast_list") {
+    return (
+      <div className="module-settings-grid">
+        <label>
+          Grouping
+          <select
+            value={String(item.settings.group_by ?? "none")}
+            onChange={(e) => setSetting("group_by", e.target.value)}
+          >
+            <option value="none">No grouping</option>
+            <option value="act">Group by act</option>
+          </select>
+        </label>
+      </div>
+    );
+  }
+
+  if (item.module_type === "headshots_grid") {
+    return (
+      <div className="module-settings-grid">
+        <label>
+          Max per page
+          <input
+            type="number"
+            min={2}
+            max={24}
+            value={Number(item.settings.max_per_page ?? 8)}
+            onChange={(e) => setSetting("max_per_page", Number(e.target.value))}
+          />
+        </label>
+
+        <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={Boolean(item.settings.show_names ?? true)}
+            onChange={(e) => setSetting("show_names", e.target.checked)}
+          />
+          Show names
+        </label>
+      </div>
+    );
+  }
+
+  if (item.module_type === "back_cover") {
+    return (
+      <div className="module-settings-grid">
+        <label>
+          Back cover mode
+          <select
+            value={String(item.settings.mode ?? "schedule")}
+            onChange={(e) => setSetting("mode", e.target.value)}
+          >
+            <option value="schedule">Season schedule</option>
+            <option value="image">Image</option>
+            <option value="auto">Auto</option>
+          </select>
+        </label>
+      </div>
+    );
+  }
+
+  return (
+    <details>
+      <summary>Advanced settings (JSON)</summary>
+      <textarea
+        className="rich-textarea"
+        value={JSON.stringify(item.settings || {}, null, 2)}
+        onChange={(event) => {
+          try {
+            onUpdate(JSON.parse(event.target.value));
+          } catch {
+            // keep typing permissive
+          }
+        }}
+      />
+    </details>
+  );
+}
+
 export function ProgramPlanEditor({
   modules,
   onSubmitAction
@@ -45,21 +168,7 @@ export function ProgramPlanEditor({
   onSubmitAction: (formData: FormData) => void;
 }) {
   const [items, setItems] = useState<ModuleItem[]>(() => normalizeModules(modules));
-
-  const move = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= items.length) {
-      return;
-    }
-
-    setItems((current) => {
-      const next = [...current];
-      const temp = next[index];
-      next[index] = next[target];
-      next[target] = temp;
-      return next;
-    });
-  };
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const update = <K extends keyof ModuleItem>(index: number, key: K, value: ModuleItem[K]) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
@@ -71,25 +180,36 @@ export function ProgramPlanEditor({
     <form action={onSubmitAction} className="grid" style={{ gap: "0.75rem" }}>
       <input type="hidden" name="modulesPayload" value={payload} readOnly />
       {items.map((item, index) => (
-        <article key={`${item.module_type}-${index}`} className="card grid" style={{ gap: "0.55rem" }}>
+        <article
+          key={`${item.module_type}-${index}`}
+          className="card grid draggable-module"
+          style={{ gap: "0.55rem" }}
+          draggable
+          onDragStart={() => setDragIndex(index)}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (dragIndex === null || dragIndex === index) {
+              return;
+            }
+            setItems((current) => moveItem(current, dragIndex, index));
+            setDragIndex(null);
+          }}
+          onDragEnd={() => setDragIndex(null)}
+        >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.8rem", flexWrap: "wrap" }}>
-            <strong>{moduleTypeLabels[item.module_type] || item.module_type}</strong>
-            <div style={{ display: "flex", gap: "0.4rem" }}>
-              <button type="button" onClick={() => move(index, -1)}>
-                Up
-              </button>
-              <button type="button" onClick={() => move(index, 1)}>
-                Down
-              </button>
-            </div>
+            <strong>
+              <span className="drag-handle" aria-hidden>
+                ::
+              </span>{" "}
+              {moduleTypeLabels[item.module_type] || item.module_type}
+            </strong>
+            <span style={{ fontSize: "0.85rem", opacity: 0.8 }}>Drag to reorder</span>
           </div>
 
           <label>
             Module title
-            <input
-              value={item.display_title}
-              onChange={(event) => update(index, "display_title", event.target.value)}
-            />
+            <input value={item.display_title} onChange={(event) => update(index, "display_title", event.target.value)} />
           </label>
 
           <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
@@ -112,20 +232,7 @@ export function ProgramPlanEditor({
             </label>
           </div>
 
-          <label>
-            Module settings (JSON)
-            <textarea
-              className="rich-textarea"
-              value={JSON.stringify(item.settings || {}, null, 2)}
-              onChange={(event) => {
-                try {
-                  update(index, "settings", JSON.parse(event.target.value));
-                } catch {
-                  // ignore invalid JSON while typing
-                }
-              }}
-            />
-          </label>
+          <ModuleSettings item={item} onUpdate={(next) => update(index, "settings", next)} />
         </article>
       ))}
 

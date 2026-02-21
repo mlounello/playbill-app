@@ -268,6 +268,27 @@ button,
   font-size: 0.9rem;
 }
 
+.draggable-module {
+  transition: box-shadow 120ms ease;
+}
+
+.draggable-module:active {
+  box-shadow: 0 0 0 2px rgba(0, 107, 84, 0.2);
+}
+
+.drag-handle {
+  font-family: monospace;
+  letter-spacing: -0.05em;
+  opacity: 0.65;
+  margin-right: 0.35rem;
+}
+
+.module-settings-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
 .workspace-grid {
   grid-template-columns: 240px 1fr;
   align-items: start;

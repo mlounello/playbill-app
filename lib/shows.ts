@@ -46,6 +46,22 @@ const modulePayloadSchema = z.object({
   settings: z.record(z.unknown()).optional()
 });
 
+const moduleToProgramTokens: Record<string, string[]> = {
+  cover: ["poster"],
+  production_info: [],
+  cast_list: ["cast_bios"],
+  creative_team: ["team_bios"],
+  production_team: ["team_bios"],
+  bios: ["cast_bios", "team_bios"],
+  director_note: ["director_note"],
+  acts_scenes: ["acts_songs"],
+  songs: ["acts_songs"],
+  headshots_grid: ["production_photos"],
+  sponsors: ["acknowledgements"],
+  special_thanks: ["acknowledgements"],
+  back_cover: ["season_calendar"]
+};
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -68,6 +84,26 @@ function formatShowDates(startDate?: string, endDate?: string) {
 function withError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
   redirect(`${path}?${qp.toString()}`);
+}
+
+function buildProgramLayoutTokens(modules: Array<z.infer<typeof modulePayloadSchema>>) {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+
+  for (const module of modules) {
+    if (!module.visible) {
+      continue;
+    }
+
+    for (const token of moduleToProgramTokens[module.module_type] ?? []) {
+      if (!seen.has(token)) {
+        seen.add(token);
+        ordered.push(token);
+      }
+    }
+  }
+
+  return ordered;
 }
 
 export async function createShow(formData: FormData) {
@@ -305,7 +341,7 @@ export async function updateShowModules(showId: string, formData: FormData) {
   const client = getSupabaseWriteClient();
   const { data: show, error: showError } = await client
     .from("shows")
-    .select("id")
+    .select("id, program_id")
     .eq("id", showId)
     .single();
 
@@ -333,6 +369,11 @@ export async function updateShowModules(showId: string, formData: FormData) {
     if (insertError) {
       withError(`/app/shows/${showId}?tab=program-plan`, insertError.message);
     }
+  }
+
+  const layoutTokens = buildProgramLayoutTokens(modules);
+  if (show.program_id) {
+    await client.from("programs").update({ layout_order: layoutTokens }).eq("id", show.program_id);
   }
 
   redirect(`/app/shows/${showId}?tab=program-plan`);
