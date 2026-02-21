@@ -82,6 +82,17 @@ In Supabase Dashboard:
   - `program_modules`
   - linked base `programs` record for current editor/viewer compatibility
 
+## Milestone 2 (in progress) implemented pieces
+
+- Program Plan tab in show workspace:
+  - `/app/shows/{showId}?tab=program-plan`
+- Persisted module management (table: `program_modules`):
+  - reorder modules
+  - visibility toggle
+  - filler-eligible toggle
+  - module display title
+  - module settings JSON
+
 ## Content model
 
 - Any section can be omitted (director note, dramaturgical note, billing, ACTF ad, etc.).

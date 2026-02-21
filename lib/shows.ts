@@ -15,6 +15,20 @@ export type ShowSummary = {
   program_slug: string | null;
 };
 
+export type ShowModule = {
+  id: string;
+  module_type: string;
+  display_title: string;
+  module_order: number;
+  visible: boolean;
+  filler_eligible: boolean;
+  settings: Record<string, unknown>;
+};
+
+export type ShowDetail = ShowSummary & {
+  modules: ShowModule[];
+};
+
 const createShowSchema = z.object({
   title: z.string().min(1),
   startDate: z.string().optional().or(z.literal("")),
@@ -22,6 +36,14 @@ const createShowSchema = z.object({
   venue: z.string().optional().or(z.literal("")),
   seasonTag: z.string().optional().or(z.literal("")),
   slug: z.string().optional().or(z.literal(""))
+});
+
+const modulePayloadSchema = z.object({
+  module_type: z.string().min(1),
+  display_title: z.string().optional().or(z.literal("")),
+  visible: z.boolean(),
+  filler_eligible: z.boolean(),
+  settings: z.record(z.unknown()).optional()
 });
 
 function slugify(value: string) {
@@ -228,6 +250,11 @@ export async function getShowById(showId: string) {
     const programId = String(show.program_id ?? "");
     const { data: program } = await client.from("programs").select("slug").eq("id", programId).single();
     const { data: people } = await client.from("people").select("submission_status").eq("program_id", programId);
+    const { data: modules } = await client
+      .from("program_modules")
+      .select("id, module_type, display_title, module_order, visible, filler_eligible, settings")
+      .eq("show_id", showId)
+      .order("module_order", { ascending: true });
 
     const total = (people ?? []).length;
     const submitted = (people ?? []).filter((row) => String(row.submission_status ?? "") === "submitted").length;
@@ -242,9 +269,71 @@ export async function getShowById(showId: string) {
       venue: String(show.venue ?? ""),
       submission_total: total,
       submission_submitted: submitted,
-      program_slug: program?.slug ? String(program.slug) : String(show.slug)
-    } satisfies ShowSummary;
+      program_slug: program?.slug ? String(program.slug) : String(show.slug),
+      modules: (modules ?? []).map((mod) => ({
+        id: String(mod.id),
+        module_type: String(mod.module_type),
+        display_title: String(mod.display_title ?? ""),
+        module_order: Number(mod.module_order ?? 0),
+        visible: Boolean(mod.visible),
+        filler_eligible: Boolean(mod.filler_eligible),
+        settings: (mod.settings as Record<string, unknown>) ?? {}
+      }))
+    } satisfies ShowDetail;
   } catch {
     return null;
   }
+}
+
+export async function updateShowModules(showId: string, formData: FormData) {
+  "use server";
+
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=program-plan`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const rawPayload = formData.get("modulesPayload")?.toString() ?? "[]";
+  let modules: Array<z.infer<typeof modulePayloadSchema>> = [];
+  try {
+    const parsed = JSON.parse(rawPayload) as unknown[];
+    modules = parsed.map((item) => modulePayloadSchema.parse(item));
+  } catch {
+    withError(`/app/shows/${showId}?tab=program-plan`, "Invalid module payload.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id")
+    .eq("id", showId)
+    .single();
+
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  const { error: deleteError } = await client.from("program_modules").delete().eq("show_id", showId);
+  if (deleteError) {
+    withError(`/app/shows/${showId}?tab=program-plan`, deleteError.message);
+  }
+
+  if (modules.length > 0) {
+    const { error: insertError } = await client.from("program_modules").insert(
+      modules.map((module, index) => ({
+        show_id: showId,
+        module_type: module.module_type,
+        display_title: module.display_title || module.module_type.replace(/_/g, " "),
+        module_order: index,
+        visible: module.visible,
+        filler_eligible: module.filler_eligible,
+        settings: module.settings ?? {}
+      }))
+    );
+    if (insertError) {
+      withError(`/app/shows/${showId}?tab=program-plan`, insertError.message);
+    }
+  }
+
+  redirect(`/app/shows/${showId}?tab=program-plan`);
 }
