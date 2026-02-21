@@ -21,6 +21,7 @@ npm install
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_SITE_URL` (for auth redirects, e.g. `https://playbillapp.mlounello.com`)
 
 3. In Supabase SQL editor, run:
 
@@ -38,6 +39,15 @@ npm run dev
 2. Import project in Vercel.
 3. Add the same env vars in Vercel project settings.
 4. Set your custom domain to `playbill.mlounello.com` in Vercel Domains.
+
+## Supabase auth redirect setup (required for magic links)
+
+In Supabase Dashboard:
+1. Go to `Authentication` -> `URL Configuration`.
+2. Set `Site URL` to your production URL (e.g. `https://playbillapp.mlounello.com`).
+3. Add redirect URLs:
+   - `https://playbillapp.mlounello.com/auth/callback`
+   - `http://localhost:3000/auth/callback` (for local dev)
 
 ## Current MVP
 

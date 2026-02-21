@@ -15,7 +15,8 @@ export function MagicLinkForm({ redirectTo }: { redirectTo: string }) {
 
     try {
       const supabase = createSupabaseBrowserClient();
-      const callback = `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`;
+      const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || window.location.origin).replace(/\/+$/, "");
+      const callback = `${baseUrl}/auth/callback?next=${encodeURIComponent(redirectTo)}`;
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
