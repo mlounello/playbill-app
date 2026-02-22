@@ -100,7 +100,7 @@ export default async function ProgramPage({
   ).length;
 
   return (
-    <main>
+    <main className={isBookletView ? "print-booklet" : "print-proof"}>
       <div className={`container${isExportMode ? " export-mode" : ""}`}>
         {!isExportMode ? (
           <>
@@ -142,7 +142,7 @@ export default async function ProgramPage({
         ) : (
           <section className="sequence-view">
             {program.paddedPages.map((page, index) => (
-              <div key={`${page.id}-${index}`} className={isExportMode ? "export-sequence-item" : ""}>
+              <div key={`${page.id}-${index}`} className={`sequence-item${isExportMode ? " export-sequence-item" : ""}`}>
                 <RenderPageContent page={page} />
                 <div className="folio">Program Page {index + 1}</div>
               </div>

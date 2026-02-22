@@ -405,9 +405,14 @@ button,
 }
 
 @media print {
-  @page {
+  @page proof {
+    size: 5.5in 8.5in;
+    margin: 0;
+  }
+
+  @page booklet {
     size: 11in 8.5in;
-    margin: 0.25in;
+    margin: 0;
   }
 
   .hide-print {
@@ -427,6 +432,8 @@ button,
     border: 0;
     padding: 0;
     break-after: page;
+    width: 11in;
+    height: 8.5in;
   }
 
   .export-sequence-item {
@@ -434,12 +441,25 @@ button,
   }
 
   .sheet-grid {
-    gap: 0.2in;
+    grid-template-columns: 5.5in 5.5in;
+    gap: 0;
+    width: 11in;
   }
 
   .booklet-page {
     border: 0;
     background: #fff;
+    width: 5.5in;
+    height: 8.5in;
+  }
+
+  .print-proof .sequence-item,
+  .print-proof .export-sequence-item {
+    page: proof;
+  }
+
+  .print-booklet .sheet {
+    page: booklet;
   }
 
   .folio {
