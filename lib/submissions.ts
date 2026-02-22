@@ -20,6 +20,10 @@ const reviewSchema = z.object({
   reason: z.string().optional().or(z.literal(""))
 });
 
+const returnSchema = z.object({
+  message: z.string().min(1)
+});
+
 export type ShowSubmissionPerson = {
   id: string;
   full_name: string;
@@ -386,21 +390,14 @@ export async function getContributorTaskById(showId: string, personId: string) {
     return null;
   }
 
-  const { data: statusAudit } = await client
+  const { data: returnMessageAudit } = await client
     .from("audit_log")
     .select("reason, changed_at, after_value")
     .eq("entity", "people")
     .eq("entity_id", personId)
-    .eq("field", "submission_status")
+    .eq("field", "return_message")
     .order("changed_at", { ascending: false })
-    .limit(10);
-
-  const latestReturn = (statusAudit ?? []).find((row) => {
-    if (typeof row.after_value === "string") {
-      return row.after_value === "returned";
-    }
-    return row.after_value === "returned";
-  });
+    .limit(1);
 
   return {
     show_id: context.show_id,
@@ -419,10 +416,14 @@ export async function getContributorTaskById(showId: string, personId: string) {
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(String(person.bio ?? "")).length
     } satisfies ShowSubmissionPerson,
-    return_message: latestReturn
+    return_message: returnMessageAudit?.[0]
       ? {
-          reason: String(latestReturn.reason ?? "").trim(),
-          changed_at: String(latestReturn.changed_at ?? "")
+          reason:
+            typeof returnMessageAudit[0].after_value === "object" && returnMessageAudit[0].after_value !== null
+              ? String((returnMessageAudit[0].after_value as { message?: unknown }).message ?? "").trim() ||
+                String(returnMessageAudit[0].reason ?? "").trim()
+              : String(returnMessageAudit[0].reason ?? "").trim(),
+          changed_at: String(returnMessageAudit[0].changed_at ?? "")
         }
       : null
   };
@@ -519,6 +520,9 @@ export async function contributorSaveTask(showId: string, personId: string, form
   if (!task) {
     withError(`/contribute`, "You do not have access to this task.");
   }
+  if (task.person.submission_status === "locked" || task.person.submission_status === "approved") {
+    withError(`/contribute/shows/${showId}/tasks/${personId}`, "This submission is read-only.");
+  }
 
   const bio = formData.get("bio")?.toString() ?? "";
   const headshotUrl = formData.get("headshotUrl")?.toString() ?? "";
@@ -559,11 +563,21 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
 
   const { data: historyRows } = await client
     .from("audit_log")
-    .select("id, field, before_value, after_value, reason, changed_at")
+    .select("id, field, before_value, after_value, reason, changed_at, changed_by")
     .eq("entity", "people")
     .eq("entity_id", personId)
     .order("changed_at", { ascending: false })
     .limit(15);
+
+  const changedByIds = [...new Set((historyRows ?? []).map((row) => String(row.changed_by ?? "")).filter(Boolean))];
+  const { data: profileRows } =
+    changedByIds.length > 0
+      ? await client.from("user_profiles").select("user_id, email").in("user_id", changedByIds)
+      : { data: [] as Array<{ user_id: string; email: string }> };
+  const emailByUserId = new Map<string, string>();
+  for (const profile of profileRows ?? []) {
+    emailByUserId.set(String(profile.user_id), String(profile.email));
+  }
 
   return {
     show: context,
@@ -584,6 +598,8 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
       field: String(row.field ?? ""),
       reason: String(row.reason ?? ""),
       changed_at: String(row.changed_at ?? ""),
+      changed_by: row.changed_by ? String(row.changed_by) : "",
+      changed_by_email: row.changed_by ? emailByUserId.get(String(row.changed_by)) ?? "" : "",
       before_value: row.before_value,
       after_value: row.after_value
     }))
@@ -621,6 +637,54 @@ export async function adminSaveSubmission(showId: string, personId: string, form
   }
 
   redirect(`/app/shows/${showId}/submissions/${personId}?saved=1`);
+}
+
+export async function adminReturnSubmission(showId: string, personId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  let parsed: z.infer<typeof returnSchema>;
+  try {
+    parsed = returnSchema.parse({
+      message: formData.get("message")
+    });
+  } catch {
+    withError(`/app/shows/${showId}?tab=submissions`, "Return message is required.");
+  }
+
+  const current = await getShowSubmissionByPerson(showId, personId);
+  if (!current) {
+    withError(`/app/shows/${showId}?tab=submissions`, "Submission was not found.");
+  }
+
+  const message = parsed.message.trim();
+  if (!message) {
+    withError(`/app/shows/${showId}?tab=submissions`, "Return message is required.");
+  }
+
+  const result = await updateSubmissionCore({
+    showId,
+    personId,
+    bio: current.person.bio,
+    headshotUrl: current.person.headshot_url,
+    status: "returned",
+    reason: message
+  });
+  if (!result.ok) {
+    withError(`/app/shows/${showId}?tab=submissions`, result.message);
+  }
+
+  await writeAuditLog({
+    entity: "people",
+    entityId: personId,
+    field: "return_message",
+    beforeValue: null,
+    afterValue: { message },
+    reason: message
+  });
+
+  redirect(`/app/shows/${showId}?tab=submissions&success=${encodeURIComponent("Submission returned with message.")}`);
 }
 
 export async function adminQuickStatus(showId: string, personId: string, status: ShowSubmissionPerson["submission_status"]) {

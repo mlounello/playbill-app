@@ -9,7 +9,7 @@ import {
   restoreArchivedShow,
   updateShowModules
 } from "@/lib/shows";
-import { addPeopleToShow, adminQuickStatus, getShowSubmissionPeople } from "@/lib/submissions";
+import { addPeopleToShow, adminQuickStatus, adminReturnSubmission, getShowSubmissionPeople } from "@/lib/submissions";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -27,10 +27,17 @@ export default async function ShowWorkspacePage({
   searchParams
 }: {
   params: Promise<{ showId: string }>;
-  searchParams: Promise<{ tab?: string; error?: string; success?: string; submissionFilter?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    error?: string;
+    success?: string;
+    submissionFilter?: string;
+    submissionQuery?: string;
+    submissionSort?: string;
+  }>;
 }) {
   const { showId } = await params;
-  const { tab, error, success, submissionFilter } = await searchParams;
+  const { tab, error, success, submissionFilter, submissionQuery, submissionSort } = await searchParams;
   const show = await getShowById(showId);
   const activeTab = tab || "overview";
 
@@ -40,21 +47,95 @@ export default async function ShowWorkspacePage({
 
   const savePlanAction = updateShowModules.bind(null, show.id);
   const mappedTokens = getProgramTokensFromShowModules(show.modules);
-  const people = activeTab === "people-roles" || activeTab === "submissions" ? await getShowSubmissionPeople(show.id) : [];
+  const people =
+    activeTab === "overview" || activeTab === "people-roles" || activeTab === "submissions"
+      ? await getShowSubmissionPeople(show.id)
+      : [];
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
   const activeSubmissionFilter = submissionFilter || "all";
+  const activeSubmissionQuery = (submissionQuery || "").trim().toLowerCase();
+  const activeSubmissionSort = submissionSort || "name_asc";
   const filteredSubmissions =
     activeTab === "submissions"
-      ? people.filter((person) => {
-          if (activeSubmissionFilter === "all") return true;
-          if (activeSubmissionFilter === "needs_review") return person.submission_status === "submitted";
-          return person.submission_status === activeSubmissionFilter;
-        })
+      ? people
+          .filter((person) => {
+            if (activeSubmissionFilter === "all") return true;
+            if (activeSubmissionFilter === "needs_review") return person.submission_status === "submitted";
+            if (activeSubmissionFilter === "bio_missing") return person.bio_char_count === 0;
+            if (activeSubmissionFilter === "headshot_missing") return !person.headshot_url.trim();
+            if (activeSubmissionFilter === "over_limit") return person.bio_char_count > 375;
+            return person.submission_status === activeSubmissionFilter;
+          })
+          .filter((person) => {
+            if (!activeSubmissionQuery) {
+              return true;
+            }
+            const haystack = `${person.full_name} ${person.role_title} ${person.email}`.toLowerCase();
+            return haystack.includes(activeSubmissionQuery);
+          })
+          .sort((a, b) => {
+            if (activeSubmissionSort === "name_desc") {
+              return b.full_name.localeCompare(a.full_name);
+            }
+            if (activeSubmissionSort === "status") {
+              return a.submission_status.localeCompare(b.submission_status) || a.full_name.localeCompare(b.full_name);
+            }
+            if (activeSubmissionSort === "recent") {
+              const aTime = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+              const bTime = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+              return bTime - aTime || a.full_name.localeCompare(b.full_name);
+            }
+            return a.full_name.localeCompare(b.full_name);
+          })
       : [];
+  const blockers =
+    activeTab === "overview"
+      ? {
+          missingBios: people.filter((person) => person.bio_char_count === 0).length,
+          missingHeadshots: people.filter((person) => !person.headshot_url.trim()).length,
+          returnedForEdits: people.filter((person) => person.submission_status === "returned").length,
+          overLimit: people.filter((person) => person.bio_char_count > 375).length,
+          needsReview: people.filter((person) => person.submission_status === "submitted").length
+        }
+      : {
+          missingBios: 0,
+          missingHeadshots: 0,
+          returnedForEdits: 0,
+          overLimit: 0,
+          needsReview: 0
+        };
+  const blockerItems = [
+    {
+      key: "bio_missing",
+      label: `${blockers.missingBios} bios missing`,
+      count: blockers.missingBios
+    },
+    {
+      key: "headshot_missing",
+      label: `${blockers.missingHeadshots} headshots missing`,
+      count: blockers.missingHeadshots
+    },
+    {
+      key: "returned",
+      label: `${blockers.returnedForEdits} returned for edits`,
+      count: blockers.returnedForEdits
+    },
+    {
+      key: "needs_review",
+      label: `${blockers.needsReview} pending review`,
+      count: blockers.needsReview
+    },
+    {
+      key: "over_limit",
+      label: `${blockers.overLimit} over limit`,
+      count: blockers.overLimit
+    }
+  ];
+  const activeBlockers = blockerItems.filter((item) => item.count > 0);
 
   return (
     <main>
@@ -86,15 +167,44 @@ export default async function ShowWorkspacePage({
           ) : null}
 
           {activeTab === "overview" ? (
-            <section className="card grid">
-              <div>Status: <span className="status-pill">{show.status}</span></div>
-              <div>Submissions complete: {show.submission_submitted}/{show.submission_total}</div>
-              <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
-                {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
-                {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Preview</Link> : null}
-                {show.program_slug ? <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition View</Link> : null}
-                {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
-              </div>
+            <section className="grid" style={{ gap: "0.75rem" }}>
+              <article className="card grid">
+                <div>Status: <span className="status-pill">{show.status}</span></div>
+                <div>Submissions complete: {show.submission_submitted}/{show.submission_total}</div>
+                <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+                  {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
+                  {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Preview</Link> : null}
+                  {show.program_slug ? <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition View</Link> : null}
+                  {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
+                </div>
+              </article>
+
+              <article className="card grid" style={{ borderColor: "#b12727" }}>
+                <strong style={{ color: "#8f1f1f" }}>Big Red Blockers</strong>
+                {activeBlockers.length === 0 ? (
+                  <div style={{ color: "#055a47" }}>No blockers right now.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: "0.45rem" }}>
+                    {activeBlockers.map((item) => (
+                      <Link
+                        key={item.key}
+                        href={`/app/shows/${show.id}?tab=submissions&submissionFilter=${item.key}`}
+                        style={{ color: item.count > 0 ? "#8f1f1f" : undefined, fontWeight: item.count > 0 ? 700 : 500 }}
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </article>
+
+              <article className="card grid">
+                <strong>Milestone 4 Tracker</strong>
+                <div>1. Admin review panel: done</div>
+                <div>2. Approve/return/lock workflow: done</div>
+                <div>3. Audit history visibility: done</div>
+                <div>4. Blockers + queue triage polish: done</div>
+              </article>
             </section>
           ) : null}
 
@@ -208,13 +318,16 @@ export default async function ShowWorkspacePage({
                     ["all", "All"],
                     ["pending", "Pending"],
                     ["needs_review", "Needs Review"],
+                    ["bio_missing", "Bio Missing"],
+                    ["headshot_missing", "Headshot Missing"],
+                    ["over_limit", "Over Limit"],
                     ["returned", "Returned"],
                     ["approved", "Approved"],
                     ["locked", "Locked"]
                   ].map(([value, label]) => (
                     <Link
                       key={value}
-                      href={`/app/shows/${show.id}?tab=submissions&submissionFilter=${value}`}
+                      href={`/app/shows/${show.id}?tab=submissions&submissionFilter=${value}&submissionSort=${activeSubmissionSort}&submissionQuery=${encodeURIComponent(activeSubmissionQuery)}`}
                       className="tab-chip"
                       style={activeSubmissionFilter === value ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
                     >
@@ -222,6 +335,24 @@ export default async function ShowWorkspacePage({
                     </Link>
                   ))}
                 </div>
+                <form method="get" className="grid" style={{ gap: "0.45rem" }}>
+                  <input type="hidden" name="tab" value="submissions" />
+                  <input type="hidden" name="submissionFilter" value={activeSubmissionFilter} />
+                  <label>
+                    Search
+                    <input name="submissionQuery" defaultValue={activeSubmissionQuery} placeholder="Name, role, or email" />
+                  </label>
+                  <label>
+                    Sort
+                    <select name="submissionSort" defaultValue={activeSubmissionSort}>
+                      <option value="name_asc">Name A-Z</option>
+                      <option value="name_desc">Name Z-A</option>
+                      <option value="status">Status</option>
+                      <option value="recent">Most recently submitted</option>
+                    </select>
+                  </label>
+                  <button type="submit">Apply</button>
+                </form>
               </article>
 
               <article className="card grid">
@@ -230,8 +361,8 @@ export default async function ShowWorkspacePage({
                 ) : (
                   filteredSubmissions.map((person) => {
                     const approveAction = adminQuickStatus.bind(null, show.id, person.id, "approved");
-                    const returnAction = adminQuickStatus.bind(null, show.id, person.id, "returned");
                     const lockAction = adminQuickStatus.bind(null, show.id, person.id, "locked");
+                    const returnAction = adminReturnSubmission.bind(null, show.id, person.id);
                     return (
                       <div
                         key={person.id}
@@ -259,7 +390,8 @@ export default async function ShowWorkspacePage({
                           <form action={approveAction}>
                             <button type="submit">Approve</button>
                           </form>
-                          <form action={returnAction}>
+                          <form action={returnAction} style={{ display: "flex", gap: "0.45rem", alignItems: "center", flexWrap: "wrap" }}>
+                            <input name="message" placeholder="Return message" required style={{ minWidth: "14rem" }} />
                             <button type="submit">Return</button>
                           </form>
                           <form action={lockAction}>

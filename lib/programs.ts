@@ -1404,6 +1404,10 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   if (personError || !targetPerson) {
     redirectWithError(`/programs/${slug}/submit`, "Selected person was not found.");
   }
+  const currentStatus = String(targetPerson.submission_status ?? "pending");
+  if (currentStatus === "locked" || currentStatus === "approved") {
+    redirectWithError(`/programs/${slug}/submit`, "This submission is locked by the production team.");
+  }
 
   const rosterEmail = String(targetPerson.email ?? "").trim();
   if (!rosterEmail) {

@@ -18,6 +18,35 @@ function formatAuditValue(value: unknown) {
   }
 }
 
+function formatTextDiff(before: unknown, after: unknown) {
+  if (typeof before !== "string" || typeof after !== "string") {
+    return null;
+  }
+  if (before === after) {
+    return null;
+  }
+
+  let start = 0;
+  const minLength = Math.min(before.length, after.length);
+  while (start < minLength && before[start] === after[start]) {
+    start += 1;
+  }
+
+  let beforeEnd = before.length - 1;
+  let afterEnd = after.length - 1;
+  while (beforeEnd >= start && afterEnd >= start && before[beforeEnd] === after[afterEnd]) {
+    beforeEnd -= 1;
+    afterEnd -= 1;
+  }
+
+  const beforeSlice = before.slice(Math.max(0, start - 24), beforeEnd + 1);
+  const afterSlice = after.slice(Math.max(0, start - 24), afterEnd + 1);
+  return {
+    before: beforeSlice.length > 160 ? `${beforeSlice.slice(0, 160)}...` : beforeSlice,
+    after: afterSlice.length > 160 ? `${afterSlice.slice(0, 160)}...` : afterSlice
+  };
+}
+
 export default async function ShowSubmissionReviewPage({
   params,
   searchParams
@@ -94,22 +123,33 @@ export default async function ShowSubmissionReviewPage({
           {review.history.length === 0 ? (
             <div>No audit records yet.</div>
           ) : (
-            review.history.map((entry) => (
-              <div key={entry.id} style={{ border: "1px solid #e5e5e5", borderRadius: "8px", padding: "0.6rem" }}>
-                <div>
-                  <strong>{entry.field}</strong> • {new Date(entry.changed_at).toLocaleString("en-US")}
-                </div>
-                <div style={{ fontSize: "0.88rem" }}>Reason: {entry.reason || "n/a"}</div>
-                <div style={{ fontSize: "0.82rem", marginTop: "0.35rem", display: "grid", gap: "0.25rem" }}>
+            review.history.map((entry) => {
+              const textDiff = formatTextDiff(entry.before_value, entry.after_value);
+              return (
+                <div key={entry.id} style={{ border: "1px solid #e5e5e5", borderRadius: "8px", padding: "0.6rem" }}>
                   <div>
-                    <strong>Before:</strong> {formatAuditValue(entry.before_value)}
+                    <strong>{entry.field}</strong> • {new Date(entry.changed_at).toLocaleString("en-US")}
                   </div>
-                  <div>
-                    <strong>After:</strong> {formatAuditValue(entry.after_value)}
+                  <div style={{ fontSize: "0.88rem" }}>Reason: {entry.reason || "n/a"}</div>
+                  <div style={{ fontSize: "0.82rem" }}>
+                    Changed by: {entry.changed_by_email || entry.changed_by || "system"}
+                  </div>
+                  <div style={{ fontSize: "0.82rem", marginTop: "0.35rem", display: "grid", gap: "0.25rem" }}>
+                    <div>
+                      <strong>Before:</strong> {formatAuditValue(entry.before_value)}
+                    </div>
+                    <div>
+                      <strong>After:</strong> {formatAuditValue(entry.after_value)}
+                    </div>
+                    {textDiff ? (
+                      <div>
+                        <strong>Text change:</strong> <code>{textDiff.before} {"=>"} {textDiff.after}</code>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </section>
       </div>
