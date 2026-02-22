@@ -611,10 +611,7 @@ export async function requestShowExport(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=export`, createError?.message ?? "Could not start export.");
   }
 
-  const filePath =
-    exportType === "proof"
-      ? `/programs/${context.program_slug}`
-      : `/programs/${context.program_slug}?view=booklet`;
+  const filePath = `/api/exports/${created.id}/download`;
 
   const { error: completeError } = await client
     .from("exports")
