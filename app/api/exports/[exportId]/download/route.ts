@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { generatePrintImposedPdf, generateProofPdf } from "@/lib/export-pdf";
+import { generatePrintImposedPdf, generateProofPdf, renderProgramPdfWithPlaywright } from "@/lib/export-pdf";
 import { getProgramBySlug } from "@/lib/programs";
 import { getSupabaseWriteClient } from "@/lib/supabase";
 
+export const runtime = "nodejs";
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ exportId: string }> }
 ) {
   const { exportId } = await params;
@@ -61,10 +63,21 @@ export async function GET(
     return NextResponse.json({ error: "Program content not found" }, { status: 404 });
   }
 
-  const bytes =
-    exportRow.export_type === "print"
-      ? await generatePrintImposedPdf({ title: program.title, spreads: program.bookletSpreads })
-      : await generateProofPdf({ title: program.title, pages: program.pageSequence });
+  const origin = new URL(request.url).origin;
+  let bytes: Uint8Array;
+  try {
+    bytes = await renderProgramPdfWithPlaywright({
+      origin,
+      programSlug: String(programRow.slug),
+      exportType: exportRow.export_type === "print" ? "print" : "proof"
+    });
+  } catch {
+    // Fallback keeps export reliable if browser rendering is unavailable.
+    bytes =
+      exportRow.export_type === "print"
+        ? await generatePrintImposedPdf({ title: program.title, spreads: program.bookletSpreads })
+        : await generateProofPdf({ title: program.title, pages: program.pageSequence });
+  }
 
   const filenameSafeTitle = program.title.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-");
   const filename = `${filenameSafeTitle}-${exportRow.export_type}.pdf`;

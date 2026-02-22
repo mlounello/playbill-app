@@ -382,6 +382,11 @@ button,
   margin-top: 0.35rem;
 }
 
+.export-mode {
+  padding: 0;
+  width: 100%;
+}
+
 @media (max-width: 1200px) {
   .sheet-grid {
     grid-template-columns: 1fr;
@@ -421,6 +426,10 @@ button,
   .sheet {
     border: 0;
     padding: 0;
+    break-after: page;
+  }
+
+  .export-sequence-item {
     break-after: page;
   }
 

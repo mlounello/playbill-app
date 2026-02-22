@@ -148,3 +148,49 @@ export async function generatePrintImposedPdf(params: {
 
   return pdf.save();
 }
+
+export async function renderProgramPdfWithPlaywright(params: {
+  origin: string;
+  programSlug: string;
+  exportType: "proof" | "print";
+}) {
+  const playwright = await import("playwright");
+  const browser = await playwright.chromium.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+  });
+
+  try {
+    const page = await browser.newPage();
+    const targetUrl =
+      params.exportType === "print"
+        ? `${params.origin}/programs/${params.programSlug}?view=booklet&export=1`
+        : `${params.origin}/programs/${params.programSlug}?export=1`;
+
+    await page.goto(targetUrl, { waitUntil: "networkidle" });
+    await page.emulateMedia({ media: "print" });
+
+    const pdf = await page.pdf(
+      params.exportType === "print"
+        ? {
+            printBackground: true,
+            preferCSSPageSize: false,
+            landscape: true,
+            width: "11in",
+            height: "8.5in",
+            margin: { top: "0.2in", right: "0.2in", bottom: "0.2in", left: "0.2in" }
+          }
+        : {
+            printBackground: true,
+            preferCSSPageSize: false,
+            width: "5.5in",
+            height: "8.5in",
+            margin: { top: "0.2in", right: "0.2in", bottom: "0.2in", left: "0.2in" }
+          }
+    );
+
+    return new Uint8Array(pdf);
+  } finally {
+    await browser.close();
+  }
+}

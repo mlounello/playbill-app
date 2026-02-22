@@ -82,10 +82,10 @@ export default async function ProgramPage({
   searchParams
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; export?: string }>;
 }) {
   const { slug } = await params;
-  const { view } = await searchParams;
+  const { view, export: exportMode } = await searchParams;
   const program = await getProgramBySlug(slug);
 
   if (!program) {
@@ -93,6 +93,7 @@ export default async function ProgramPage({
   }
 
   const isBookletView = view === "booklet";
+  const isExportMode = exportMode === "1";
   const totalRoster = program.castPeople.length + program.productionPeople.length;
   const submittedRoster = [...program.castPeople, ...program.productionPeople].filter(
     (person) => person.submission_status === "submitted"
@@ -100,21 +101,25 @@ export default async function ProgramPage({
 
   return (
     <main>
-      <div className="container">
-        <div className="hide-print" style={{ display: "flex", gap: "0.8rem", marginBottom: "1rem", flexWrap: "wrap" }}>
-          <Link href="/programs">All Programs</Link>
-          <Link href={`/programs/${program.slug}/edit`}>Edit Program</Link>
-          <Link href={`/programs/${program.slug}/submit`}>Share Bio Submission Form</Link>
-          <Link href={`/programs/${program.slug}`}>Program order view</Link>
-          <Link href={`/programs/${program.slug}?view=booklet`}>Booklet imposition view</Link>
-          <PrintButton />
-        </div>
+      <div className={`container${isExportMode ? " export-mode" : ""}`}>
+        {!isExportMode ? (
+          <>
+            <div className="hide-print" style={{ display: "flex", gap: "0.8rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+              <Link href="/programs">All Programs</Link>
+              <Link href={`/programs/${program.slug}/edit`}>Edit Program</Link>
+              <Link href={`/programs/${program.slug}/submit`}>Share Bio Submission Form</Link>
+              <Link href={`/programs/${program.slug}`}>Program order view</Link>
+              <Link href={`/programs/${program.slug}?view=booklet`}>Booklet imposition view</Link>
+              <PrintButton />
+            </div>
 
-        <section className="card hide-print" style={{ marginBottom: "1rem" }}>
-          <strong>Booklet Summary:</strong> {program.pageSequence.length} designed pages, padded to {program.paddedPages.length} for saddle-stitch (multiple of 4), {program.paddedPages.length / 4} sheets total.
-          <br />
-          <strong>Bio Submission Progress:</strong> {submittedRoster}/{totalRoster} submitted.
-        </section>
+            <section className="card hide-print" style={{ marginBottom: "1rem" }}>
+              <strong>Booklet Summary:</strong> {program.pageSequence.length} designed pages, padded to {program.paddedPages.length} for saddle-stitch (multiple of 4), {program.paddedPages.length / 4} sheets total.
+              <br />
+              <strong>Bio Submission Progress:</strong> {submittedRoster}/{totalRoster} submitted.
+            </section>
+          </>
+        ) : null}
 
         {isBookletView ? (
           <section className="booklet-sheets">
@@ -137,7 +142,7 @@ export default async function ProgramPage({
         ) : (
           <section className="sequence-view">
             {program.paddedPages.map((page, index) => (
-              <div key={`${page.id}-${index}`}>
+              <div key={`${page.id}-${index}`} className={isExportMode ? "export-sequence-item" : ""}>
                 <RenderPageContent page={page} />
                 <div className="folio">Program Page {index + 1}</div>
               </div>
