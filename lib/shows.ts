@@ -46,7 +46,7 @@ const modulePayloadSchema = z.object({
   settings: z.record(z.unknown()).optional()
 });
 
-const moduleToProgramTokens: Record<string, string[]> = {
+export const moduleToProgramTokens: Record<string, string[]> = {
   cover: ["poster"],
   production_info: [],
   cast_list: ["cast_bios"],
@@ -104,6 +104,17 @@ function buildProgramLayoutTokens(modules: Array<z.infer<typeof modulePayloadSch
   }
 
   return ordered;
+}
+
+export function getProgramTokensFromShowModules(modules: ShowModule[]) {
+  const mapped = modules.map((module) => ({
+    module_type: module.module_type,
+    display_title: module.display_title,
+    visible: module.visible,
+    filler_eligible: module.filler_eligible,
+    settings: module.settings
+  }));
+  return buildProgramLayoutTokens(mapped);
 }
 
 export async function createShow(formData: FormData) {

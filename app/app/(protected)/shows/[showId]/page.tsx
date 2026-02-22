@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
-import { getShowById, updateShowModules } from "@/lib/shows";
+import { getProgramTokensFromShowModules, getShowById, updateShowModules } from "@/lib/shows";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -31,6 +31,7 @@ export default async function ShowWorkspacePage({
   }
 
   const savePlanAction = updateShowModules.bind(null, show.id);
+  const mappedTokens = getProgramTokensFromShowModules(show.modules);
 
   return (
     <main>
@@ -78,7 +79,39 @@ export default async function ShowWorkspacePage({
             </section>
           ) : null}
 
-          {!["overview", "program-plan"].includes(activeTab) ? (
+          {activeTab === "preview" ? (
+            <section className="grid" style={{ gap: "0.75rem" }}>
+              <article className="card grid">
+                <strong>Program Plan to Preview Mapping</strong>
+                <div>
+                  Active preview token order:{" "}
+                  {mappedTokens.length > 0 ? (
+                    <code>{mappedTokens.join(" -> ")}</code>
+                  ) : (
+                    "No mapped tokens. Enable visible modules in Program Plan."
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+                  {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Reader Preview</Link> : null}
+                  {show.program_slug ? (
+                    <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition Preview</Link>
+                  ) : null}
+                </div>
+              </article>
+
+              <article className="card grid">
+                <strong>Module Sequence</strong>
+                {show.modules.map((module, index) => (
+                  <div key={module.id}>
+                    {index + 1}. {module.display_title || module.module_type}{" "}
+                    {module.visible ? "" : "(hidden)"} {module.filler_eligible ? "• filler eligible" : ""}
+                  </div>
+                ))}
+              </article>
+            </section>
+          ) : null}
+
+          {!["overview", "program-plan", "preview"].includes(activeTab) ? (
             <section className="card">
               <strong>{tabs.find((item) => item.id === activeTab)?.label ?? "Tab"}</strong>
               <div style={{ marginTop: "0.5rem" }}>This tab is queued for the next milestone implementation.</div>

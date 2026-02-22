@@ -66,6 +66,16 @@ type RosterPerson = {
   headshotUrl?: string;
 };
 
+type ProgramModuleRecord = {
+  id: string;
+  module_type: string;
+  display_title: string;
+  module_order: number;
+  visible: boolean;
+  filler_eligible: boolean;
+  settings: Record<string, unknown>;
+};
+
 export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string }
@@ -410,6 +420,273 @@ function mapCustomPageToRenderable(page: CustomPageRecord, index: number): Progr
     title: page.title,
     photos
   };
+}
+
+function buildRoleListHtml(people: PersonRecord[]) {
+  if (people.length === 0) {
+    return "";
+  }
+
+  const sorted = [...people].sort(
+    (a, b) => a.role_title.localeCompare(b.role_title) || a.full_name.localeCompare(b.full_name)
+  );
+
+  return `<ul>${sorted
+    .map((person) => `<li><strong>${escapeHtml(person.role_title)}</strong>: ${escapeHtml(person.full_name)}</li>`)
+    .join("")}</ul>`;
+}
+
+function buildProductionInfoHtml(program: { theatre_name: string; show_dates: string; performance_schedule: PerformanceRecord[] }) {
+  const rows: string[] = [];
+  if (program.theatre_name.trim()) {
+    rows.push(`<p><strong>Venue:</strong> ${escapeHtml(program.theatre_name)}</p>`);
+  }
+  if (program.show_dates.trim()) {
+    rows.push(`<p><strong>Dates:</strong> ${escapeHtml(program.show_dates)}</p>`);
+  }
+
+  const scheduleRows = program.performance_schedule
+    .map((item) => formatPerformanceLabel(item))
+    .filter((item) => Boolean(item))
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
+
+  if (scheduleRows) {
+    rows.push(`<p><strong>Performance Schedule</strong></p><ul>${scheduleRows}</ul>`);
+  }
+
+  return rows.join("");
+}
+
+function splitCreativeAndProductionTeam(people: PersonRecord[]) {
+  const creativeRolePattern =
+    /director|assistant director|dramaturg|music director|choreographer|fight director|intimacy|designer|composer|lyricist|playwright|book by/i;
+
+  const creativeTeam = people.filter((person) => creativeRolePattern.test(person.role_title));
+  const productionTeam = people.filter((person) => !creativeRolePattern.test(person.role_title));
+  return { creativeTeam, productionTeam };
+}
+
+function getSettingString(settings: Record<string, unknown>, key: string) {
+  const value = settings[key];
+  return typeof value === "string" ? value : "";
+}
+
+function buildRenderablePagesFromModules(
+  program: {
+    title: string;
+    theatre_name: string;
+    show_dates: string;
+    performance_schedule: PerformanceRecord[];
+    poster_image_url: string;
+    director_notes: string;
+    dramaturgical_note: string;
+    billing_page: string;
+    acts_songs: string;
+    department_info: string;
+    actf_ad_image_url: string;
+    acknowledgements: string;
+    season_calendar: string;
+    production_photo_urls: string[];
+    custom_pages: CustomPageRecord[];
+  },
+  cast: PersonRecord[],
+  production: PersonRecord[],
+  modules: ProgramModuleRecord[]
+) {
+  const hasPoster = Boolean(program.poster_image_url.trim());
+  const hasDirectorNote = richTextHasContent(program.director_notes);
+  const hasDramaturgicalNote = richTextHasContent(program.dramaturgical_note);
+  const hasBilling = richTextHasContent(program.billing_page);
+  const hasActsSongs = richTextHasContent(program.acts_songs);
+  const hasDepartmentInfo = richTextHasContent(program.department_info);
+  const hasAcknowledgements = richTextHasContent(program.acknowledgements);
+  const hasSeasonCalendar = richTextHasContent(program.season_calendar);
+  const hasActfImage = Boolean(program.actf_ad_image_url.trim());
+  const allHeadshots = [...cast, ...production].map((person) => person.headshot_url).filter((url) => Boolean(url.trim()));
+  const { creativeTeam, productionTeam } = splitCreativeAndProductionTeam(production);
+  const pages: ProgramPage[] = [];
+
+  modules
+    .filter((module) => module.visible)
+    .sort((a, b) => a.module_order - b.module_order)
+    .forEach((module, index) => {
+      const title = module.display_title.trim() || module.module_type.replace(/_/g, " ");
+      const idBase = `${module.module_type}-${index}`;
+
+      if (module.module_type === "cover") {
+        if (!hasPoster) {
+          return;
+        }
+        pages.push({
+          id: idBase,
+          type: "poster",
+          title: program.title,
+          subtitle: `${program.theatre_name} | ${program.show_dates}`,
+          imageUrl: program.poster_image_url
+        });
+        return;
+      }
+
+      if (module.module_type === "production_info") {
+        const body = buildProductionInfoHtml(program);
+        if (!richTextHasContent(body)) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body });
+        return;
+      }
+
+      if (module.module_type === "cast_list") {
+        const body = buildRoleListHtml(cast);
+        if (!richTextHasContent(body)) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body });
+        return;
+      }
+
+      if (module.module_type === "creative_team") {
+        const source = creativeTeam.length > 0 ? creativeTeam : production;
+        const body = buildRoleListHtml(source);
+        if (!richTextHasContent(body)) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body });
+        return;
+      }
+
+      if (module.module_type === "production_team") {
+        const source = productionTeam.length > 0 ? productionTeam : production;
+        const body = buildRoleListHtml(source);
+        if (!richTextHasContent(body)) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body });
+        return;
+      }
+
+      if (module.module_type === "bios") {
+        const scope = getSettingString(module.settings, "scope");
+        if (scope !== "production" && cast.length > 0) {
+          pages.push({ id: `${idBase}-cast`, type: "bios", title: `${title}: Cast`, people: cast });
+        }
+        if (scope !== "cast" && production.length > 0) {
+          pages.push({ id: `${idBase}-production`, type: "bios", title: `${title}: Production Team`, people: production });
+        }
+        return;
+      }
+
+      if (module.module_type === "director_note") {
+        if (!hasDirectorNote) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body: program.director_notes });
+        return;
+      }
+
+      if (module.module_type === "dramaturgical_note") {
+        if (!hasDramaturgicalNote) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body: program.dramaturgical_note });
+        return;
+      }
+
+      if (module.module_type === "acts_scenes" || module.module_type === "songs") {
+        if (!hasActsSongs) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body: program.acts_songs });
+        return;
+      }
+
+      if (module.module_type === "headshots_grid") {
+        const photos = allHeadshots.length > 0 ? allHeadshots : program.production_photo_urls;
+        if (photos.length === 0) {
+          return;
+        }
+        pages.push({ id: idBase, type: "photo_grid", title, photos });
+        return;
+      }
+
+      if (module.module_type === "production_photos") {
+        if (program.production_photo_urls.length === 0) {
+          return;
+        }
+        pages.push({ id: idBase, type: "photo_grid", title, photos: program.production_photo_urls });
+        return;
+      }
+
+      if (module.module_type === "sponsors") {
+        if (hasActfImage) {
+          pages.push({ id: `${idBase}-image`, type: "image", title, imageUrl: program.actf_ad_image_url });
+        }
+        if (hasAcknowledgements) {
+          pages.push({ id: `${idBase}-text`, type: "text", title, body: program.acknowledgements });
+        }
+        return;
+      }
+
+      if (module.module_type === "special_thanks") {
+        if (!hasAcknowledgements) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body: program.acknowledgements });
+        return;
+      }
+
+      if (module.module_type === "back_cover") {
+        const mode = getSettingString(module.settings, "mode") || "schedule";
+        if (mode === "image") {
+          if (hasActfImage) {
+            pages.push({ id: idBase, type: "image", title, imageUrl: program.actf_ad_image_url });
+          }
+          return;
+        }
+
+        if (mode === "auto") {
+          if (hasSeasonCalendar) {
+            pages.push({ id: idBase, type: "text", title, body: program.season_calendar });
+            return;
+          }
+          if (hasActfImage) {
+            pages.push({ id: idBase, type: "image", title, imageUrl: program.actf_ad_image_url });
+            return;
+          }
+          return;
+        }
+
+        if (hasSeasonCalendar) {
+          pages.push({ id: idBase, type: "text", title, body: program.season_calendar });
+        }
+        return;
+      }
+
+      if (module.module_type === "billing" && hasBilling) {
+        pages.push({ id: idBase, type: "text", title, body: program.billing_page });
+        return;
+      }
+
+      if (module.module_type === "department_info" && hasDepartmentInfo) {
+        pages.push({ id: idBase, type: "text", title, body: program.department_info });
+        return;
+      }
+
+      if (module.module_type === "custom_pages") {
+        for (let i = 0; i < program.custom_pages.length; i += 1) {
+          pages.push(mapCustomPageToRenderable(program.custom_pages[i], i));
+        }
+      }
+    });
+
+  if (!modules.some((module) => module.visible && module.module_type === "custom_pages")) {
+    for (let i = 0; i < program.custom_pages.length; i += 1) {
+      pages.push(mapCustomPageToRenderable(program.custom_pages[i], i));
+    }
+  }
+
+  return pages;
 }
 
 function parsePerformanceSchedule(text: string | undefined): PerformanceRecord[] {
@@ -789,7 +1066,37 @@ export async function getProgramBySlug(slug: string) {
       layout_order: Array.isArray(program.layout_order) ? (program.layout_order as LayoutToken[]) : [...layoutTokenValues]
     };
 
-    const pageSequence = buildRenderablePages(safeProgram, castPeople, productionPeople);
+    let pageSequence: ProgramPage[] = [];
+    const { data: show } = await client
+      .from("shows")
+      .select("id")
+      .eq("program_id", String(program.id))
+      .maybeSingle();
+
+    if (show?.id) {
+      const { data: modules } = await client
+        .from("program_modules")
+        .select("id, module_type, display_title, module_order, visible, filler_eligible, settings")
+        .eq("show_id", String(show.id))
+        .order("module_order", { ascending: true });
+
+      const normalizedModules = (modules ?? []).map((module) => ({
+        id: String(module.id),
+        module_type: String(module.module_type ?? ""),
+        display_title: String(module.display_title ?? ""),
+        module_order: Number(module.module_order ?? 0),
+        visible: Boolean(module.visible),
+        filler_eligible: Boolean(module.filler_eligible),
+        settings: (module.settings as Record<string, unknown>) ?? {}
+      })) as ProgramModuleRecord[];
+
+      pageSequence = buildRenderablePagesFromModules(safeProgram, castPeople, productionPeople, normalizedModules);
+    }
+
+    if (pageSequence.length === 0) {
+      pageSequence = buildRenderablePages(safeProgram, castPeople, productionPeople);
+    }
+
     const paddedPages = padToMultipleOf4<ProgramPage>(pageSequence, (index) => ({
       id: `filler-${index}`,
       type: "filler",

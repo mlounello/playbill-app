@@ -28,6 +28,22 @@ const moduleTypeLabels: Record<string, string> = {
   back_cover: "Back Cover"
 };
 
+const moduleTokenMap: Record<string, string[]> = {
+  cover: ["poster"],
+  production_info: [],
+  cast_list: ["cast_bios"],
+  creative_team: ["team_bios"],
+  production_team: ["team_bios"],
+  bios: ["cast_bios", "team_bios"],
+  director_note: ["director_note"],
+  acts_scenes: ["acts_songs"],
+  songs: ["acts_songs"],
+  headshots_grid: ["production_photos"],
+  sponsors: ["acknowledgements"],
+  special_thanks: ["acknowledgements"],
+  back_cover: ["season_calendar"]
+};
+
 function normalizeModules(modules: ShowModule[]): ModuleItem[] {
   return modules.map((mod) => ({
     id: mod.id,
@@ -156,7 +172,7 @@ function ModuleSettings({
           } catch {
             // keep typing permissive
           }
-        }}
+          }}
       />
     </details>
   );
@@ -249,6 +265,33 @@ export function ProgramPlanEditor({
               />
               Filler eligible
             </label>
+
+            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={Boolean(item.settings.allow_split ?? true)}
+                onChange={(event) => update(index, "settings", { ...item.settings, allow_split: event.target.checked })}
+              />
+              Allow split across pages
+            </label>
+
+            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={Boolean(item.settings.prefer_keep_together ?? false)}
+                onChange={(event) =>
+                  update(index, "settings", { ...item.settings, prefer_keep_together: event.target.checked })
+                }
+              />
+              Prefer keep together
+            </label>
+          </div>
+
+          <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+            Preview mapping:{" "}
+            {(moduleTokenMap[item.module_type] ?? []).length > 0
+              ? (moduleTokenMap[item.module_type] ?? []).join(", ")
+              : "No direct token mapping yet (module stored for future renderer)."}
           </div>
 
           <ModuleSettings item={item} onUpdate={(next) => update(index, "settings", next)} />
