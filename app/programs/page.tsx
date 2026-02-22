@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getProgramsList } from "@/lib/programs";
 
+export const dynamic = "force-dynamic";
+
 export default async function ProgramsIndexPage() {
   const programs = await getProgramsList();
 

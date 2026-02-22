@@ -13,7 +13,7 @@ export default async function AdminShowsPage({
     <main>
       <div className="container grid">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-          <h1 style={{ marginBottom: 0 }}>Programs</h1>
+          <h1 style={{ marginBottom: 0 }}>Show Workspaces</h1>
           <Link className="button-link" href="/app/shows/new">
             Create Show
           </Link>
