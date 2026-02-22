@@ -270,6 +270,7 @@ button,
 
 .draggable-module {
   transition: box-shadow 120ms ease;
+  user-select: none;
 }
 
 .draggable-module:active {

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { ShowModule } from "@/lib/shows";
 
 type ModuleItem = {
+  id: string;
   module_type: string;
   display_title: string;
   visible: boolean;
@@ -29,6 +30,7 @@ const moduleTypeLabels: Record<string, string> = {
 
 function normalizeModules(modules: ShowModule[]): ModuleItem[] {
   return modules.map((mod) => ({
+    id: mod.id,
     module_type: mod.module_type,
     display_title: mod.display_title || moduleTypeLabels[mod.module_type] || mod.module_type,
     visible: mod.visible,
@@ -169,6 +171,7 @@ export function ProgramPlanEditor({
 }) {
   const [items, setItems] = useState<ModuleItem[]>(() => normalizeModules(modules));
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const update = <K extends keyof ModuleItem>(index: number, key: K, value: ModuleItem[K]) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
@@ -181,11 +184,23 @@ export function ProgramPlanEditor({
       <input type="hidden" name="modulesPayload" value={payload} readOnly />
       {items.map((item, index) => (
         <article
-          key={`${item.module_type}-${index}`}
+          key={item.id}
           className="card grid draggable-module"
-          style={{ gap: "0.55rem" }}
+          style={{ gap: "0.55rem", opacity: draggingId === item.id ? 0.6 : 1 }}
           draggable
-          onDragStart={() => setDragIndex(index)}
+          onDragStart={(event) => {
+            setDragIndex(index);
+            setDraggingId(item.id);
+            event.dataTransfer.effectAllowed = "move";
+            const ghost = event.currentTarget.cloneNode(true) as HTMLElement;
+            ghost.style.position = "absolute";
+            ghost.style.top = "-9999px";
+            ghost.style.left = "-9999px";
+            ghost.style.width = `${event.currentTarget.clientWidth}px`;
+            document.body.appendChild(ghost);
+            event.dataTransfer.setDragImage(ghost, 20, 20);
+            requestAnimationFrame(() => document.body.removeChild(ghost));
+          }}
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
             event.preventDefault();
@@ -194,8 +209,12 @@ export function ProgramPlanEditor({
             }
             setItems((current) => moveItem(current, dragIndex, index));
             setDragIndex(null);
+            setDraggingId(null);
           }}
-          onDragEnd={() => setDragIndex(null)}
+          onDragEnd={() => {
+            setDragIndex(null);
+            setDraggingId(null);
+          }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.8rem", flexWrap: "wrap" }}>
             <strong>
