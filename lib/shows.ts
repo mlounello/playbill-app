@@ -14,6 +14,8 @@ export type ShowSummary = {
   submission_total: number;
   submission_submitted: number;
   program_slug: string | null;
+  is_published: boolean;
+  published_at: string | null;
 };
 
 export type ShowModule = {
@@ -28,6 +30,15 @@ export type ShowModule = {
 
 export type ShowDetail = ShowSummary & {
   modules: ShowModule[];
+};
+
+export type ShowExportSummary = {
+  id: string;
+  export_type: string;
+  status: string;
+  file_path: string;
+  created_at: string;
+  completed_at: string | null;
 };
 
 const createShowSchema = z.object({
@@ -234,7 +245,7 @@ export async function getShowsForDashboard() {
     const client = getSupabaseWriteClient();
     const { data: shows } = await client
       .from("shows")
-      .select("id, title, slug, status, start_date, end_date, venue, program_id")
+      .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at")
       .order("created_at", { ascending: false });
 
     const { data: programs } = await client.from("programs").select("id, slug");
@@ -269,7 +280,9 @@ export async function getShowsForDashboard() {
         venue: String(show.venue ?? ""),
         submission_total: sub.total,
         submission_submitted: sub.submitted,
-        program_slug: programSlugById.get(programId) ?? String(show.slug)
+        program_slug: programSlugById.get(programId) ?? String(show.slug),
+        is_published: Boolean(show.is_published),
+        published_at: show.published_at ? String(show.published_at) : null
       };
     }) as ShowSummary[];
   } catch {
@@ -287,7 +300,7 @@ export async function getShowById(showId: string) {
     const client = getSupabaseWriteClient();
     const { data: show, error } = await client
       .from("shows")
-      .select("id, title, slug, status, start_date, end_date, venue, program_id")
+      .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at")
       .eq("id", showId)
       .single();
 
@@ -318,6 +331,8 @@ export async function getShowById(showId: string) {
       submission_total: total,
       submission_submitted: submitted,
       program_slug: program?.slug ? String(program.slug) : String(show.slug),
+      is_published: Boolean(show.is_published),
+      published_at: show.published_at ? String(show.published_at) : null,
       modules: (modules ?? []).map((mod) => ({
         id: String(mod.id),
         module_type: String(mod.module_type),
@@ -501,4 +516,151 @@ export async function deleteArchivedShow(showId: string, formData: FormData) {
   }
 
   redirect(`/app/shows?success=${encodeURIComponent("Show deleted permanently.")}`);
+}
+
+export async function getShowExports(showId: string) {
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    return [] as ShowExportSummary[];
+  }
+
+  try {
+    const client = getSupabaseWriteClient();
+    const { data } = await client
+      .from("exports")
+      .select("id, export_type, status, file_path, created_at, completed_at")
+      .eq("show_id", showId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    return (data ?? []).map((row) => ({
+      id: String(row.id),
+      export_type: String(row.export_type ?? ""),
+      status: String(row.status ?? ""),
+      file_path: String(row.file_path ?? ""),
+      created_at: String(row.created_at ?? ""),
+      completed_at: row.completed_at ? String(row.completed_at) : null
+    })) as ShowExportSummary[];
+  } catch {
+    return [] as ShowExportSummary[];
+  }
+}
+
+async function getShowAndProgram(showId: string) {
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id, slug, program_id")
+    .eq("id", showId)
+    .single();
+  if (showError || !show?.program_id) {
+    return null;
+  }
+
+  const { data: program, error: programError } = await client
+    .from("programs")
+    .select("id, slug")
+    .eq("id", show.program_id)
+    .single();
+  if (programError || !program) {
+    return null;
+  }
+
+  return {
+    show_id: String(show.id),
+    show_slug: String(show.slug ?? ""),
+    program_id: String(program.id),
+    program_slug: String(program.slug ?? "")
+  };
+}
+
+export async function requestShowExport(showId: string, formData: FormData) {
+  "use server";
+
+  const current = await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=export`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const exportType = String(formData.get("exportType") ?? "proof");
+  if (!["proof", "print"].includes(exportType)) {
+    withError(`/app/shows/${showId}?tab=export`, "Invalid export type.");
+  }
+
+  const context = await getShowAndProgram(showId);
+  if (!context) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: created, error: createError } = await client
+    .from("exports")
+    .insert({
+      show_id: showId,
+      export_type: exportType,
+      status: "running",
+      params: {},
+      file_path: "",
+      created_by: current.user.id
+    })
+    .select("id")
+    .single();
+
+  if (createError || !created) {
+    withError(`/app/shows/${showId}?tab=export`, createError?.message ?? "Could not start export.");
+  }
+
+  const filePath =
+    exportType === "proof"
+      ? `/programs/${context.program_slug}`
+      : `/programs/${context.program_slug}?view=booklet`;
+
+  const { error: completeError } = await client
+    .from("exports")
+    .update({
+      status: "done",
+      file_path: filePath,
+      completed_at: new Date().toISOString()
+    })
+    .eq("id", created.id);
+
+  if (completeError) {
+    withError(`/app/shows/${showId}?tab=export`, completeError.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=export&success=${encodeURIComponent(`${exportType} export generated.`)}`);
+}
+
+export async function setShowPublished(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=publish`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const intent = String(formData.get("intent") ?? "publish");
+  const shouldPublish = intent === "publish";
+
+  const client = getSupabaseWriteClient();
+  const { error } = await client
+    .from("shows")
+    .update({
+      is_published: shouldPublish,
+      published_at: shouldPublish ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", showId);
+
+  if (error) {
+    withError(`/app/shows/${showId}?tab=publish`, error.message);
+  }
+
+  redirect(
+    `/app/shows/${showId}?tab=publish&success=${encodeURIComponent(
+      shouldPublish ? "Show published." : "Show unpublished."
+    )}`
+  );
 }

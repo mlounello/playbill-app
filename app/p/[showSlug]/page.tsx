@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProgramBySlug } from "@/lib/programs";
+import { getSupabaseReadClient } from "@/lib/supabase";
 
 export default async function PublicProgramPage({
   params,
@@ -11,7 +12,21 @@ export default async function PublicProgramPage({
 }) {
   const { showSlug } = await params;
   const { view } = await searchParams;
-  const program = await getProgramBySlug(showSlug);
+  const client = getSupabaseReadClient();
+  const { data: show } = await client
+    .from("shows")
+    .select("program_id, slug, is_published")
+    .eq("slug", showSlug)
+    .eq("is_published", true)
+    .maybeSingle();
+
+  if (!show?.program_id) {
+    notFound();
+  }
+
+  const { data: programRow } = await client.from("programs").select("slug").eq("id", show.program_id).maybeSingle();
+  const programSlug = String(programRow?.slug ?? "");
+  const program = programSlug ? await getProgramBySlug(programSlug) : null;
 
   if (!program) {
     notFound();

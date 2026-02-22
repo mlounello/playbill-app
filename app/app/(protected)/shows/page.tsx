@@ -43,7 +43,11 @@ export default async function AdminShowsPage({
                   {show.venue ? ` • ${show.venue}` : ""}
                 </div>
                 <div>
-                  Status: <span className="status-pill">{show.status}</span> • Submissions: {show.submission_submitted}/{show.submission_total}
+                  Status: <span className="status-pill">{show.status}</span>
+                  {" • "}
+                  Visibility: <span className="status-pill">{show.is_published ? "published" : "private"}</span>
+                  {" • "}
+                  Submissions: {show.submission_submitted}/{show.submission_total}
                 </div>
                 <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
                   <Link href={`/app/shows/${show.id}`}>Open Workspace</Link>

@@ -4,9 +4,12 @@ import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import {
   archiveShow,
   deleteArchivedShow,
+  getShowExports,
   getProgramTokensFromShowModules,
   getShowById,
+  requestShowExport,
   restoreArchivedShow,
+  setShowPublished,
   updateShowModules
 } from "@/lib/shows";
 import { addPeopleToShow, adminQuickStatus, adminReturnSubmission, getShowSubmissionPeople } from "@/lib/submissions";
@@ -55,7 +58,11 @@ export default async function ShowWorkspacePage({
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
+  const requestExportAction = requestShowExport.bind(null, show.id);
+  const setPublishAction = setShowPublished.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
+  const exportRows = activeTab === "export" ? await getShowExports(show.id) : [];
+  const publicUrl = show.slug ? `/p/${show.slug}` : "";
   const activeSubmissionFilter = submissionFilter || "all";
   const activeSubmissionQuery = (submissionQuery || "").trim().toLowerCase();
   const activeSubmissionSort = submissionSort || "name_asc";
@@ -406,6 +413,73 @@ export default async function ShowWorkspacePage({
             </section>
           ) : null}
 
+          {activeTab === "export" ? (
+            <section className="grid" style={{ gap: "0.75rem" }}>
+              <article className="card grid" style={{ gap: "0.6rem" }}>
+                <strong>Generate Exports</strong>
+                <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+                  <form action={requestExportAction}>
+                    <input type="hidden" name="exportType" value="proof" />
+                    <button type="submit">Generate Proof Export</button>
+                  </form>
+                  <form action={requestExportAction}>
+                    <input type="hidden" name="exportType" value="print" />
+                    <button type="submit">Generate Print Export</button>
+                  </form>
+                </div>
+                <div style={{ fontSize: "0.88rem", opacity: 0.9 }}>
+                  Print export assumes duplex short-edge booklet workflow and links to the imposition view.
+                </div>
+              </article>
+
+              <article className="card grid" style={{ gap: "0.6rem" }}>
+                <strong>Export History</strong>
+                {exportRows.length === 0 ? (
+                  <div>No exports yet.</div>
+                ) : (
+                  exportRows.map((row) => (
+                    <div key={row.id} style={{ border: "1px solid #e5e5e5", borderRadius: "8px", padding: "0.55rem" }}>
+                      <div>
+                        <strong>{row.export_type}</strong> • <span className="status-pill">{row.status}</span>
+                      </div>
+                      <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+                        Created: {new Date(row.created_at).toLocaleString("en-US")}
+                        {row.completed_at ? ` • Completed: ${new Date(row.completed_at).toLocaleString("en-US")}` : ""}
+                      </div>
+                      {row.file_path ? <Link href={row.file_path}>Open Export</Link> : null}
+                    </div>
+                  ))
+                )}
+              </article>
+            </section>
+          ) : null}
+
+          {activeTab === "publish" ? (
+            <section className="grid" style={{ gap: "0.75rem" }}>
+              <article className="card grid" style={{ gap: "0.6rem" }}>
+                <strong>Public Program</strong>
+                <div>
+                  Publish status: <span className="status-pill">{show.is_published ? "published" : "unpublished"}</span>
+                </div>
+                {show.published_at ? (
+                  <div style={{ fontSize: "0.88rem", opacity: 0.85 }}>
+                    Published at: {new Date(show.published_at).toLocaleString("en-US")}
+                  </div>
+                ) : null}
+                <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+                  <form action={setPublishAction}>
+                    <input type="hidden" name="intent" value={show.is_published ? "unpublish" : "publish"} />
+                    <button type="submit">{show.is_published ? "Unpublish" : "Publish"}</button>
+                  </form>
+                  {show.is_published ? <Link href={publicUrl}>Open Public URL</Link> : null}
+                </div>
+                <div style={{ fontSize: "0.88rem", opacity: 0.9 }}>
+                  Public URL: <code>{publicUrl || "/p/{showSlug}"}</code>
+                </div>
+              </article>
+            </section>
+          ) : null}
+
           {activeTab === "settings" ? (
             <section className="grid" style={{ gap: "0.75rem" }}>
               <article className="card grid" style={{ gap: "0.6rem" }}>
@@ -461,7 +535,7 @@ export default async function ShowWorkspacePage({
             </section>
           ) : null}
 
-          {!["overview", "program-plan", "preview", "people-roles", "submissions", "settings"].includes(activeTab) ? (
+          {!["overview", "program-plan", "preview", "people-roles", "submissions", "export", "publish", "settings"].includes(activeTab) ? (
             <section className="card">
               <strong>{tabs.find((item) => item.id === activeTab)?.label ?? "Tab"}</strong>
               <div style={{ marginTop: "0.5rem" }}>This tab is queued for the next milestone implementation.</div>
