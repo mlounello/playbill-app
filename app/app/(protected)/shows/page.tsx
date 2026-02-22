@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { getShowsForDashboard } from "@/lib/shows";
 
-export default async function AdminShowsPage() {
+export default async function AdminShowsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string; success?: string }>;
+}) {
+  const { error, success } = await searchParams;
   const shows = await getShowsForDashboard();
 
   return (
@@ -13,6 +18,17 @@ export default async function AdminShowsPage() {
             Create Show
           </Link>
         </div>
+
+        {error ? (
+          <section className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+            {error}
+          </section>
+        ) : null}
+        {success ? (
+          <section className="card" style={{ borderColor: "#006b54", color: "#055a47" }}>
+            {success}
+          </section>
+        ) : null}
 
         {shows.length === 0 ? (
           <section className="card">No shows yet.</section>

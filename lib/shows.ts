@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { requireRole } from "@/lib/auth";
 import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 export type ShowSummary = {
@@ -388,4 +389,116 @@ export async function updateShowModules(showId: string, formData: FormData) {
   }
 
   redirect(`/app/shows/${showId}?tab=program-plan`);
+}
+
+export async function archiveShow(showId: string) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client.from("shows").select("id").eq("id", showId).single();
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  const { error: updateError } = await client
+    .from("shows")
+    .update({
+      status: "archived",
+      is_published: false,
+      published_at: null,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", showId);
+
+  if (updateError) {
+    withError(`/app/shows/${showId}?tab=settings`, updateError.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Show archived. Delete is now enabled.")}`);
+}
+
+export async function restoreArchivedShow(showId: string) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client.from("shows").select("id").eq("id", showId).single();
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  const { error: updateError } = await client
+    .from("shows")
+    .update({
+      status: "draft",
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", showId);
+
+  if (updateError) {
+    withError(`/app/shows/${showId}?tab=settings`, updateError.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Show restored to draft status.")}`);
+}
+
+export async function deleteArchivedShow(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id, slug, status, program_id")
+    .eq("id", showId)
+    .single();
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  if (String(show.status ?? "") !== "archived") {
+    withError(`/app/shows/${showId}?tab=settings`, "Archive the show before deleting it.");
+  }
+
+  const expectedPhrase = `DELETE ${String(show.slug)}`;
+  const confirmation = String(formData.get("confirmation") ?? "").trim();
+  if (confirmation !== expectedPhrase) {
+    withError(
+      `/app/shows/${showId}?tab=settings`,
+      `Confirmation phrase mismatch. Type exactly: ${expectedPhrase}`
+    );
+  }
+
+  if (show.program_id) {
+    const { error: programDeleteError } = await client.from("programs").delete().eq("id", show.program_id);
+    if (programDeleteError) {
+      withError(`/app/shows/${showId}?tab=settings`, `Could not remove program data: ${programDeleteError.message}`);
+    }
+  }
+
+  const { error: showDeleteError } = await client.from("shows").delete().eq("id", showId);
+  if (showDeleteError) {
+    withError(`/app/shows/${showId}?tab=settings`, showDeleteError.message);
+  }
+
+  redirect(`/app/shows?success=${encodeURIComponent("Show deleted permanently.")}`);
 }

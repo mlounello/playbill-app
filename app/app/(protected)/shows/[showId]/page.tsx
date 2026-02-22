@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
-import { getProgramTokensFromShowModules, getShowById, updateShowModules } from "@/lib/shows";
+import {
+  archiveShow,
+  deleteArchivedShow,
+  getProgramTokensFromShowModules,
+  getShowById,
+  restoreArchivedShow,
+  updateShowModules
+} from "@/lib/shows";
 import { addPeopleToShow, adminQuickStatus, getShowSubmissionPeople } from "@/lib/submissions";
 
 const tabs = [
@@ -20,10 +27,10 @@ export default async function ShowWorkspacePage({
   searchParams
 }: {
   params: Promise<{ showId: string }>;
-  searchParams: Promise<{ tab?: string; error?: string }>;
+  searchParams: Promise<{ tab?: string; error?: string; success?: string }>;
 }) {
   const { showId } = await params;
-  const { tab, error } = await searchParams;
+  const { tab, error, success } = await searchParams;
   const show = await getShowById(showId);
   const activeTab = tab || "overview";
 
@@ -35,6 +42,10 @@ export default async function ShowWorkspacePage({
   const mappedTokens = getProgramTokensFromShowModules(show.modules);
   const people = activeTab === "people-roles" || activeTab === "submissions" ? await getShowSubmissionPeople(show.id) : [];
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
+  const archiveShowAction = archiveShow.bind(null, show.id);
+  const restoreShowAction = restoreArchivedShow.bind(null, show.id);
+  const deleteShowAction = deleteArchivedShow.bind(null, show.id);
+  const deletePhrase = `DELETE ${show.slug}`;
 
   return (
     <main>
@@ -57,6 +68,11 @@ export default async function ShowWorkspacePage({
           {error ? (
             <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
               {error}
+            </div>
+          ) : null}
+          {success ? (
+            <div className="card" style={{ borderColor: "#006b54", color: "#055a47" }}>
+              {success}
             </div>
           ) : null}
 
@@ -230,7 +246,62 @@ export default async function ShowWorkspacePage({
             </section>
           ) : null}
 
-          {!["overview", "program-plan", "preview", "people-roles", "submissions"].includes(activeTab) ? (
+          {activeTab === "settings" ? (
+            <section className="grid" style={{ gap: "0.75rem" }}>
+              <article className="card grid" style={{ gap: "0.6rem" }}>
+                <strong>Lifecycle Controls</strong>
+                <div>
+                  Current status: <span className="status-pill">{show.status}</span>
+                </div>
+                {show.status !== "archived" ? (
+                  <form action={archiveShowAction} className="grid" style={{ gap: "0.5rem" }}>
+                    <p style={{ margin: 0 }}>
+                      Archive this show first to disable active editing and unlock permanent deletion controls.
+                    </p>
+                    <button type="submit">Archive Show</button>
+                  </form>
+                ) : (
+                  <form action={restoreShowAction} className="grid" style={{ gap: "0.5rem" }}>
+                    <p style={{ margin: 0 }}>
+                      This show is archived. You can restore it to draft if deletion was accidental.
+                    </p>
+                    <button type="submit">Restore to Draft</button>
+                  </form>
+                )}
+              </article>
+
+              <article className="card grid" style={{ gap: "0.6rem", borderColor: "#b12727" }}>
+                <strong style={{ color: "#8f1f1f" }}>Danger Zone: Permanent Delete</strong>
+                <p style={{ margin: 0 }}>
+                  Deletion is permanent and removes the show, linked program data, people, roles, and submissions.
+                </p>
+                <p style={{ margin: 0 }}>
+                  Required phrase: <code>{deletePhrase}</code>
+                </p>
+                <form action={deleteShowAction} className="grid" style={{ gap: "0.5rem" }}>
+                  <label>
+                    Type confirmation phrase
+                    <input
+                      name="confirmation"
+                      placeholder={deletePhrase}
+                      required
+                      disabled={show.status !== "archived"}
+                    />
+                  </label>
+                  <button type="submit" disabled={show.status !== "archived"}>
+                    Delete Permanently
+                  </button>
+                </form>
+                {show.status !== "archived" ? (
+                  <div style={{ fontSize: "0.88rem", color: "#8f1f1f" }}>
+                    Archive is required before deletion.
+                  </div>
+                ) : null}
+              </article>
+            </section>
+          ) : null}
+
+          {!["overview", "program-plan", "preview", "people-roles", "submissions", "settings"].includes(activeTab) ? (
             <section className="card">
               <strong>{tabs.find((item) => item.id === activeTab)?.label ?? "Tab"}</strong>
               <div style={{ marginTop: "0.5rem" }}>This tab is queued for the next milestone implementation.</div>
