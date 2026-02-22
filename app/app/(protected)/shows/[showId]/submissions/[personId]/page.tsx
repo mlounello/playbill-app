@@ -3,6 +3,21 @@ import { notFound } from "next/navigation";
 import { RichTextField } from "@/components/rich-text-field";
 import { BIO_CHAR_LIMIT_DEFAULT, adminSaveSubmission, getShowSubmissionByPerson } from "@/lib/submissions";
 
+function formatAuditValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return value.length > 240 ? `${value.slice(0, 240)}...` : value;
+  }
+  try {
+    const text = JSON.stringify(value);
+    return text.length > 240 ? `${text.slice(0, 240)}...` : text;
+  } catch {
+    return String(value);
+  }
+}
+
 export default async function ShowSubmissionReviewPage({
   params,
   searchParams
@@ -85,6 +100,14 @@ export default async function ShowSubmissionReviewPage({
                   <strong>{entry.field}</strong> • {new Date(entry.changed_at).toLocaleString("en-US")}
                 </div>
                 <div style={{ fontSize: "0.88rem" }}>Reason: {entry.reason || "n/a"}</div>
+                <div style={{ fontSize: "0.82rem", marginTop: "0.35rem", display: "grid", gap: "0.25rem" }}>
+                  <div>
+                    <strong>Before:</strong> {formatAuditValue(entry.before_value)}
+                  </div>
+                  <div>
+                    <strong>After:</strong> {formatAuditValue(entry.after_value)}
+                  </div>
+                </div>
               </div>
             ))
           )}

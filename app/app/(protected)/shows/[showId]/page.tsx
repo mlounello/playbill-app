@@ -27,10 +27,10 @@ export default async function ShowWorkspacePage({
   searchParams
 }: {
   params: Promise<{ showId: string }>;
-  searchParams: Promise<{ tab?: string; error?: string; success?: string }>;
+  searchParams: Promise<{ tab?: string; error?: string; success?: string; submissionFilter?: string }>;
 }) {
   const { showId } = await params;
-  const { tab, error, success } = await searchParams;
+  const { tab, error, success, submissionFilter } = await searchParams;
   const show = await getShowById(showId);
   const activeTab = tab || "overview";
 
@@ -46,6 +46,15 @@ export default async function ShowWorkspacePage({
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
+  const activeSubmissionFilter = submissionFilter || "all";
+  const filteredSubmissions =
+    activeTab === "submissions"
+      ? people.filter((person) => {
+          if (activeSubmissionFilter === "all") return true;
+          if (activeSubmissionFilter === "needs_review") return person.submission_status === "submitted";
+          return person.submission_status === activeSubmissionFilter;
+        })
+      : [];
 
   return (
     <main>
@@ -194,13 +203,32 @@ export default async function ShowWorkspacePage({
                   {people.filter((person) => person.submission_status === "submitted" || person.submission_status === "approved" || person.submission_status === "locked").length}
                   /{people.length} submitted or better
                 </div>
+                <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+                  {[
+                    ["all", "All"],
+                    ["pending", "Pending"],
+                    ["needs_review", "Needs Review"],
+                    ["returned", "Returned"],
+                    ["approved", "Approved"],
+                    ["locked", "Locked"]
+                  ].map(([value, label]) => (
+                    <Link
+                      key={value}
+                      href={`/app/shows/${show.id}?tab=submissions&submissionFilter=${value}`}
+                      className="tab-chip"
+                      style={activeSubmissionFilter === value ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
+                    >
+                      {label}
+                    </Link>
+                  ))}
+                </div>
               </article>
 
               <article className="card grid">
-                {people.length === 0 ? (
+                {filteredSubmissions.length === 0 ? (
                   <div>No submissions yet. Add people in People and Roles first.</div>
                 ) : (
-                  people.map((person) => {
+                  filteredSubmissions.map((person) => {
                     const approveAction = adminQuickStatus.bind(null, show.id, person.id, "approved");
                     const returnAction = adminQuickStatus.bind(null, show.id, person.id, "returned");
                     const lockAction = adminQuickStatus.bind(null, show.id, person.id, "locked");

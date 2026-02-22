@@ -45,6 +45,16 @@ export default async function ContributorTaskPage({
           </div>
         ) : null}
         {saved ? <div className="card" style={{ borderColor: "#006b54" }}>Saved successfully.</div> : null}
+        {task.person.submission_status === "returned" ? (
+          <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+            <strong>Returned for edits.</strong>
+            <div>
+              {task.return_message?.reason
+                ? task.return_message.reason
+                : "A reviewer requested updates before approval."}
+            </div>
+          </div>
+        ) : null}
 
         <form action={saveAction} className="card grid" style={{ gap: "0.8rem" }}>
           <RichTextField

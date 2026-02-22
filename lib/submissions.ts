@@ -386,6 +386,22 @@ export async function getContributorTaskById(showId: string, personId: string) {
     return null;
   }
 
+  const { data: statusAudit } = await client
+    .from("audit_log")
+    .select("reason, changed_at, after_value")
+    .eq("entity", "people")
+    .eq("entity_id", personId)
+    .eq("field", "submission_status")
+    .order("changed_at", { ascending: false })
+    .limit(10);
+
+  const latestReturn = (statusAudit ?? []).find((row) => {
+    if (typeof row.after_value === "string") {
+      return row.after_value === "returned";
+    }
+    return row.after_value === "returned";
+  });
+
   return {
     show_id: context.show_id,
     show_title: context.show_title,
@@ -402,7 +418,13 @@ export async function getContributorTaskById(showId: string, personId: string) {
       submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(String(person.bio ?? "")).length
-    } satisfies ShowSubmissionPerson
+    } satisfies ShowSubmissionPerson,
+    return_message: latestReturn
+      ? {
+          reason: String(latestReturn.reason ?? "").trim(),
+          changed_at: String(latestReturn.changed_at ?? "")
+        }
+      : null
   };
 }
 
