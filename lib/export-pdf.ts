@@ -174,18 +174,16 @@ export async function renderProgramPdfWithPlaywright(params: {
       params.exportType === "print"
         ? {
             printBackground: true,
-            preferCSSPageSize: false,
+            preferCSSPageSize: true,
             landscape: true,
-            width: "11in",
-            height: "8.5in",
-            margin: { top: "0.2in", right: "0.2in", bottom: "0.2in", left: "0.2in" }
+            margin: { top: "0in", right: "0in", bottom: "0in", left: "0in" },
+            scale: 1
           }
         : {
             printBackground: true,
-            preferCSSPageSize: false,
-            width: "5.5in",
-            height: "8.5in",
-            margin: { top: "0.2in", right: "0.2in", bottom: "0.2in", left: "0.2in" }
+            preferCSSPageSize: true,
+            margin: { top: "0in", right: "0in", bottom: "0in", left: "0in" },
+            scale: 1
           }
     );
 
