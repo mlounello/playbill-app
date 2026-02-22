@@ -13,6 +13,12 @@ import {
   updateShowModules
 } from "@/lib/shows";
 import { addPeopleToShow, adminQuickStatus, adminReturnSubmission, getShowSubmissionPeople } from "@/lib/submissions";
+import {
+  getShowReminderSummary,
+  sendShowInvites,
+  sendShowRemindersNow,
+  setShowDueDate
+} from "@/lib/reminders";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -60,6 +66,9 @@ export default async function ShowWorkspacePage({
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
   const requestExportAction = requestShowExport.bind(null, show.id);
   const setPublishAction = setShowPublished.bind(null, show.id);
+  const setDueDateAction = setShowDueDate.bind(null, show.id);
+  const sendInvitesAction = sendShowInvites.bind(null, show.id);
+  const sendRemindersAction = sendShowRemindersNow.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
   const exportRows = activeTab === "export" ? await getShowExports(show.id) : [];
   const publicUrl = show.slug ? `/p/${show.slug}` : "";
@@ -115,6 +124,7 @@ export default async function ShowWorkspacePage({
           overLimit: 0,
           needsReview: 0
         };
+  const reminderSummary = activeTab === "overview" ? await getShowReminderSummary(show.id) : { missing: 0, overdue: 0, dueSoon: 0 };
   const blockerItems = [
     {
       key: "bio_missing",
@@ -178,11 +188,31 @@ export default async function ShowWorkspacePage({
               <article className="card grid">
                 <div>Status: <span className="status-pill">{show.status}</span></div>
                 <div>Submissions complete: {show.submission_submitted}/{show.submission_total}</div>
+                <div>Outstanding submissions: {reminderSummary.missing}</div>
+                <div>Overdue submissions: {reminderSummary.overdue}</div>
+                <div>Due within 7 days: {reminderSummary.dueSoon}</div>
                 <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Preview</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition View</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
+                </div>
+                <div style={{ display: "grid", gap: "0.55rem", marginTop: "0.2rem" }}>
+                  <form action={setDueDateAction} style={{ display: "flex", gap: "0.55rem", alignItems: "center", flexWrap: "wrap" }}>
+                    <label>
+                      Global bio due date
+                      <input type="date" name="dueDate" required />
+                    </label>
+                    <button type="submit">Set Due Date</button>
+                  </form>
+                  <div style={{ display: "flex", gap: "0.55rem", flexWrap: "wrap" }}>
+                    <form action={sendInvitesAction}>
+                      <button type="submit">Send Invites</button>
+                    </form>
+                    <form action={sendRemindersAction}>
+                      <button type="submit">Send Reminders Now</button>
+                    </form>
+                  </div>
                 </div>
               </article>
 

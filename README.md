@@ -134,6 +134,14 @@ In Supabase Dashboard:
   - char-limit enforcement and status transitions
 - Audit entries are written to `audit_log` when submissions are edited/status-changed.
 
+## Milestone 6 reminder env vars (optional but recommended)
+
+- `RESEND_API_KEY`
+- `REMINDER_FROM_EMAIL` (e.g. `Siena Theatre <noreply@yourdomain.com>`)
+- `CRON_SECRET` (used by `/api/cron/reminders`)
+
+If these are missing, reminder/invite actions still run but are recorded as non-delivered in audit logs.
+
 ## Platform roadmap
 
 - See `/Users/mikelounello/playbill-app/docs/IMPLEMENTATION_PLAN.md`
