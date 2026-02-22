@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import { getProgramTokensFromShowModules, getShowById, updateShowModules } from "@/lib/shows";
+import { addPeopleToShow, adminQuickStatus, getShowSubmissionPeople } from "@/lib/submissions";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -32,6 +33,8 @@ export default async function ShowWorkspacePage({
 
   const savePlanAction = updateShowModules.bind(null, show.id);
   const mappedTokens = getProgramTokensFromShowModules(show.modules);
+  const people = activeTab === "people-roles" || activeTab === "submissions" ? await getShowSubmissionPeople(show.id) : [];
+  const addPeopleAction = addPeopleToShow.bind(null, show.id);
 
   return (
     <main>
@@ -111,7 +114,123 @@ export default async function ShowWorkspacePage({
             </section>
           ) : null}
 
-          {!["overview", "program-plan", "preview"].includes(activeTab) ? (
+          {activeTab === "people-roles" ? (
+            <section className="grid" style={{ gap: "0.75rem" }}>
+              <article className="card grid">
+                <strong>Add Person</strong>
+                <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
+                  <input type="hidden" name="mode" value="manual" />
+                  <label>
+                    Full name
+                    <input name="fullName" required placeholder="First Last" />
+                  </label>
+                  <label>
+                    Role title
+                    <input name="roleTitle" required placeholder="Stage Manager" />
+                  </label>
+                  <label>
+                    Category
+                    <select name="teamType" defaultValue="production">
+                      <option value="cast">Cast</option>
+                      <option value="production">Production</option>
+                    </select>
+                  </label>
+                  <label>
+                    Email
+                    <input name="email" type="email" required placeholder="name@example.com" />
+                  </label>
+                  <button type="submit">Add Person</button>
+                </form>
+              </article>
+
+              <article className="card grid">
+                <strong>Bulk Import</strong>
+                <p style={{ margin: 0, fontSize: "0.92rem" }}>Format each line: <code>Name | Role | cast|production | email</code></p>
+                <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
+                  <input type="hidden" name="mode" value="bulk" />
+                  <textarea name="bulkLines" className="rich-textarea" placeholder={"Name | Role | cast | email@example.com"} />
+                  <button type="submit">Import People</button>
+                </form>
+              </article>
+
+              <article className="card grid">
+                <strong>Current People ({people.length})</strong>
+                {people.length === 0 ? (
+                  <div>No people yet.</div>
+                ) : (
+                  <div className="grid" style={{ gap: "0.45rem" }}>
+                    {people.map((person, index) => (
+                      <div key={person.id}>
+                        {index + 1}. {person.full_name} - {person.role_title} ({person.team_type}) • {person.email}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </article>
+            </section>
+          ) : null}
+
+          {activeTab === "submissions" ? (
+            <section className="grid" style={{ gap: "0.75rem" }}>
+              <article className="card grid">
+                <strong>Submission Tasks</strong>
+                <div>
+                  {people.filter((person) => person.submission_status === "submitted" || person.submission_status === "approved" || person.submission_status === "locked").length}
+                  /{people.length} submitted or better
+                </div>
+              </article>
+
+              <article className="card grid">
+                {people.length === 0 ? (
+                  <div>No submissions yet. Add people in People and Roles first.</div>
+                ) : (
+                  people.map((person) => {
+                    const approveAction = adminQuickStatus.bind(null, show.id, person.id, "approved");
+                    const returnAction = adminQuickStatus.bind(null, show.id, person.id, "returned");
+                    const lockAction = adminQuickStatus.bind(null, show.id, person.id, "locked");
+                    return (
+                      <div
+                        key={person.id}
+                        style={{
+                          border: "1px solid #e5e5e5",
+                          borderRadius: "10px",
+                          padding: "0.75rem",
+                          display: "grid",
+                          gap: "0.5rem"
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
+                          <div>
+                            <strong>{person.full_name}</strong> - {person.role_title}
+                            <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+                              {person.team_type} • {person.email}
+                            </div>
+                          </div>
+                          <div>
+                            Status: <span className="status-pill">{person.submission_status}</span> • {person.bio_char_count} chars
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: "0.55rem", flexWrap: "wrap" }}>
+                          <Link href={`/app/shows/${show.id}/submissions/${person.id}`}>Open Review</Link>
+                          <form action={approveAction}>
+                            <button type="submit">Approve</button>
+                          </form>
+                          <form action={returnAction}>
+                            <button type="submit">Return</button>
+                          </form>
+                          <form action={lockAction}>
+                            <button type="submit">Lock</button>
+                          </form>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </article>
+            </section>
+          ) : null}
+
+          {!["overview", "program-plan", "preview", "people-roles", "submissions"].includes(activeTab) ? (
             <section className="card">
               <strong>{tabs.find((item) => item.id === activeTab)?.label ?? "Tab"}</strong>
               <div style={{ marginTop: "0.5rem" }}>This tab is queued for the next milestone implementation.</div>

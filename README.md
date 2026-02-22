@@ -82,7 +82,7 @@ In Supabase Dashboard:
   - `program_modules`
   - linked base `programs` record for current editor/viewer compatibility
 
-## Milestone 2 (in progress) implemented pieces
+## Milestone 2 implemented
 
 - Program Plan tab in show workspace:
   - `/app/shows/{showId}?tab=program-plan`
@@ -117,6 +117,22 @@ In Supabase Dashboard:
 - Direct Google Forms integration (webhook/Sheets sync)
 - Photo uploads via Supabase Storage (instead of URLs)
 - Program versioning + approval workflow
+
+## Milestone 3 implemented (foundation)
+
+- `/app/shows/{showId}?tab=people-roles`
+  - manual person add
+  - bulk person import (`Name | Role | cast|production | email`)
+  - auto-creates `show_roles` + `submission_requests` records
+- `/app/shows/{showId}?tab=submissions`
+  - task list + quick actions (`approve`, `return`, `lock`)
+  - opens detailed review at `/app/shows/{showId}/submissions/{personId}`
+- `/contribute`
+  - contributor task dashboard filtered by signed-in email
+- `/contribute/shows/{showId}/tasks/{personId}`
+  - contributor draft/save + submit flow
+  - char-limit enforcement and status transitions
+- Audit entries are written to `audit_log` when submissions are edited/status-changed.
 
 ## Platform roadmap
 
