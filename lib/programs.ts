@@ -704,6 +704,14 @@ function buildRenderablePagesFromModules(
         return;
       }
 
+      if (module.module_type === "acknowledgements") {
+        if (!hasAcknowledgements) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body: program.acknowledgements });
+        return;
+      }
+
       if (module.module_type === "back_cover") {
         const mode = getSettingString(module.settings, "mode") || "schedule";
         if (mode === "image") {

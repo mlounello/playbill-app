@@ -26,6 +26,7 @@ const moduleTypeLabels: Record<string, string> = {
   headshots_grid: "Headshots Grid",
   production_photos: "Production Photos",
   sponsors: "Sponsors",
+  acknowledgements: "Acknowledgements",
   special_thanks: "Special Thanks",
   back_cover: "Back Cover",
   custom_text: "Custom Text Section",
@@ -45,6 +46,7 @@ const moduleTokenMap: Record<string, string[]> = {
   songs: ["acts_songs"],
   headshots_grid: ["production_photos"],
   sponsors: ["acknowledgements"],
+  acknowledgements: ["acknowledgements"],
   special_thanks: ["acknowledgements"],
   back_cover: ["season_calendar"],
   custom_text: [],
@@ -66,6 +68,7 @@ const addableModuleTypes = [
   "headshots_grid",
   "production_photos",
   "sponsors",
+  "acknowledgements",
   "special_thanks",
   "back_cover",
   "custom_text",
@@ -270,6 +273,9 @@ export function ProgramPlanEditor({
     ]);
   };
 
+  const isCustomModule = (moduleType: string) =>
+    moduleType === "custom_text" || moduleType === "custom_image" || moduleType === "custom_pages";
+
   return (
     <form action={onSubmitAction} className="card-list">
       <article className="card stack-sm">
@@ -346,6 +352,15 @@ export function ProgramPlanEditor({
               <button type="button" className="ghost-button" onClick={() => setItems((current) => moveItem(current, index, Math.min(current.length - 1, index + 1)))} disabled={index === items.length - 1}>
                 Move Down
               </button>
+              {isCustomModule(item.module_type) ? (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => setItems((current) => current.filter((_, i) => i !== index))}
+                >
+                  Remove Section
+                </button>
+              ) : null}
               <span className="meta-text">Drag to reorder</span>
             </div>
           </div>

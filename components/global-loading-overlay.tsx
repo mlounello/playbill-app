@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 export function GlobalLoadingOverlay() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [active, setActive] = useState(false);
   const [label, setLabel] = useState("Working...");
 
   useEffect(() => {
     setActive(false);
-  }, [pathname]);
+  }, [pathname, searchParams]);
 
   useEffect(() => {
     const onSubmit = (event: Event) => {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { GlobalLoadingOverlay } from "@/components/global-loading-overlay";
 import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
@@ -16,7 +17,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           Skip to content
         </a>
         <SiteHeader />
-        <GlobalLoadingOverlay />
+        <Suspense fallback={null}>
+          <GlobalLoadingOverlay />
+        </Suspense>
         <main id="main-content">{children}</main>
       </body>
     </html>

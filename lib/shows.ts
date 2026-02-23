@@ -72,6 +72,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   headshots_grid: ["production_photos"],
   production_photos: ["production_photos"],
   sponsors: ["acknowledgements"],
+  acknowledgements: ["acknowledgements"],
   special_thanks: ["acknowledgements"],
   back_cover: ["season_calendar"],
   custom_pages: ["custom_pages"],
@@ -408,7 +409,12 @@ export async function updateShowModules(showId: string, formData: FormData) {
     await client.from("programs").update({ layout_order: layoutTokens }).eq("id", show.program_id);
   }
 
-  redirect(`/app/shows/${showId}?tab=program-plan`);
+  const qp = new URLSearchParams({
+    tab: "program-plan",
+    success: "Program plan saved.",
+    savedAt: String(Date.now())
+  });
+  redirect(`/app/shows/${showId}?${qp.toString()}`);
 }
 
 export async function archiveShow(showId: string) {
