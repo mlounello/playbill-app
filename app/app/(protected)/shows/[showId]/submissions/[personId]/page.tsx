@@ -4,6 +4,7 @@ import { FlashToast } from "@/components/flash-toast";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
 import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, adminSaveSubmission, getShowSubmissionByPerson } from "@/lib/submissions";
+import { richTextHasContent } from "@/lib/rich-text";
 
 function formatAuditValue(value: unknown) {
   if (value === null || value === undefined) {
@@ -65,7 +66,9 @@ export default async function ShowSubmissionReviewPage({
   }
 
   const saveAction = adminSaveSubmission.bind(null, showId, personId);
-  const hasNoBio = review.person.bio.trim() === NO_BIO_PLACEHOLDER;
+  const hasNoBio =
+    review.person.bio.trim() === NO_BIO_PLACEHOLDER ||
+    (!richTextHasContent(review.person.bio) && ["submitted", "approved", "locked"].includes(review.person.submission_status));
 
   return (
     <main>

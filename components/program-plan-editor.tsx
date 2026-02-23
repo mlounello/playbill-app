@@ -277,6 +277,9 @@ export function ProgramPlanEditor({
         <p className="section-note">
           Reorder by drag-and-drop, or use Move Up/Move Down. Turn sections on or off with the Visible toggle.
         </p>
+        <p className="section-note">
+          Modules stay together as blocks. Use “Allow multiple pages” for sections that may need continuation pages.
+        </p>
         <div className="top-actions">
           <label>
             Add section type
@@ -365,6 +368,15 @@ export function ProgramPlanEditor({
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
               <input
                 type="checkbox"
+                checked={Boolean(item.settings.separate_page ?? true)}
+                onChange={(event) => update(index, "settings", { ...item.settings, separate_page: event.target.checked })}
+              />
+              Separate page
+            </label>
+
+            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
                 checked={item.filler_eligible}
                 onChange={(event) => update(index, "filler_eligible", event.target.checked)}
               />
@@ -374,21 +386,12 @@ export function ProgramPlanEditor({
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
               <input
                 type="checkbox"
-                checked={Boolean(item.settings.allow_split ?? true)}
-                onChange={(event) => update(index, "settings", { ...item.settings, allow_split: event.target.checked })}
-              />
-              Allow split across pages
-            </label>
-
-            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={Boolean(item.settings.prefer_keep_together ?? false)}
+                checked={Boolean(item.settings.allow_multiple_pages ?? (item.module_type === "bios" || item.module_type === "custom_pages"))}
                 onChange={(event) =>
-                  update(index, "settings", { ...item.settings, prefer_keep_together: event.target.checked })
+                  update(index, "settings", { ...item.settings, allow_multiple_pages: event.target.checked })
                 }
               />
-              Prefer keep together
+              Allow multiple pages
             </label>
           </div>
 

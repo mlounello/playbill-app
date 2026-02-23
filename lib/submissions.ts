@@ -1052,7 +1052,7 @@ async function updateSubmissionCore(args: {
   }
 
   const typedBio = sanitizeRichText(args.bio);
-  const cleanBio = args.skipBio ? NO_BIO_PLACEHOLDER : typedBio;
+  const cleanBio = args.skipBio ? "" : typedBio;
   const plainLength = stripRichTextToPlain(typedBio).length;
   if (!args.skipBio && (args.status === "submitted" || args.status === "approved" || args.status === "locked") && plainLength === 0) {
     return { ok: false as const, message: "Bio is required before submitting." };

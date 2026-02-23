@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
 import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, contributorSaveTask, getContributorTaskById } from "@/lib/submissions";
+import { richTextHasContent } from "@/lib/rich-text";
 
 export default async function ContributorTaskPage({
   params,
@@ -20,7 +21,9 @@ export default async function ContributorTaskPage({
 
   const saveAction = contributorSaveTask.bind(null, showId, personId);
   const isReadOnly = task.person.submission_status === "approved" || task.person.submission_status === "locked";
-  const hasNoBio = task.person.bio.trim() === NO_BIO_PLACEHOLDER;
+  const hasNoBio =
+    task.person.bio.trim() === NO_BIO_PLACEHOLDER ||
+    (!richTextHasContent(task.person.bio) && ["submitted", "approved", "locked"].includes(task.person.submission_status));
 
   return (
     <main>
