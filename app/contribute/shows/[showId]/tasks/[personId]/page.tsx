@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
 import { BIO_CHAR_LIMIT_DEFAULT, contributorSaveTask, getContributorTaskById } from "@/lib/submissions";
 
@@ -65,15 +66,12 @@ export default async function ContributorTaskPage({
             placeholder="Share your short bio."
           />
 
-          <label>
-            Headshot URL
-            <input
-              name="headshotUrl"
-              defaultValue={task.person.headshot_url}
-              placeholder="https://..."
-              readOnly={isReadOnly}
-            />
-          </label>
+          <HeadshotUploadField
+            showId={showId}
+            personId={personId}
+            initialUrl={task.person.headshot_url}
+            disabled={isReadOnly}
+          />
 
           {isReadOnly ? (
             <p style={{ margin: 0 }}>This task is read-only because it has been {task.person.submission_status}.</p>

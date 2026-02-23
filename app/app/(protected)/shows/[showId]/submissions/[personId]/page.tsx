@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
 import { BIO_CHAR_LIMIT_DEFAULT, adminSaveSubmission, getShowSubmissionByPerson } from "@/lib/submissions";
 
@@ -93,10 +94,11 @@ export default async function ShowSubmissionReviewPage({
         <form action={saveAction} className="card grid" style={{ gap: "0.8rem" }}>
           <RichTextField name="bio" label="Bio (admin editable)" required initialValue={review.person.bio} />
 
-          <label>
-            Headshot URL
-            <input name="headshotUrl" defaultValue={review.person.headshot_url} placeholder="https://..." />
-          </label>
+          <HeadshotUploadField
+            showId={showId}
+            personId={personId}
+            initialUrl={review.person.headshot_url}
+          />
 
           <label>
             Status
