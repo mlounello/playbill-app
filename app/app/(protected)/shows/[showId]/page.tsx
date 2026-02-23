@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PeopleBulkEditor } from "@/components/people-bulk-editor";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import {
   archiveShow,
@@ -17,6 +18,7 @@ import {
   adminQuickStatus,
   adminReturnSubmission,
   bulkEditPeopleField,
+  bulkEditSelectedPeople,
   getShowSubmissionPeople
 } from "@/lib/submissions";
 import {
@@ -68,6 +70,7 @@ export default async function ShowWorkspacePage({
       : [];
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
+  const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
@@ -397,20 +400,16 @@ export default async function ShowWorkspacePage({
                 </form>
               </article>
 
-              <article className="card grid">
-                <strong>Current People ({people.length})</strong>
-                {people.length === 0 ? (
-                  <div>No people yet.</div>
-                ) : (
-                  <div className="grid" style={{ gap: "0.45rem" }}>
-                    {people.map((person, index) => (
-                      <div key={person.id}>
-                        {index + 1}. {person.full_name} - {person.role_title} ({person.team_type}) • {person.email}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </article>
+              <PeopleBulkEditor
+                people={people.map((person) => ({
+                  id: person.id,
+                  full_name: person.full_name,
+                  role_title: person.role_title,
+                  team_type: person.team_type,
+                  email: person.email
+                }))}
+                onSubmitAction={bulkEditSelectedPeopleAction}
+              />
             </section>
           ) : null}
 

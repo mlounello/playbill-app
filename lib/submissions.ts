@@ -692,6 +692,133 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
   redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(noteParts.join(" "))}`);
 }
 
+export async function bulkEditSelectedPeople(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const selectedIds = formData
+    .getAll("selectedPersonIds")
+    .map((value) => String(value))
+    .filter(Boolean);
+  if (selectedIds.length === 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Select at least one person.");
+  }
+
+  const enableFullName = String(formData.get("enableFullName") ?? "") === "on";
+  const enableRoleTitle = String(formData.get("enableRoleTitle") ?? "") === "on";
+  const enableTeamType = String(formData.get("enableTeamType") ?? "") === "on";
+  const enableEmail = String(formData.get("enableEmail") ?? "") === "on";
+  const enabledCount = [enableFullName, enableRoleTitle, enableTeamType, enableEmail].filter(Boolean).length;
+  if (enabledCount === 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Enable at least one field to update.");
+  }
+
+  const fullName = String(formData.get("fullName") ?? "").trim();
+  const roleTitle = String(formData.get("roleTitle") ?? "").trim();
+  const teamType = String(formData.get("teamType") ?? "").trim().toLowerCase();
+  const email = String(formData.get("email") ?? "").trim();
+
+  if (enableFullName && !fullName) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Full Name is required when enabled.");
+  }
+  if (enableRoleTitle && !roleTitle) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Role Title is required when enabled.");
+  }
+  if (enableTeamType && !["cast", "production"].includes(teamType)) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Category must be cast or production.");
+  }
+  if (enableEmail && !z.string().email().safeParse(email).success) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Email must be valid when enabled.");
+  }
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: peopleRows } = await client
+    .from("people")
+    .select("id, full_name, role_title, team_type, email")
+    .eq("program_id", context.program_id)
+    .in("id", selectedIds);
+
+  const people = (peopleRows ?? []).map((row) => ({
+    id: String(row.id),
+    full_name: String(row.full_name ?? ""),
+    role_title: String(row.role_title ?? ""),
+    team_type: row.team_type === "cast" ? "cast" : "production",
+    email: String(row.email ?? "")
+  }));
+  if (people.length === 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "No selected people were found.");
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  let updatedRows = 0;
+  for (const person of people) {
+    const peopleUpdate: Record<string, string> = {};
+    const audits: Array<{ field: string; beforeValue: string; afterValue: string }> = [];
+
+    if (enableFullName && person.full_name !== fullName) {
+      peopleUpdate.full_name = fullName;
+      audits.push({ field: "full_name", beforeValue: person.full_name, afterValue: fullName });
+    }
+    if (enableRoleTitle && person.role_title !== roleTitle) {
+      peopleUpdate.role_title = roleTitle;
+      audits.push({ field: "role_title", beforeValue: person.role_title, afterValue: roleTitle });
+    }
+    if (enableTeamType && person.team_type !== teamType) {
+      peopleUpdate.team_type = teamType;
+      audits.push({ field: "team_type", beforeValue: person.team_type, afterValue: teamType });
+    }
+    if (enableEmail && normalizeEmail(person.email) !== normalizedEmail) {
+      peopleUpdate.email = normalizedEmail;
+      audits.push({ field: "email", beforeValue: person.email, afterValue: normalizedEmail });
+    }
+
+    if (Object.keys(peopleUpdate).length === 0) {
+      continue;
+    }
+
+    const { error: updateError } = await client.from("people").update(peopleUpdate).eq("id", person.id);
+    if (updateError) {
+      continue;
+    }
+
+    if (enableRoleTitle) {
+      await client.from("show_roles").update({ role_name: roleTitle }).eq("show_id", showId).eq("person_id", person.id);
+    }
+    if (enableTeamType) {
+      await client
+        .from("show_roles")
+        .update({ category: teamType === "cast" ? "cast" : "production" })
+        .eq("show_id", showId)
+        .eq("person_id", person.id);
+    }
+
+    for (const audit of audits) {
+      await writeAuditLog({
+        entity: "people",
+        entityId: person.id,
+        field: audit.field,
+        beforeValue: audit.beforeValue,
+        afterValue: audit.afterValue,
+        reason: "bulk_selected_edit"
+      });
+    }
+
+    updatedRows += 1;
+  }
+
+  redirect(
+    `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
+      `Bulk edit complete. Updated ${updatedRows} of ${people.length} selected row(s).`
+    )}`
+  );
+}
+
 export async function getContributorTasksForCurrentUser() {
   const current = await getCurrentUserWithProfile();
   if (!current?.user?.email) {
