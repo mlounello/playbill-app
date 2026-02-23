@@ -12,7 +12,13 @@ import {
   setShowPublished,
   updateShowModules
 } from "@/lib/shows";
-import { addPeopleToShow, adminQuickStatus, adminReturnSubmission, getShowSubmissionPeople } from "@/lib/submissions";
+import {
+  addPeopleToShow,
+  adminQuickStatus,
+  adminReturnSubmission,
+  bulkEditPeopleField,
+  getShowSubmissionPeople
+} from "@/lib/submissions";
 import {
   getShowReminderSummary,
   sendShowInvites,
@@ -61,6 +67,7 @@ export default async function ShowWorkspacePage({
       ? await getShowSubmissionPeople(show.id)
       : [];
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
+  const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
@@ -317,11 +324,76 @@ export default async function ShowWorkspacePage({
 
               <article className="card grid">
                 <strong>Bulk Import</strong>
-                <p style={{ margin: 0, fontSize: "0.92rem" }}>Format each line: <code>Name | Role | cast|production | email</code></p>
+                <p style={{ margin: 0, fontSize: "0.92rem" }}>
+                  Paste either: <code>Name | Role | cast|production | email</code> per line, or a CSV/tabular paste with headers
+                  <code> First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>.
+                </p>
                 <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
                   <input type="hidden" name="mode" value="bulk" />
                   <textarea name="bulkLines" className="rich-textarea" placeholder={"Name | Role | cast | email@example.com"} />
                   <button type="submit">Import People</button>
+                </form>
+              </article>
+
+              <article className="card grid">
+                <strong>CSV Upload</strong>
+                <p style={{ margin: 0, fontSize: "0.92rem" }}>
+                  Supported headers: <code>First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>
+                </p>
+                <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.85 }}>
+                  Uses <code>Preferred Name</code> when available, maps <code>Project Role</code> to role title, and infers cast vs production.
+                </p>
+                <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
+                  <input type="hidden" name="mode" value="csv" />
+                  <input type="file" name="csvFile" accept=".csv,text/csv" required />
+                  <button type="submit">Upload CSV</button>
+                </form>
+              </article>
+
+              <article className="card grid">
+                <strong>Bulk Edit One Field</strong>
+                <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.9 }}>
+                  Select one or more fields, then paste lines using <code>lookup | field=value | field=value</code>. Only selected fields are updated.
+                </p>
+                <form action={bulkEditPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
+                  <div className="grid" style={{ gap: "0.35rem" }}>
+                    <strong style={{ fontSize: "0.95rem" }}>Fields to update</strong>
+                    <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                      <input type="checkbox" name="targetFields" value="role_title" defaultChecked />
+                      Role Title
+                    </label>
+                    <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                      <input type="checkbox" name="targetFields" value="team_type" />
+                      Category (cast/production)
+                    </label>
+                    <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                      <input type="checkbox" name="targetFields" value="email" />
+                      Email
+                    </label>
+                    <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                      <input type="checkbox" name="targetFields" value="full_name" />
+                      Full Name
+                    </label>
+                  </div>
+                  <label>
+                    Lookup by
+                    <select name="lookupField" defaultValue="email">
+                      <option value="email">Email</option>
+                      <option value="name">Full Name</option>
+                    </select>
+                  </label>
+                  <label>
+                    Edit lines
+                    <textarea
+                      name="editsText"
+                      className="rich-textarea"
+                      placeholder={
+                        "lookup@example.com | role=Assistant Director | team_type=production\nanother@example.com | email=new@example.com\n\n(single selected field shortcut)\nlookup@example.com | New Value"
+                      }
+                      required
+                    />
+                  </label>
+                  <button type="submit">Apply Bulk Edit</button>
                 </form>
               </article>
 

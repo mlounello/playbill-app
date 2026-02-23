@@ -59,6 +59,10 @@ function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
+function normalizeName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function stripRichTextToPlain(value: string) {
   return value
     .replace(/<br\s*\/?>/gi, "\n")
@@ -121,19 +125,135 @@ async function writeAuditLog(params: {
 }
 
 function parseBulkPeople(text: string) {
-  return text
-    .split("\n")
+  const lines = text
+    .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [fullName = "", roleTitle = "", teamTypeRaw = "production", email = ""] = line.split("|").map((part) => part.trim());
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return [];
+  }
+
+  const firstLineLower = lines[0].toLowerCase();
+  const looksLikeHeader =
+    firstLineLower.includes("first name") &&
+    firstLineLower.includes("last name") &&
+    firstLineLower.includes("project role") &&
+    firstLineLower.includes("email");
+
+  if (looksLikeHeader) {
+    const headerCols = lines[0].includes("\t") ? lines[0].split("\t").map((v) => v.trim().toLowerCase()) : parseCsvRow(lines[0]).map((v) => v.trim().toLowerCase());
+    const idx = (name: string) => headerCols.indexOf(name.toLowerCase());
+    const firstNameIdx = idx("first name");
+    const lastNameIdx = idx("last name");
+    const preferredNameIdx = idx("preferred name");
+    const roleIdx = idx("project role");
+    const emailIdx = idx("email");
+
+    if (firstNameIdx < 0 || lastNameIdx < 0 || roleIdx < 0 || emailIdx < 0) {
+      throw new Error("Missing required headers.");
+    }
+
+    return lines.slice(1).map((line) => {
+      const cols = line.includes("\t") ? line.split("\t").map((v) => v.trim()) : parseCsvRow(line);
+      const first = cols[firstNameIdx] ?? "";
+      const last = cols[lastNameIdx] ?? "";
+      const preferred = preferredNameIdx >= 0 ? cols[preferredNameIdx] ?? "" : "";
+      const role = cols[roleIdx] ?? "";
+      const email = cols[emailIdx] ?? "";
+      const fullName = preferred.trim() || `${first} ${last}`.trim();
+      const teamType = inferTeamTypeFromRole(role);
+
       return manualPersonSchema.parse({
         fullName,
-        roleTitle,
-        teamType: teamTypeRaw.toLowerCase() === "cast" ? "cast" : "production",
+        roleTitle: role,
+        teamType,
         email
       });
     });
+  }
+
+  return lines.map((line) => {
+    const [fullName = "", roleTitle = "", teamTypeRaw = "production", email = ""] = line.split("|").map((part) => part.trim());
+    return manualPersonSchema.parse({
+      fullName,
+      roleTitle,
+      teamType: teamTypeRaw.toLowerCase() === "cast" ? "cast" : "production",
+      email
+    });
+  });
+}
+
+function parseCsvRow(line: string) {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === "\"") {
+      if (inQuotes && line[i + 1] === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  values.push(current.trim());
+  return values;
+}
+
+function inferTeamTypeFromRole(roleTitle: string): "cast" | "production" {
+  const castPattern = /cast|actor|actress|character|ensemble|understudy|swing/i;
+  return castPattern.test(roleTitle) ? "cast" : "production";
+}
+
+function parseCsvPeople(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) {
+    throw new Error("CSV needs a header row and at least one data row.");
+  }
+
+  const headers = parseCsvRow(lines[0]).map((h) => h.toLowerCase());
+  const index = (name: string) => headers.indexOf(name.toLowerCase());
+
+  const firstNameIdx = index("first name");
+  const lastNameIdx = index("last name");
+  const preferredNameIdx = index("preferred name");
+  const roleIdx = index("project role");
+  const emailIdx = index("email");
+  if (firstNameIdx < 0 || lastNameIdx < 0 || roleIdx < 0 || emailIdx < 0) {
+    throw new Error("CSV headers must include: First Name, Last Name, Project Role, Email.");
+  }
+
+  return lines.slice(1).map((line) => {
+    const cols = parseCsvRow(line);
+    const first = cols[firstNameIdx] ?? "";
+    const last = cols[lastNameIdx] ?? "";
+    const preferred = preferredNameIdx >= 0 ? cols[preferredNameIdx] ?? "" : "";
+    const role = cols[roleIdx] ?? "";
+    const email = cols[emailIdx] ?? "";
+
+    const fullName = preferred.trim() || `${first} ${last}`.trim();
+    const teamType = inferTeamTypeFromRole(role);
+
+    return manualPersonSchema.parse({
+      fullName,
+      roleTitle: role,
+      teamType,
+      email
+    });
+  });
 }
 
 export async function getShowSubmissionPeople(showId: string) {
@@ -189,6 +309,13 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     if (mode === "bulk") {
       const bulkText = formData.get("bulkLines")?.toString() ?? "";
       records = parseBulkPeople(bulkText);
+    } else if (mode === "csv") {
+      const csvFile = formData.get("csvFile");
+      if (!(csvFile instanceof File)) {
+        throw new Error("CSV file is required.");
+      }
+      const text = await csvFile.text();
+      records = parseCsvPeople(text);
     } else {
       records = [
         manualPersonSchema.parse({
@@ -202,7 +329,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
   } catch {
     withError(
       `/app/shows/${showId}?tab=people-roles`,
-      "Invalid person data. Use Name | Role | cast|production | email for bulk rows."
+      "Invalid person data. Use Name | Role | cast|production | email for bulk rows, or the required CSV headers."
     );
   }
 
@@ -285,6 +412,219 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
   });
 
   redirect(`/app/shows/${showId}?tab=people-roles`);
+}
+
+export async function bulkEditPeopleField(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const lookupFieldRaw = String(formData.get("lookupField") ?? "");
+  const editsText = String(formData.get("editsText") ?? "");
+  const selectedTargetFields = formData
+    .getAll("targetFields")
+    .map((value) => String(value))
+    .filter((value) => ["full_name", "role_title", "team_type", "email"].includes(value)) as Array<
+    "full_name" | "role_title" | "team_type" | "email"
+  >;
+
+  if (!["email", "name"].includes(lookupFieldRaw) || !editsText.trim() || selectedTargetFields.length === 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Invalid bulk edit configuration.");
+  }
+  const lookupField = lookupFieldRaw as "email" | "name";
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: peopleRows } = await client
+    .from("people")
+    .select("id, full_name, role_title, team_type, email")
+    .eq("program_id", context.program_id);
+
+  const people: Array<{
+    id: string;
+    full_name: string;
+    role_title: string;
+    team_type: "cast" | "production";
+    email: string;
+  }> = (peopleRows ?? []).map((row) => ({
+    id: String(row.id),
+    full_name: String(row.full_name ?? ""),
+    role_title: String(row.role_title ?? ""),
+    team_type: row.team_type === "cast" ? "cast" : "production",
+    email: String(row.email ?? "")
+  }));
+
+  const mapByLookup = new Map<string, { id: string; full_name: string; role_title: string; team_type: "cast" | "production"; email: string }>();
+  for (const person of people) {
+    const key = lookupField === "email" ? normalizeEmail(person.email) : normalizeName(person.full_name);
+    if (!key) {
+      continue;
+    }
+    if (!mapByLookup.has(key)) {
+      mapByLookup.set(key, person);
+    }
+  }
+
+  const lines = editsText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "No edit lines were provided.");
+  }
+
+  let updated = 0;
+  const unmatched: string[] = [];
+  const invalid: string[] = [];
+  const selectedSet = new Set(selectedTargetFields);
+
+  for (const line of lines) {
+    const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
+    const lookupRaw = parts[0] ?? "";
+    if (!lookupRaw || parts.length < 2) {
+      invalid.push(line);
+      continue;
+    }
+
+    const lookup = lookupField === "email" ? normalizeEmail(lookupRaw) : normalizeName(lookupRaw);
+    const person = mapByLookup.get(lookup);
+    if (!person) {
+      unmatched.push(lookupRaw);
+      continue;
+    }
+
+    const updates = new Map<"full_name" | "role_title" | "team_type" | "email", string>();
+
+    // Single-field convenience: `lookup | new value`
+    if (selectedSet.size === 1 && parts.length === 2 && !parts[1].includes("=")) {
+      const target = [...selectedSet][0];
+      updates.set(target, parts[1]);
+    } else {
+      for (const raw of parts.slice(1)) {
+        const eqIndex = raw.indexOf("=");
+        if (eqIndex <= 0) {
+          continue;
+        }
+        const keyRaw = raw.slice(0, eqIndex).trim().toLowerCase();
+        const valueRaw = raw.slice(eqIndex + 1).trim();
+        const fieldKey =
+          keyRaw === "name" || keyRaw === "full_name"
+            ? "full_name"
+            : keyRaw === "role" || keyRaw === "role_title"
+              ? "role_title"
+              : keyRaw === "team" || keyRaw === "team_type" || keyRaw === "category"
+                ? "team_type"
+                : keyRaw === "email"
+                  ? "email"
+                  : null;
+        if (!fieldKey || !selectedSet.has(fieldKey) || !valueRaw) {
+          continue;
+        }
+        updates.set(fieldKey, valueRaw);
+      }
+    }
+
+    if (updates.size === 0) {
+      invalid.push(line);
+      continue;
+    }
+
+    const peopleUpdate: Record<string, string> = {};
+    const auditEntries: Array<{ field: string; beforeValue: string; afterValue: string }> = [];
+    let nextRoleName: string | null = null;
+    let nextRoleCategory: string | null = null;
+
+    for (const [field, rawValue] of updates.entries()) {
+      let nextValue = rawValue;
+      const currentValue =
+        field === "full_name"
+          ? person.full_name
+          : field === "role_title"
+            ? person.role_title
+            : field === "team_type"
+              ? person.team_type
+              : person.email;
+
+      if (field === "team_type") {
+        const lowered = rawValue.toLowerCase();
+        if (lowered !== "cast" && lowered !== "production") {
+          invalid.push(line);
+          continue;
+        }
+        nextValue = lowered;
+      }
+
+      if (field === "email") {
+        if (!z.string().email().safeParse(rawValue).success) {
+          invalid.push(line);
+          continue;
+        }
+        nextValue = normalizeEmail(rawValue);
+      }
+
+      if (currentValue === nextValue) {
+        continue;
+      }
+
+      peopleUpdate[field] = nextValue;
+      auditEntries.push({ field, beforeValue: currentValue, afterValue: nextValue });
+
+      if (field === "role_title") {
+        nextRoleName = nextValue;
+      }
+      if (field === "team_type") {
+        nextRoleCategory = nextValue === "cast" ? "cast" : "production";
+      }
+    }
+
+    if (Object.keys(peopleUpdate).length === 0) {
+      continue;
+    }
+
+    const { error: updateError } = await client.from("people").update(peopleUpdate).eq("id", person.id);
+    if (updateError) {
+      invalid.push(line);
+      continue;
+    }
+
+    if (nextRoleName !== null) {
+      await client.from("show_roles").update({ role_name: nextRoleName }).eq("show_id", showId).eq("person_id", person.id);
+    }
+    if (nextRoleCategory !== null) {
+      await client
+        .from("show_roles")
+        .update({ category: nextRoleCategory })
+        .eq("show_id", showId)
+        .eq("person_id", person.id);
+    }
+
+    for (const audit of auditEntries) {
+      await writeAuditLog({
+        entity: "people",
+        entityId: person.id,
+        field: audit.field,
+        beforeValue: audit.beforeValue,
+        afterValue: audit.afterValue,
+        reason: `bulk_edit_${audit.field}`
+      });
+    }
+
+    updated += 1;
+  }
+
+  const noteParts = [`Updated ${updated} row(s).`];
+  if (unmatched.length > 0) {
+    noteParts.push(`${unmatched.length} unmatched lookup value(s).`);
+  }
+  if (invalid.length > 0) {
+    noteParts.push(`${invalid.length} invalid line(s).`);
+  }
+
+  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(noteParts.join(" "))}`);
 }
 
 export async function getContributorTasksForCurrentUser() {
