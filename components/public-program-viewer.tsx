@@ -1,0 +1,171 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { sanitizeRichText } from "@/lib/rich-text";
+import type { ProgramPage } from "@/lib/programs";
+
+function PublicRenderPage({ page }: { page: ProgramPage }) {
+  if (page.type === "poster") {
+    return (
+      <article className="booklet-page poster-page">
+        <img src={page.imageUrl} alt={page.title} className="poster-image" />
+        <div className="poster-overlay">
+          <h2 className="poster-title">{page.title}</h2>
+          <p>{page.subtitle}</p>
+        </div>
+      </article>
+    );
+  }
+
+  if (page.type === "text") {
+    return (
+      <article className="booklet-page">
+        <h2 className="section-title playbill-title">{page.title}</h2>
+        <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(page.body) }} />
+      </article>
+    );
+  }
+
+  if (page.type === "image") {
+    return (
+      <article className="booklet-page">
+        <h2 className="section-title playbill-title">{page.title}</h2>
+        <img src={page.imageUrl} alt={page.title} className="full-page-image" />
+      </article>
+    );
+  }
+
+  if (page.type === "photo_grid") {
+    return (
+      <article className="booklet-page">
+        <h2 className="section-title playbill-title">{page.title}</h2>
+        <div className="photo-grid">
+          {page.photos.map((photo, index) => (
+            <img key={`${photo}-${index}`} src={photo} alt={`${page.title} ${index + 1}`} className="photo-grid-item" />
+          ))}
+        </div>
+      </article>
+    );
+  }
+
+  if (page.type === "bios") {
+    return (
+      <article className="booklet-page">
+        <h2 className="section-title playbill-title">{page.title}</h2>
+        <div className="bios-list">
+          {page.people.map((person) => (
+            <section key={person.id} className="bio-row">
+              {person.headshot_url ? <img src={person.headshot_url} alt={person.full_name} className="headshot" /> : null}
+              <div>
+                <div className="bio-name">{person.full_name}</div>
+                <div className="bio-role">{person.role_title}</div>
+                <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(person.bio) }} />
+              </div>
+            </section>
+          ))}
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className="booklet-page">
+      <h2 className="section-title playbill-title">{page.title}</h2>
+      <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(page.body) }} />
+    </article>
+  );
+}
+
+export function PublicProgramViewer({
+  pages,
+  showSlug,
+  programSlug
+}: {
+  pages: ProgramPage[];
+  showSlug: string;
+  programSlug: string;
+}) {
+  const [spreadIndex, setSpreadIndex] = useState(0);
+
+  const spreads = useMemo(() => {
+    const items: Array<{ left: ProgramPage; right: ProgramPage | null; startPage: number }> = [];
+    for (let i = 0; i < pages.length; i += 2) {
+      items.push({
+        left: pages[i],
+        right: pages[i + 1] ?? null,
+        startPage: i + 1
+      });
+    }
+    return items;
+  }, [pages]);
+
+  const toc = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: Array<{ title: string; page: number }> = [];
+    pages.forEach((page, idx) => {
+      const title = page.title?.trim() || `Page ${idx + 1}`;
+      if (!seen.has(title)) {
+        seen.add(title);
+        rows.push({ title, page: idx + 1 });
+      }
+    });
+    return rows;
+  }, [pages]);
+
+  const current = spreads[spreadIndex] ?? null;
+
+  return (
+    <section className="grid" style={{ gap: "0.75rem" }}>
+      <article className="card" style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" onClick={() => setSpreadIndex((v) => Math.max(0, v - 1))} disabled={spreadIndex <= 0}>
+          Previous
+        </button>
+        <button
+          type="button"
+          onClick={() => setSpreadIndex((v) => Math.min(spreads.length - 1, v + 1))}
+          disabled={spreadIndex >= spreads.length - 1}
+        >
+          Next
+        </button>
+        <span style={{ fontSize: "0.9rem", opacity: 0.85 }}>
+          Spread {spreadIndex + 1}/{spreads.length}
+        </span>
+        <a href={`/api/public/exports/${showSlug}/proof`}>Download Proof PDF</a>
+        <a href={`/api/public/exports/${showSlug}/print`}>Download Print PDF</a>
+        <a href={`/programs/${programSlug}`}>Legacy View</a>
+      </article>
+
+      <article className="card grid" style={{ gap: "0.5rem" }}>
+        <strong>Table of Contents</strong>
+        <div style={{ display: "grid", gap: "0.35rem", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
+          {toc.map((item) => (
+            <button
+              key={`${item.title}-${item.page}`}
+              type="button"
+              className="tab-chip"
+              onClick={() => setSpreadIndex(Math.floor((item.page - 1) / 2))}
+              style={{ textAlign: "left" }}
+            >
+              {item.title} (p.{item.page})
+            </button>
+          ))}
+        </div>
+      </article>
+
+      {current ? (
+        <article className="card">
+          <div className="sheet-grid" style={{ gap: "0.3in" }}>
+            <div>
+              <PublicRenderPage page={current.left} />
+              <div className="folio">Page {current.startPage}</div>
+            </div>
+            <div>
+              {current.right ? <PublicRenderPage page={current.right} /> : <div className="booklet-page" />}
+              <div className="folio">Page {current.startPage + 1}</div>
+            </div>
+          </div>
+        </article>
+      ) : null}
+    </section>
+  );
+}

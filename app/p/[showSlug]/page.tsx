@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PublicProgramViewer } from "@/components/public-program-viewer";
 import { getProgramBySlug } from "@/lib/programs";
 import { getSupabaseReadClient } from "@/lib/supabase";
 
@@ -41,7 +42,8 @@ export default async function PublicProgramPage({
           <strong>{program.title}</strong>
           <Link href={`/p/${program.slug}`}>Flip view</Link>
           <Link href={`/p/${program.slug}?view=scroll`}>Scroll view</Link>
-          <Link href={`/programs/${program.slug}`}>Legacy viewer</Link>
+          <a href={`/api/public/exports/${showSlug}/proof`}>Proof PDF</a>
+          <a href={`/api/public/exports/${showSlug}/print`}>Print PDF</a>
         </div>
 
         {scrollView ? (
@@ -54,11 +56,7 @@ export default async function PublicProgramPage({
             ))}
           </section>
         ) : (
-          <section className="card">
-            <p style={{ margin: 0 }}>
-              Flipbook UI shell is active. Next step is replacing this panel with the final page-flip renderer.
-            </p>
-          </section>
+          <PublicProgramViewer pages={program.paddedPages} showSlug={showSlug} programSlug={program.slug} />
         )}
       </div>
     </main>
