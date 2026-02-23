@@ -14,13 +14,54 @@ export function HeadshotUploadField({ showId, personId, initialUrl = "", disable
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
+  const fileToImage = (file: File) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("Could not read image."));
+        image.src = String(reader.result ?? "");
+      };
+      reader.onerror = () => reject(new Error("Could not read file."));
+      reader.readAsDataURL(file);
+    });
+
+  const optimizeHeadshot = async (file: File) => {
+    const image = await fileToImage(file);
+    const size = Math.min(image.naturalWidth, image.naturalHeight);
+    const offsetX = Math.floor((image.naturalWidth - size) / 2);
+    const offsetY = Math.floor((image.naturalHeight - size) / 2);
+
+    const targetSize = 1200;
+    const canvas = document.createElement("canvas");
+    canvas.width = targetSize;
+    canvas.height = targetSize;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("Canvas is unavailable in this browser.");
+    }
+
+    ctx.drawImage(image, offsetX, offsetY, size, size, 0, 0, targetSize, targetSize);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((value) => resolve(value), "image/jpeg", 0.88);
+    });
+    if (!blob) {
+      throw new Error("Could not optimize image.");
+    }
+
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  };
+
   const onFileChange = async (file: File | null) => {
     if (!file) return;
     setError("");
     setPending(true);
     try {
+      const optimizedFile = await optimizeHeadshot(file);
       const formData = new FormData();
-      formData.set("file", file);
+      formData.set("file", optimizedFile);
       formData.set("showId", showId);
       formData.set("personId", personId);
       formData.set("assetType", "headshot");
@@ -53,6 +94,9 @@ export function HeadshotUploadField({ showId, personId, initialUrl = "", disable
           onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
         />
       </label>
+      <div style={{ fontSize: "0.82rem", opacity: 0.82 }}>
+        Images are auto-cropped to square and optimized before upload.
+      </div>
 
       <label>
         Or paste image URL
