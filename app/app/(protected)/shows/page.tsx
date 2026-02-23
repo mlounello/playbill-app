@@ -49,8 +49,18 @@ export default async function AdminShowsPage({
                   {" • "}
                   Submissions: {show.submission_submitted}/{show.submission_total}
                 </div>
+                <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+                  Show slug: <code>{show.slug}</code>
+                  {show.program_slug ? (
+                    <>
+                      {" • "}Program slug: <code>{show.program_slug}</code>
+                    </>
+                  ) : null}
+                </div>
                 <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
                   <Link href={`/app/shows/${show.id}`}>Open Workspace</Link>
+                  <Link href={`/app/shows/${show.id}?tab=publish`}>Publish Settings</Link>
+                  <Link href={`/p/${show.slug}`}>Public Page</Link>
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Program</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
                 </div>

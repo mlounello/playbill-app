@@ -24,8 +24,12 @@ export default async function ProgramsIndexPage() {
               <article key={program.id} className="card" style={{ display: "grid", gap: "0.5rem" }}>
                 <strong>{program.title}</strong>
                 <div>{program.show_dates}</div>
+                <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+                  Program slug: <code>{program.slug}</code>
+                </div>
                 <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
                   <Link href={`/programs/${program.slug}`}>Open</Link>
+                  <Link href={`/p/${program.slug}`}>Public View</Link>
                   <Link href={`/programs/${program.slug}/edit`}>Edit</Link>
                   <Link href={`/programs/${program.slug}/submit`}>Submission Form</Link>
                 </div>

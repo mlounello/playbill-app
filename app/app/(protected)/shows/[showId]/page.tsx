@@ -491,6 +491,14 @@ export default async function ShowWorkspacePage({
                 <div>
                   Publish status: <span className="status-pill">{show.is_published ? "published" : "unpublished"}</span>
                 </div>
+                <div style={{ fontSize: "0.88rem", opacity: 0.9 }}>
+                  Show slug: <code>{show.slug}</code>
+                  {show.program_slug ? (
+                    <>
+                      {" • "}Program slug: <code>{show.program_slug}</code>
+                    </>
+                  ) : null}
+                </div>
                 {show.published_at ? (
                   <div style={{ fontSize: "0.88rem", opacity: 0.85 }}>
                     Published at: {new Date(show.published_at).toLocaleString("en-US")}
@@ -506,6 +514,12 @@ export default async function ShowWorkspacePage({
                 <div style={{ fontSize: "0.88rem", opacity: 0.9 }}>
                   Public URL: <code>{publicUrl || "/p/{showSlug}"}</code>
                 </div>
+                {show.program_slug ? (
+                  <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                    <Link href={`/programs/${show.program_slug}`}>Program Preview</Link>
+                    <Link href={`/p/${show.slug}`}>Public Page</Link>
+                  </div>
+                ) : null}
               </article>
             </section>
           ) : null}
