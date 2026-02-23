@@ -29,10 +29,10 @@ const returnSchema = z.object({
 });
 
 const bioImportRowSchema = z.object({
-  email: z.string().email().optional(),
-  name: z.string().min(1).optional(),
-  role: z.string().min(1).optional(),
-  bio: z.string().min(1)
+  email: z.string().optional(),
+  name: z.string().optional(),
+  role: z.string().optional(),
+  bio: z.string().optional()
 });
 
 export type ShowSubmissionPerson = {
@@ -271,6 +271,10 @@ function inferTeamTypeFromRole(roleTitle: string): "cast" | "production" {
   return castPattern.test(roleTitle) ? "cast" : "production";
 }
 
+function isValidEmail(value: string) {
+  return z.string().email().safeParse(value).success;
+}
+
 function parseCsvPeople(text: string) {
   const lines = text
     .split(/\r?\n/)
@@ -354,12 +358,17 @@ function parseBioImportCsv(text: string) {
       bio: bioRaw
     });
     if (!parsed.success) {
-      throw new Error("One or more CSV rows are invalid. Check Email/Name/Role/Bio values.");
+      throw new Error("Could not read one or more CSV rows.");
     }
-    return parsed.data;
+    return {
+      email: String(parsed.data.email ?? "").trim() || undefined,
+      name: String(parsed.data.name ?? "").trim() || undefined,
+      role: String(parsed.data.role ?? "").trim() || undefined,
+      bio: String(parsed.data.bio ?? "").trim()
+    };
   });
 
-  return rows.filter((row) => row.bio.trim().length > 0);
+  return rows.filter((row) => row.bio.length > 0);
 }
 
 export async function getShowSubmissionPeople(showId: string) {
@@ -1343,6 +1352,7 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
 
   const byEmail = new Map<string, typeof people[number]>();
   const byNameRole = new Map<string, typeof people[number]>();
+  const byName = new Map<string, Array<typeof people[number]>>();
   for (const person of people) {
     const emailKey = normalizeEmail(person.email);
     if (emailKey && !byEmail.has(emailKey)) {
@@ -1352,6 +1362,12 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
     if (nameRoleKey && !byNameRole.has(nameRoleKey)) {
       byNameRole.set(nameRoleKey, person);
     }
+    const nameKey = normalizeName(person.full_name);
+    if (nameKey) {
+      const list = byName.get(nameKey) ?? [];
+      list.push(person);
+      byName.set(nameKey, list);
+    }
   }
 
   let updated = 0;
@@ -1360,11 +1376,29 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
 
   for (const row of rows) {
     let person: (typeof people)[number] | undefined;
-    if (row.email) {
-      person = byEmail.get(normalizeEmail(row.email));
+    const normalizedRowEmail = row.email && isValidEmail(row.email) ? normalizeEmail(row.email) : "";
+    if (normalizedRowEmail) {
+      person = byEmail.get(normalizedRowEmail);
     }
-    if (!person && row.name && row.role) {
-      person = byNameRole.get(`${normalizeName(row.name)}::${normalizeName(row.role)}`);
+    if (!person && row.email && !normalizedRowEmail) {
+      // Invalid email values are ignored so name+role fallback can still match.
+    }
+    const rowName = row.name ? normalizeName(row.name) : "";
+    const rowRole = row.role ? normalizeName(row.role) : "";
+    if (!person && rowName && rowRole) {
+      person = byNameRole.get(`${rowName}::${rowRole}`);
+    }
+    if (!person && rowName) {
+      const candidates = byName.get(rowName) ?? [];
+      if (candidates.length === 1) {
+        person = candidates[0];
+      } else if (candidates.length > 1 && rowRole) {
+        person =
+          candidates.find((candidate) => {
+            const candidateRole = normalizeName(candidate.role_title);
+            return candidateRole.includes(rowRole) || rowRole.includes(candidateRole);
+          }) ?? undefined;
+      }
     }
     if (!person) {
       unmatched.push(row.email || `${row.name ?? "Unknown"} | ${row.role ?? "Unknown role"}`);
@@ -1372,6 +1406,10 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
     }
 
     const cleanBio = sanitizeRichText(row.bio);
+    if (!cleanBio) {
+      unchanged += 1;
+      continue;
+    }
     if (cleanBio === person.bio) {
       unchanged += 1;
       continue;
@@ -1414,7 +1452,14 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
     parts.push(`${unchanged} unchanged`);
   }
   if (unmatched.length > 0) {
-    parts.push(`${unmatched.length} unmatched`);
+    const sample = unmatched.slice(0, 3).join("; ");
+    parts.push(`${unmatched.length} unmatched${sample ? ` (examples: ${sample})` : ""}`);
+  }
+  if (updated === 0) {
+    withError(
+      `/app/shows/${showId}?tab=submissions`,
+      `No bios were imported. ${parts.join(", ")}.`
+    );
   }
 
   redirect(`/app/shows/${showId}?tab=submissions&success=${encodeURIComponent(parts.join(", ") + ".")}`);
