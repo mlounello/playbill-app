@@ -51,8 +51,9 @@ export type ContributorTaskSummary = {
 };
 
 function withError(path: string, message: string): never {
+  const separator = path.includes("?") ? "&" : "?";
   const qp = new URLSearchParams({ error: message });
-  redirect(`${path}?${qp.toString()}`);
+  redirect(`${path}${separator}${qp.toString()}`);
 }
 
 function normalizeEmail(value: string) {
@@ -61,6 +62,32 @@ function normalizeEmail(value: string) {
 
 function normalizeName(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeHeader(value: string) {
+  return value
+    .replace(/^\uFEFF/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findHeaderIndex(headers: string[], variants: string[]) {
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const normalizedVariants = variants.map(normalizeHeader);
+  for (const variant of normalizedVariants) {
+    const direct = normalizedHeaders.indexOf(variant);
+    if (direct >= 0) {
+      return direct;
+    }
+  }
+  for (let i = 0; i < normalizedHeaders.length; i += 1) {
+    const header = normalizedHeaders[i];
+    if (normalizedVariants.some((variant) => header.includes(variant))) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 function stripRichTextToPlain(value: string) {
@@ -133,26 +160,17 @@ function parseBulkPeople(text: string) {
     return [];
   }
 
-  const firstLineLower = lines[0].toLowerCase();
-  const looksLikeHeader =
-    firstLineLower.includes("first name") &&
-    firstLineLower.includes("last name") &&
-    firstLineLower.includes("project role") &&
-    firstLineLower.includes("email");
+  const headerCols = lines[0].includes("\t")
+    ? lines[0].split("\t").map((v) => v.trim())
+    : parseCsvRow(lines[0]);
+  const firstNameIdx = findHeaderIndex(headerCols, ["first name"]);
+  const lastNameIdx = findHeaderIndex(headerCols, ["last name"]);
+  const preferredNameIdx = findHeaderIndex(headerCols, ["preferred name"]);
+  const roleIdx = findHeaderIndex(headerCols, ["project role", "project roles", "role"]);
+  const emailIdx = findHeaderIndex(headerCols, ["email", "email address"]);
+  const looksLikeHeader = firstNameIdx >= 0 && lastNameIdx >= 0 && roleIdx >= 0 && emailIdx >= 0;
 
   if (looksLikeHeader) {
-    const headerCols = lines[0].includes("\t") ? lines[0].split("\t").map((v) => v.trim().toLowerCase()) : parseCsvRow(lines[0]).map((v) => v.trim().toLowerCase());
-    const idx = (name: string) => headerCols.indexOf(name.toLowerCase());
-    const firstNameIdx = idx("first name");
-    const lastNameIdx = idx("last name");
-    const preferredNameIdx = idx("preferred name");
-    const roleIdx = idx("project role");
-    const emailIdx = idx("email");
-
-    if (firstNameIdx < 0 || lastNameIdx < 0 || roleIdx < 0 || emailIdx < 0) {
-      throw new Error("Missing required headers.");
-    }
-
     return lines.slice(1).map((line) => {
       const cols = line.includes("\t") ? line.split("\t").map((v) => v.trim()) : parseCsvRow(line);
       const first = cols[firstNameIdx] ?? "";
@@ -224,14 +242,12 @@ function parseCsvPeople(text: string) {
     throw new Error("CSV needs a header row and at least one data row.");
   }
 
-  const headers = parseCsvRow(lines[0]).map((h) => h.toLowerCase());
-  const index = (name: string) => headers.indexOf(name.toLowerCase());
-
-  const firstNameIdx = index("first name");
-  const lastNameIdx = index("last name");
-  const preferredNameIdx = index("preferred name");
-  const roleIdx = index("project role");
-  const emailIdx = index("email");
+  const headers = parseCsvRow(lines[0]);
+  const firstNameIdx = findHeaderIndex(headers, ["first name"]);
+  const lastNameIdx = findHeaderIndex(headers, ["last name"]);
+  const preferredNameIdx = findHeaderIndex(headers, ["preferred name"]);
+  const roleIdx = findHeaderIndex(headers, ["project role", "project roles", "role"]);
+  const emailIdx = findHeaderIndex(headers, ["email", "email address"]);
   if (firstNameIdx < 0 || lastNameIdx < 0 || roleIdx < 0 || emailIdx < 0) {
     throw new Error("CSV headers must include: First Name, Last Name, Project Role, Email.");
   }
@@ -326,10 +342,12 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         })
       ];
     }
-  } catch {
+  } catch (error) {
     withError(
       `/app/shows/${showId}?tab=people-roles`,
-      "Invalid person data. Use Name | Role | cast|production | email for bulk rows, or the required CSV headers."
+      error instanceof Error
+        ? error.message
+        : "Invalid person data. Use Name | Role | cast|production | email for bulk rows, or the required CSV headers."
     );
   }
 
