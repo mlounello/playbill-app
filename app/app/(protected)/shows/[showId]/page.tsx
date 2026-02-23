@@ -23,6 +23,7 @@ import {
   adminReturnSubmission,
   bulkEditPeopleField,
   bulkEditSelectedPeople,
+  importBiosFromCsv,
   getShowSubmissionPeople
 } from "@/lib/submissions";
 import {
@@ -76,6 +77,7 @@ export default async function ShowWorkspacePage({
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
+  const importBiosAction = importBiosFromCsv.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
@@ -443,6 +445,18 @@ export default async function ShowWorkspacePage({
               </div>
               <article className="card stack-sm">
                 <strong>Filter Queue</strong>
+                <details>
+                  <summary>Import Bios from CSV</summary>
+                  <p className="section-note">
+                    Expected headers: <code>Email Address</code>, <code>Name (As you want listed in the program)</code>,{" "}
+                    <code>Production Character or Role</code>, <code>Bio</code>.
+                  </p>
+                  <p className="section-note">Matching uses Email Address first, then Name + Role fallback.</p>
+                  <form action={importBiosAction} className="top-actions">
+                    <input type="file" name="bioCsvFile" accept=".csv,text/csv" required />
+                    <button type="submit">Import Bios CSV</button>
+                  </form>
+                </details>
                 <div className="chip-row">
                   {[
                     ["all", "All"],

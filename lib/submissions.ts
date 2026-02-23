@@ -28,6 +28,13 @@ const returnSchema = z.object({
   message: z.string().min(1)
 });
 
+const bioImportRowSchema = z.object({
+  email: z.string().email().optional(),
+  name: z.string().min(1).optional(),
+  role: z.string().min(1).optional(),
+  bio: z.string().min(1)
+});
+
 export type ShowSubmissionPerson = {
   id: string;
   full_name: string;
@@ -307,6 +314,52 @@ function parseCsvPeople(text: string) {
       pronouns
     });
   });
+}
+
+function parseBioImportCsv(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) {
+    throw new Error("CSV needs a header row and at least one data row.");
+  }
+
+  const headers = parseCsvRow(lines[0]);
+  const emailIdx = findHeaderIndex(headers, ["email address", "email"]);
+  const nameIdx = findHeaderIndex(headers, ["name as you want listed in the program", "name"]);
+  const roleIdx = findHeaderIndex(headers, ["production character or role", "character or role", "role"]);
+  const bioIdx = findHeaderIndex(headers, ["bio"]);
+
+  if (bioIdx < 0) {
+    throw new Error("CSV headers must include: Bio.");
+  }
+  if (emailIdx < 0 && (nameIdx < 0 || roleIdx < 0)) {
+    throw new Error(
+      "CSV must include either Email Address, or both Name (As you want listed in the program) and Production Character or Role."
+    );
+  }
+
+  const rows = lines.slice(1).map((line) => {
+    const cols = parseCsvRow(line);
+    const emailRaw = emailIdx >= 0 ? String(cols[emailIdx] ?? "").trim() : "";
+    const nameRaw = nameIdx >= 0 ? String(cols[nameIdx] ?? "").trim() : "";
+    const roleRaw = roleIdx >= 0 ? String(cols[roleIdx] ?? "").trim() : "";
+    const bioRaw = String(cols[bioIdx] ?? "").trim();
+
+    const parsed = bioImportRowSchema.safeParse({
+      email: emailRaw || undefined,
+      name: nameRaw || undefined,
+      role: roleRaw || undefined,
+      bio: bioRaw
+    });
+    if (!parsed.success) {
+      throw new Error("One or more CSV rows are invalid. Check Email/Name/Role/Bio values.");
+    }
+    return parsed.data;
+  });
+
+  return rows.filter((row) => row.bio.trim().length > 0);
 }
 
 export async function getShowSubmissionPeople(showId: string) {
@@ -1241,4 +1294,128 @@ export async function adminQuickStatus(showId: string, personId: string, status:
   }
 
   redirect(`/app/shows/${showId}?tab=submissions`);
+}
+
+export async function importBiosFromCsv(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const csvFile = formData.get("bioCsvFile");
+  if (!(csvFile instanceof File)) {
+    withError(`/app/shows/${showId}?tab=submissions`, "CSV file is required.");
+  }
+
+  const text = await csvFile.text();
+  let rows: Array<{ email?: string; name?: string; role?: string; bio: string }> = [];
+  try {
+    rows = parseBioImportCsv(text);
+  } catch (error) {
+    withError(
+      `/app/shows/${showId}?tab=submissions`,
+      error instanceof Error ? error.message : "Could not parse bio CSV."
+    );
+  }
+
+  if (rows.length === 0) {
+    withError(`/app/shows/${showId}?tab=submissions`, "No bio rows found in CSV.");
+  }
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: peopleRows } = await client
+    .from("people")
+    .select("id, full_name, role_title, email, bio, submission_status")
+    .eq("program_id", context.program_id);
+
+  const people = (peopleRows ?? []).map((row) => ({
+    id: String(row.id),
+    full_name: String(row.full_name ?? ""),
+    role_title: String(row.role_title ?? ""),
+    email: String(row.email ?? ""),
+    bio: String(row.bio ?? ""),
+    submission_status: normalizeSubmissionStatus(String(row.submission_status ?? "pending"))
+  }));
+
+  const byEmail = new Map<string, typeof people[number]>();
+  const byNameRole = new Map<string, typeof people[number]>();
+  for (const person of people) {
+    const emailKey = normalizeEmail(person.email);
+    if (emailKey && !byEmail.has(emailKey)) {
+      byEmail.set(emailKey, person);
+    }
+    const nameRoleKey = `${normalizeName(person.full_name)}::${normalizeName(person.role_title)}`;
+    if (nameRoleKey && !byNameRole.has(nameRoleKey)) {
+      byNameRole.set(nameRoleKey, person);
+    }
+  }
+
+  let updated = 0;
+  let unchanged = 0;
+  const unmatched: string[] = [];
+
+  for (const row of rows) {
+    let person: (typeof people)[number] | undefined;
+    if (row.email) {
+      person = byEmail.get(normalizeEmail(row.email));
+    }
+    if (!person && row.name && row.role) {
+      person = byNameRole.get(`${normalizeName(row.name)}::${normalizeName(row.role)}`);
+    }
+    if (!person) {
+      unmatched.push(row.email || `${row.name ?? "Unknown"} | ${row.role ?? "Unknown role"}`);
+      continue;
+    }
+
+    const cleanBio = sanitizeRichText(row.bio);
+    if (cleanBio === person.bio) {
+      unchanged += 1;
+      continue;
+    }
+
+    const { error: updateError } = await client
+      .from("people")
+      .update({
+        bio: cleanBio,
+        submission_status: "submitted",
+        submitted_at: new Date().toISOString()
+      })
+      .eq("id", person.id);
+    if (updateError) {
+      unmatched.push(row.email || `${row.name ?? "Unknown"} | ${row.role ?? "Unknown role"}`);
+      continue;
+    }
+
+    await writeAuditLog({
+      entity: "people",
+      entityId: person.id,
+      field: "bio",
+      beforeValue: person.bio,
+      afterValue: cleanBio,
+      reason: "bio_csv_import"
+    });
+    await writeAuditLog({
+      entity: "people",
+      entityId: person.id,
+      field: "submission_status",
+      beforeValue: person.submission_status,
+      afterValue: "submitted",
+      reason: "bio_csv_import"
+    });
+    updated += 1;
+  }
+
+  const parts = [`Bio import complete: ${updated} updated`];
+  if (unchanged > 0) {
+    parts.push(`${unchanged} unchanged`);
+  }
+  if (unmatched.length > 0) {
+    parts.push(`${unmatched.length} unmatched`);
+  }
+
+  redirect(`/app/shows/${showId}?tab=submissions&success=${encodeURIComponent(parts.join(", ") + ".")}`);
 }
