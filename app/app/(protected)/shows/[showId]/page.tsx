@@ -452,7 +452,7 @@ export default async function ShowWorkspacePage({
                     <code>Production Character or Role</code>, <code>Bio</code>.
                   </p>
                   <p className="section-note">Matching uses Email Address first, then Name + Role fallback.</p>
-                  <form action={importBiosAction} className="top-actions">
+                  <form action={importBiosAction} className="top-actions" data-pending-label="Importing bios...">
                     <input type="file" name="bioCsvFile" accept=".csv,text/csv" required />
                     <button type="submit">Import Bios CSV</button>
                   </form>

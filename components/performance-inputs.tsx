@@ -63,7 +63,23 @@ export function PerformanceInputs({
   };
 
   const add = () => {
-    setPerformances((current) => [...current, { date: "", time: "" }]);
+    setPerformances((current) => {
+      const last = current[current.length - 1];
+      if (!last) {
+        return [...current, { date: "", time: "" }];
+      }
+
+      let nextDate = "";
+      if (last.date) {
+        const date = new Date(`${last.date}T00:00:00`);
+        if (!Number.isNaN(date.getTime())) {
+          date.setDate(date.getDate() + 1);
+          nextDate = date.toISOString().slice(0, 10);
+        }
+      }
+
+      return [...current, { date: nextDate, time: last.time || "" }];
+    });
   };
 
   const remove = (index: number) => {

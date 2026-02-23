@@ -5,6 +5,7 @@ import { sanitizeRichText } from "@/lib/rich-text";
 import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 export const BIO_CHAR_LIMIT_DEFAULT = 375;
+export const NO_BIO_PLACEHOLDER = "<p><em>No biography provided.</em></p>";
 
 const manualPersonSchema = z.object({
   fullName: z.string().min(1),
@@ -21,7 +22,8 @@ const reviewSchema = z.object({
   bio: z.string().optional().or(z.literal("")),
   headshotUrl: z.string().url().optional().or(z.literal("")),
   status: z.enum(["pending", "draft", "submitted", "returned", "approved", "locked"]),
-  reason: z.string().optional().or(z.literal(""))
+  reason: z.string().optional().or(z.literal("")),
+  skipBio: z.boolean().optional()
 });
 
 const returnSchema = z.object({
@@ -1030,6 +1032,7 @@ async function updateSubmissionCore(args: {
   headshotUrl: string;
   status: ShowSubmissionPerson["submission_status"];
   reason: string;
+  skipBio?: boolean;
 }) {
   const context = await getShowProgramContext(args.showId);
   if (!context) {
@@ -1048,13 +1051,14 @@ async function updateSubmissionCore(args: {
     return { ok: false as const, message: "Submission task was not found." };
   }
 
-  const cleanBio = sanitizeRichText(args.bio);
-  const plainLength = stripRichTextToPlain(cleanBio).length;
-  if ((args.status === "submitted" || args.status === "approved" || args.status === "locked") && plainLength === 0) {
+  const typedBio = sanitizeRichText(args.bio);
+  const cleanBio = args.skipBio ? NO_BIO_PLACEHOLDER : typedBio;
+  const plainLength = stripRichTextToPlain(typedBio).length;
+  if (!args.skipBio && (args.status === "submitted" || args.status === "approved" || args.status === "locked") && plainLength === 0) {
     return { ok: false as const, message: "Bio is required before submitting." };
   }
 
-  if (plainLength > BIO_CHAR_LIMIT_DEFAULT) {
+  if (!args.skipBio && plainLength > BIO_CHAR_LIMIT_DEFAULT) {
     return { ok: false as const, message: `Bio exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.` };
   }
 
@@ -1120,6 +1124,7 @@ export async function contributorSaveTask(showId: string, personId: string, form
 
   const bio = formData.get("bio")?.toString() ?? "";
   const headshotUrl = formData.get("headshotUrl")?.toString() ?? "";
+  const skipBio = String(formData.get("skipBio") ?? "") === "on";
   const intent = formData.get("intent")?.toString() ?? "save";
   const nextStatus: ShowSubmissionPerson["submission_status"] = intent === "submit" ? "submitted" : "draft";
   const result = await updateSubmissionCore({
@@ -1128,7 +1133,8 @@ export async function contributorSaveTask(showId: string, personId: string, form
     bio,
     headshotUrl,
     status: nextStatus,
-    reason: intent === "submit" ? "contributor submit" : "contributor save"
+    reason: intent === "submit" ? "contributor submit" : "contributor save",
+    skipBio
   });
 
   if (!result.ok) {
@@ -1211,7 +1217,8 @@ export async function adminSaveSubmission(showId: string, personId: string, form
       bio: formData.get("bio"),
       headshotUrl: formData.get("headshotUrl"),
       status: formData.get("status"),
-      reason: formData.get("reason")
+      reason: formData.get("reason"),
+      skipBio: String(formData.get("skipBio") ?? "") === "on"
     });
   } catch {
     withError(`/app/shows/${showId}/submissions/${personId}`, "Invalid review payload.");
@@ -1223,7 +1230,8 @@ export async function adminSaveSubmission(showId: string, personId: string, form
     bio: parsed.bio ?? "",
     headshotUrl: parsed.headshotUrl ?? "",
     status: parsed.status,
-    reason: parsed.reason || "admin review edit"
+    reason: parsed.reason || "admin review edit",
+    skipBio: Boolean(parsed.skipBio)
   });
 
   if (!result.ok) {

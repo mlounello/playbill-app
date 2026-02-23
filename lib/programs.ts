@@ -159,6 +159,57 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
+function richTextToPlain(value: string) {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|ul|ol|h1|h2|h3|h4|h5|h6)>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function estimateBioWeight(person: PersonRecord) {
+  const plainLength = richTextToPlain(person.bio).length;
+  const headshotWeight = person.headshot_url.trim() ? 180 : 60;
+  return 220 + Math.min(1900, Math.round(plainLength * 0.45)) + headshotWeight;
+}
+
+function paginateBios(title: string, idBase: string, people: PersonRecord[]) {
+  const PAGE_BUDGET = 1900;
+  const pages: ProgramPage[] = [];
+  let current: PersonRecord[] = [];
+  let currentWeight = 0;
+
+  for (const person of people) {
+    const weight = estimateBioWeight(person);
+    if (current.length > 0 && currentWeight + weight > PAGE_BUDGET) {
+      pages.push({
+        id: `${idBase}-${pages.length + 1}`,
+        type: "bios",
+        title: pages.length === 0 ? title : `${title} (cont.)`,
+        people: current
+      });
+      current = [];
+      currentWeight = 0;
+    }
+
+    current.push(person);
+    currentWeight += weight;
+  }
+
+  if (current.length > 0) {
+    pages.push({
+      id: `${idBase}-${pages.length + 1}`,
+      type: "bios",
+      title: pages.length === 0 ? title : `${title} (cont.)`,
+      people: current
+    });
+  }
+
+  return pages;
+}
+
 function redirectWithError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
   redirect(`${path}?${qp.toString()}`);
@@ -569,10 +620,10 @@ function buildRenderablePagesFromModules(
       if (module.module_type === "bios") {
         const scope = getSettingString(module.settings, "scope");
         if (scope !== "production" && cast.length > 0) {
-          pages.push({ id: `${idBase}-cast`, type: "bios", title: `${title}: Cast`, people: cast });
+          pages.push(...paginateBios(`${title}: Cast`, `${idBase}-cast`, cast));
         }
         if (scope !== "cast" && production.length > 0) {
-          pages.push({ id: `${idBase}-production`, type: "bios", title: `${title}: Production Team`, people: production });
+          pages.push(...paginateBios(`${title}: Production Team`, `${idBase}-production`, production));
         }
         return;
       }
@@ -677,6 +728,24 @@ function buildRenderablePagesFromModules(
         for (let i = 0; i < program.custom_pages.length; i += 1) {
           pages.push(mapCustomPageToRenderable(program.custom_pages[i], i));
         }
+        return;
+      }
+
+      if (module.module_type === "custom_text") {
+        const body = sanitizeRichText(getSettingString(module.settings, "body"));
+        if (!richTextHasContent(body)) {
+          return;
+        }
+        pages.push({ id: idBase, type: "text", title, body });
+        return;
+      }
+
+      if (module.module_type === "custom_image") {
+        const imageUrl = getSettingString(module.settings, "image_url");
+        if (!isValidHttpUrl(imageUrl)) {
+          return;
+        }
+        pages.push({ id: idBase, type: "image", title, imageUrl });
       }
     });
 
@@ -908,13 +977,8 @@ function buildRenderablePages(
     },
     billing: { id: "billing", type: "text", title: "Billing", body: program.billing_page },
     acts_songs: { id: "acts-songs", type: "text", title: "Acts & Songs", body: program.acts_songs },
-    cast_bios: { id: "cast-bios", type: "bios", title: "Who's Who in the Cast", people: cast },
-    team_bios: {
-      id: "team-bios",
-      type: "bios",
-      title: "Who's Who in the Production Team",
-      people: production
-    },
+    cast_bios: { id: "cast-bios", type: "filler", title: "cast-bios", body: "" },
+    team_bios: { id: "team-bios", type: "filler", title: "team-bios", body: "" },
     department_info: {
       id: "department-info",
       type: "text",
@@ -995,6 +1059,16 @@ function buildRenderablePages(
       continue;
     }
     if (token === "season_calendar" && !richTextHasContent(program.season_calendar)) {
+      continue;
+    }
+
+    if (token === "cast_bios") {
+      pages.push(...paginateBios("Who's Who in the Cast", "cast-bios", cast));
+      continue;
+    }
+
+    if (token === "team_bios") {
+      pages.push(...paginateBios("Who's Who in the Production Team", "team-bios", production));
       continue;
     }
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { GlobalLoadingOverlay } from "@/components/global-loading-overlay";
 import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           Skip to content
         </a>
         <SiteHeader />
+        <GlobalLoadingOverlay />
         <main id="main-content">{children}</main>
       </body>
     </html>

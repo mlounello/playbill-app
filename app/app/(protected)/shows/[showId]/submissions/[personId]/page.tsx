@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FlashToast } from "@/components/flash-toast";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
-import { BIO_CHAR_LIMIT_DEFAULT, adminSaveSubmission, getShowSubmissionByPerson } from "@/lib/submissions";
+import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, adminSaveSubmission, getShowSubmissionByPerson } from "@/lib/submissions";
 
 function formatAuditValue(value: unknown) {
   if (value === null || value === undefined) {
@@ -65,6 +65,7 @@ export default async function ShowSubmissionReviewPage({
   }
 
   const saveAction = adminSaveSubmission.bind(null, showId, personId);
+  const hasNoBio = review.person.bio.trim() === NO_BIO_PLACEHOLDER;
 
   return (
     <main>
@@ -89,7 +90,11 @@ export default async function ShowSubmissionReviewPage({
         <FlashToast message={saved ? "Review update saved." : undefined} tone="success" />
 
         <form action={saveAction} className="card stack-md">
-          <RichTextField name="bio" label="Bio (admin editable)" required initialValue={review.person.bio} />
+          <RichTextField name="bio" label="Bio (admin editable)" required={false} initialValue={hasNoBio ? "" : review.person.bio} />
+          <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+            <input type="checkbox" name="skipBio" defaultChecked={hasNoBio} />
+            Mark as no bio requested.
+          </label>
 
           <HeadshotUploadField
             showId={showId}

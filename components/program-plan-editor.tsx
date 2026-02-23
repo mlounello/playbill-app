@@ -20,12 +20,17 @@ const moduleTypeLabels: Record<string, string> = {
   production_team: "Production Team",
   bios: "Bios",
   director_note: "Director Note",
+  dramaturgical_note: "Dramaturgical Note",
   acts_scenes: "Acts/Scenes",
   songs: "Songs",
   headshots_grid: "Headshots Grid",
+  production_photos: "Production Photos",
   sponsors: "Sponsors",
   special_thanks: "Special Thanks",
-  back_cover: "Back Cover"
+  back_cover: "Back Cover",
+  custom_text: "Custom Text Section",
+  custom_image: "Custom Image Section",
+  custom_pages: "Custom Pages Collection"
 };
 
 const moduleTokenMap: Record<string, string[]> = {
@@ -41,8 +46,32 @@ const moduleTokenMap: Record<string, string[]> = {
   headshots_grid: ["production_photos"],
   sponsors: ["acknowledgements"],
   special_thanks: ["acknowledgements"],
-  back_cover: ["season_calendar"]
+  back_cover: ["season_calendar"],
+  custom_text: [],
+  custom_image: [],
+  custom_pages: ["custom_pages"]
 };
+
+const addableModuleTypes = [
+  "cover",
+  "production_info",
+  "cast_list",
+  "creative_team",
+  "production_team",
+  "bios",
+  "director_note",
+  "dramaturgical_note",
+  "acts_scenes",
+  "songs",
+  "headshots_grid",
+  "production_photos",
+  "sponsors",
+  "special_thanks",
+  "back_cover",
+  "custom_text",
+  "custom_image",
+  "custom_pages"
+];
 
 function normalizeModules(modules: ShowModule[]): ModuleItem[] {
   return modules.map((mod) => ({
@@ -160,6 +189,37 @@ function ModuleSettings({
     );
   }
 
+  if (item.module_type === "custom_text") {
+    return (
+      <div className="module-settings-grid">
+        <label>
+          Section body
+          <textarea
+            className="rich-textarea"
+            value={String(item.settings.body ?? "")}
+            onChange={(event) => setSetting("body", event.target.value)}
+            placeholder="Add rich text content for this custom section."
+          />
+        </label>
+      </div>
+    );
+  }
+
+  if (item.module_type === "custom_image") {
+    return (
+      <div className="module-settings-grid">
+        <label>
+          Image URL
+          <input
+            value={String(item.settings.image_url ?? "")}
+            onChange={(event) => setSetting("image_url", event.target.value)}
+            placeholder="https://..."
+          />
+        </label>
+      </div>
+    );
+  }
+
   return (
     <details>
       <summary>Advanced settings (JSON)</summary>
@@ -188,6 +248,7 @@ export function ProgramPlanEditor({
   const [items, setItems] = useState<ModuleItem[]>(() => normalizeModules(modules));
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [newModuleType, setNewModuleType] = useState("custom_text");
 
   const update = <K extends keyof ModuleItem>(index: number, key: K, value: ModuleItem[K]) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
@@ -195,8 +256,44 @@ export function ProgramPlanEditor({
 
   const payload = useMemo(() => JSON.stringify(items), [items]);
 
+  const addModule = () => {
+    setItems((current) => [
+      ...current,
+      {
+        id: `new-${newModuleType}-${Date.now()}`,
+        module_type: newModuleType,
+        display_title: moduleTypeLabels[newModuleType] || newModuleType,
+        visible: true,
+        filler_eligible: false,
+        settings: {}
+      }
+    ]);
+  };
+
   return (
     <form action={onSubmitAction} className="card-list">
+      <article className="card stack-sm">
+        <strong>Program Plan Builder</strong>
+        <p className="section-note">
+          Reorder by drag-and-drop, or use Move Up/Move Down. Turn sections on or off with the Visible toggle.
+        </p>
+        <div className="top-actions">
+          <label>
+            Add section type
+            <select value={newModuleType} onChange={(event) => setNewModuleType(event.target.value)}>
+              {addableModuleTypes.map((type) => (
+                <option key={type} value={type}>
+                  {moduleTypeLabels[type] || type}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" onClick={addModule}>
+            Add Section
+          </button>
+        </div>
+      </article>
+
       <input type="hidden" name="modulesPayload" value={payload} readOnly />
       {items.map((item, index) => (
         <article
@@ -239,7 +336,15 @@ export function ProgramPlanEditor({
               </span>{" "}
               {moduleTypeLabels[item.module_type] || item.module_type}
             </strong>
-            <span className="meta-text">Drag to reorder</span>
+            <div className="top-actions">
+              <button type="button" className="ghost-button" onClick={() => setItems((current) => moveItem(current, index, Math.max(0, index - 1)))} disabled={index === 0}>
+                Move Up
+              </button>
+              <button type="button" className="ghost-button" onClick={() => setItems((current) => moveItem(current, index, Math.min(current.length - 1, index + 1)))} disabled={index === items.length - 1}>
+                Move Down
+              </button>
+              <span className="meta-text">Drag to reorder</span>
+            </div>
           </div>
 
           <label>

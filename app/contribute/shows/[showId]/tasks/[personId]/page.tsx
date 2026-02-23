@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
-import { BIO_CHAR_LIMIT_DEFAULT, contributorSaveTask, getContributorTaskById } from "@/lib/submissions";
+import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, contributorSaveTask, getContributorTaskById } from "@/lib/submissions";
 
 export default async function ContributorTaskPage({
   params,
@@ -20,6 +20,7 @@ export default async function ContributorTaskPage({
 
   const saveAction = contributorSaveTask.bind(null, showId, personId);
   const isReadOnly = task.person.submission_status === "approved" || task.person.submission_status === "locked";
+  const hasNoBio = task.person.bio.trim() === NO_BIO_PLACEHOLDER;
 
   return (
     <main>
@@ -61,10 +62,14 @@ export default async function ContributorTaskPage({
           <RichTextField
             name="bio"
             label="Bio"
-            required={!isReadOnly}
-            initialValue={task.person.bio}
+            required={false}
+            initialValue={hasNoBio ? "" : task.person.bio}
             placeholder="Share your short bio."
           />
+          <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+            <input type="checkbox" name="skipBio" defaultChecked={hasNoBio} disabled={isReadOnly} />
+            I prefer not to include a bio.
+          </label>
 
           <HeadshotUploadField
             showId={showId}

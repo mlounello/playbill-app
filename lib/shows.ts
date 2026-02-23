@@ -66,12 +66,17 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   production_team: ["team_bios"],
   bios: ["cast_bios", "team_bios"],
   director_note: ["director_note"],
+  dramaturgical_note: ["dramaturgical_note"],
   acts_scenes: ["acts_songs"],
   songs: ["acts_songs"],
   headshots_grid: ["production_photos"],
+  production_photos: ["production_photos"],
   sponsors: ["acknowledgements"],
   special_thanks: ["acknowledgements"],
-  back_cover: ["season_calendar"]
+  back_cover: ["season_calendar"],
+  custom_pages: ["custom_pages"],
+  custom_text: [],
+  custom_image: []
 };
 
 function slugify(value: string) {

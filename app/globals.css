@@ -227,6 +227,11 @@ a:focus-visible,
   color: #8f8678;
 }
 
+.rich-editor-live {
+  background: #ffffff;
+  min-height: 180px;
+}
+
 button,
 .button-link {
   display: inline-block;
@@ -731,6 +736,11 @@ button.tab-chip {
   color: #4f675f;
 }
 
+details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
 .flash-toast {
   position: fixed;
   top: 5.1rem;
@@ -758,6 +768,38 @@ button.tab-chip {
   background: rgba(244, 251, 248, 0.96);
   border-color: #9fc4b7;
   color: #0b5242;
+}
+
+.global-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(244, 247, 245, 0.62);
+  backdrop-filter: blur(2px);
+  z-index: 90;
+  display: grid;
+  place-items: center;
+}
+
+.global-loading-card {
+  width: min(420px, calc(100vw - 2rem));
+  background: #fff;
+  border: 1px solid #d4ddd8;
+  border-radius: 0.8rem;
+  padding: 0.9rem;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.08);
+}
+
+.global-loading-title {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.global-loading-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #d3e6de 25%, #84bfa9 50%, #d3e6de 75%);
+  background-size: 250% 100%;
+  animation: skeleton 1.2s linear infinite;
 }
 
 .skeleton-line {
@@ -909,8 +951,6 @@ body.density-compact .admin-surface textarea {
 .bios-list {
   display: grid;
   gap: 0.2in;
-  max-height: 7.4in;
-  overflow: auto;
 }
 
 .bio-row {
@@ -1235,5 +1275,12 @@ body.density-compact .admin-surface textarea {
 
   .folio {
     display: none;
+  }
+
+  .sequence-item,
+  .export-sequence-item,
+  .booklet-page,
+  .bio-row {
+    break-inside: avoid;
   }
 }
