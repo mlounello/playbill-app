@@ -14,12 +14,27 @@ export default async function PublicProgramPage({
   const { showSlug } = await params;
   const { view } = await searchParams;
   const client = getSupabaseReadClient();
-  const { data: show } = await client
+
+  let { data: show } = await client
     .from("shows")
     .select("program_id, slug, is_published")
     .eq("slug", showSlug)
     .eq("is_published", true)
     .maybeSingle();
+
+  // Backward-compatibility: accept old links that use program slug instead of show slug.
+  if (!show?.program_id) {
+    const { data: programBySlug } = await client.from("programs").select("id").eq("slug", showSlug).maybeSingle();
+    if (programBySlug?.id) {
+      const { data: showByProgram } = await client
+        .from("shows")
+        .select("program_id, slug, is_published")
+        .eq("program_id", programBySlug.id)
+        .eq("is_published", true)
+        .maybeSingle();
+      show = showByProgram ?? null;
+    }
+  }
 
   if (!show?.program_id) {
     notFound();
@@ -27,6 +42,7 @@ export default async function PublicProgramPage({
 
   const { data: programRow } = await client.from("programs").select("slug").eq("id", show.program_id).maybeSingle();
   const programSlug = String(programRow?.slug ?? "");
+  const canonicalShowSlug = String(show.slug ?? showSlug);
   const program = programSlug ? await getProgramBySlug(programSlug) : null;
 
   if (!program) {
@@ -40,10 +56,10 @@ export default async function PublicProgramPage({
       <div className="container grid">
         <div className="card" style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
           <strong>{program.title}</strong>
-          <Link href={`/p/${program.slug}`}>Flip view</Link>
-          <Link href={`/p/${program.slug}?view=scroll`}>Scroll view</Link>
-          <a href={`/api/public/exports/${showSlug}/proof`}>Proof PDF</a>
-          <a href={`/api/public/exports/${showSlug}/print`}>Print PDF</a>
+          <Link href={`/p/${canonicalShowSlug}`}>Flip view</Link>
+          <Link href={`/p/${canonicalShowSlug}?view=scroll`}>Scroll view</Link>
+          <a href={`/api/public/exports/${canonicalShowSlug}/proof`}>Proof PDF</a>
+          <a href={`/api/public/exports/${canonicalShowSlug}/print`}>Print PDF</a>
         </div>
 
         {scrollView ? (
@@ -56,7 +72,7 @@ export default async function PublicProgramPage({
             ))}
           </section>
         ) : (
-          <PublicProgramViewer pages={program.paddedPages} showSlug={showSlug} programSlug={program.slug} />
+          <PublicProgramViewer pages={program.paddedPages} showSlug={canonicalShowSlug} programSlug={program.slug} />
         )}
       </div>
     </main>
