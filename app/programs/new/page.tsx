@@ -13,17 +13,17 @@ export default async function NewProgramPage({
 
   return (
     <main>
-      <div className="container grid">
-        <div className="hide-print">
+      <div className="container page-shell">
+        <div className="hide-print top-actions">
           <Link href="/">Back</Link>
         </div>
         <h1>New Theatre Program</h1>
         {error ? (
-          <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+          <div className="card alert">
             {error}
           </div>
         ) : null}
-        <form action={createProgram} className="form-grid">
+        <form action={createProgram} className="form-grid page-shell">
           <label>
             Show Title
             <input name="title" required placeholder="The Importance of Being Earnest" />
@@ -85,7 +85,7 @@ export default async function NewProgramPage({
 
           <SectionOrderBuilder />
 
-          <div className="card" style={{ fontSize: "0.95rem" }}>
+          <div className="card meta-text">
             Roster format: <code>Name | Role | cast|production | optional@email.com</code>
             <br />
             Bios are now submitted through the bio submission form linked on each program page.

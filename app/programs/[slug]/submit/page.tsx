@@ -22,8 +22,8 @@ export default async function BioSubmissionPage({
 
   return (
     <main>
-      <div className="container grid">
-        <div className="hide-print" style={{ display: "flex", gap: "0.8rem" }}>
+      <div className="container page-shell page-shell-narrow">
+        <div className="hide-print top-actions">
           <Link href={`/programs/${slug}`}>Back to program</Link>
           <Link href="/">Home</Link>
         </div>
@@ -33,7 +33,7 @@ export default async function BioSubmissionPage({
           Submissions are automatically sorted alphabetically in the playbill by group (cast or production team).
         </p>
         {error ? (
-          <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+          <div className="card alert">
             {error}
           </div>
         ) : null}

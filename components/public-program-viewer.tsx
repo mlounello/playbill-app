@@ -126,8 +126,7 @@ export function PublicProgramViewer({
 
   return (
     <section
-      className="grid"
-      style={{ gap: "0.75rem" }}
+      className="card-list"
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft") {
           event.preventDefault();
@@ -141,8 +140,8 @@ export function PublicProgramViewer({
       tabIndex={0}
       aria-label="Public program flip viewer"
     >
-      <div aria-live="polite" aria-atomic="true" ref={liveRegionRef} style={{ position: "absolute", left: -9999 }} />
-      <article className="card" style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
+      <div aria-live="polite" aria-atomic="true" ref={liveRegionRef} className="sr-only" />
+      <article className="card top-actions">
         <button type="button" onClick={goPrev} disabled={spreadIndex <= 0} aria-label="Previous spread">
           Previous
         </button>
@@ -154,7 +153,7 @@ export function PublicProgramViewer({
         >
           Next
         </button>
-        <span style={{ fontSize: "0.9rem", opacity: 0.85 }}>
+        <span className="meta-text">
           Spread {spreadIndex + 1}/{spreads.length}
         </span>
         <a href={`/api/public/exports/${showSlug}/proof`}>Download Proof PDF</a>
@@ -162,16 +161,16 @@ export function PublicProgramViewer({
         <a href={`/programs/${programSlug}`}>Legacy View</a>
       </article>
 
-      <article className="card grid" style={{ gap: "0.5rem" }}>
+      <article className="card stack-sm">
         <strong>Table of Contents</strong>
-        <div style={{ display: "grid", gap: "0.35rem", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
+        <div className="program-grid">
           {toc.map((item) => (
             <button
               key={`${item.title}-${item.page}`}
               type="button"
               className="tab-chip"
               onClick={() => setSpreadIndex(Math.floor((item.page - 1) / 2))}
-              style={{ textAlign: "left" }}
+              style={{ textAlign: "left", width: "100%" }}
             >
               {item.title} (p.{item.page})
             </button>

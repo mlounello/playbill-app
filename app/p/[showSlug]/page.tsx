@@ -53,8 +53,8 @@ export default async function PublicProgramPage({
 
   return (
     <main>
-      <div className="container grid">
-        <div className="card" style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap" }}>
+      <div className="container page-shell">
+        <div className="card top-actions">
           <strong>{program.title}</strong>
           <Link href={`/p/${canonicalShowSlug}`}>Flip view</Link>
           <Link href={`/p/${canonicalShowSlug}?view=scroll`}>Scroll view</Link>
@@ -63,9 +63,9 @@ export default async function PublicProgramPage({
         </div>
 
         {scrollView ? (
-          <section className="grid" style={{ gap: "0.75rem" }}>
+          <section className="card-list">
             {program.paddedPages.map((page, index) => (
-              <article key={`${page.id}-${index}`} className="card">
+              <article key={`${page.id}-${index}`} className="card card-soft stack-sm">
                 <strong>Page {index + 1}</strong>
                 <div>{page.title}</div>
               </article>

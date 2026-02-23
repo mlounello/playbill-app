@@ -19,12 +19,25 @@ export function PeopleBulkEditor({
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
-  const selectedCount = selectedIds.size;
+  const [query, setQuery] = useState("");
+  const [enableRoleTitle, setEnableRoleTitle] = useState(false);
+  const [enableTeamType, setEnableTeamType] = useState(false);
+  const [enableEmail, setEnableEmail] = useState(false);
+  const [enableFullName, setEnableFullName] = useState(false);
 
   const sortedPeople = useMemo(
     () => [...people].sort((a, b) => a.full_name.localeCompare(b.full_name) || a.role_title.localeCompare(b.role_title)),
     [people]
   );
+  const visiblePeople = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return sortedPeople;
+    return sortedPeople.filter((person) => {
+      const haystack = `${person.full_name} ${person.role_title} ${person.team_type} ${person.email}`.toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [query, sortedPeople]);
+  const selectedCount = selectedIds.size;
 
   const toggle = (id: string) => {
     setSelectedIds((current) => {
@@ -35,104 +48,170 @@ export function PeopleBulkEditor({
     });
   };
 
-  const selectAll = () => setSelectedIds(new Set(sortedPeople.map((person) => person.id)));
+  const selectAllVisible = () => setSelectedIds(new Set(visiblePeople.map((person) => person.id)));
+  const clearVisible = () => {
+    if (visiblePeople.length === 0) return;
+    const visibleIds = new Set(visiblePeople.map((person) => person.id));
+    setSelectedIds((current) => new Set([...current].filter((id) => !visibleIds.has(id))));
+  };
   const clearAll = () => setSelectedIds(new Set());
 
   return (
-    <section className="card grid" style={{ gap: "0.7rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.7rem", flexWrap: "wrap", alignItems: "center" }}>
-        <strong>Current People ({people.length})</strong>
-        <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: "0.88rem", opacity: 0.85 }}>{selectedCount} selected</span>
-          <button type="button" onClick={selectAll}>Select all</button>
-          <button type="button" onClick={clearAll}>Clear</button>
+    <section className="card people-editor">
+      <header className="people-editor-header">
+        <strong>Current People</strong>
+        <span className="people-editor-count">{people.length} total</span>
+      </header>
+
+      <div className="people-toolbar">
+        <div className="people-toolbar-left">
+          <span className="people-editor-count">{selectedCount} selected</span>
+          <button type="button" className="ghost-button" onClick={selectAllVisible}>
+            Select visible
+          </button>
+          <button type="button" className="ghost-button" onClick={clearVisible}>
+            Clear visible
+          </button>
+          <button type="button" className="ghost-button" onClick={clearAll}>
+            Clear all
+          </button>
           <button type="button" onClick={() => setOpen(true)} disabled={selectedCount === 0}>
             Bulk Edit Selected
           </button>
         </div>
+        <label className="people-search">
+          <span>Search</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, role, email" />
+        </label>
       </div>
 
       {sortedPeople.length === 0 ? (
-        <div>No people yet.</div>
+        <div className="people-empty">No people yet.</div>
       ) : (
-        <div className="grid" style={{ gap: "0.35rem" }}>
-          {sortedPeople.map((person, index) => (
-            <label key={person.id} style={{ display: "flex", gap: "0.55rem", alignItems: "center", fontWeight: 400 }}>
-              <input type="checkbox" checked={selectedIds.has(person.id)} onChange={() => toggle(person.id)} />
-              <span>
-                {index + 1}. {person.full_name} - {person.role_title} ({person.team_type}) • {person.email}
-              </span>
-            </label>
-          ))}
+        <div className="people-table-wrap">
+          <table className="people-table">
+            <thead>
+              <tr>
+                <th aria-label="Select" />
+                <th>Name</th>
+                <th>Role</th>
+                <th>Category</th>
+                <th>Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visiblePeople.map((person) => {
+                const checked = selectedIds.has(person.id);
+                return (
+                  <tr
+                    key={person.id}
+                    className={checked ? "is-selected" : ""}
+                    onClick={() => toggle(person.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggle(person.id);
+                      }
+                    }}
+                  >
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(person.id)}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                    </td>
+                    <td>{person.full_name}</td>
+                    <td>{person.role_title}</td>
+                    <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
+                    <td>{person.email || "No email"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
       {open ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 1000,
-            padding: "1rem"
-          }}
-        >
-          <div className="card grid" style={{ width: "min(760px, 96vw)", maxHeight: "92vh", overflow: "auto", gap: "0.75rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.7rem" }}>
+        <div role="dialog" aria-modal="true" className="people-modal-backdrop">
+          <div className="card people-modal">
+            <div className="people-modal-header">
               <strong>Bulk Edit {selectedCount} Selected Person(s)</strong>
               <button type="button" onClick={() => setOpen(false)}>Close</button>
             </div>
-            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+            <p className="people-modal-note">
               Enable only the fields you want changed. Only enabled fields will be saved across selected people.
             </p>
 
-            <form action={onSubmitAction} className="grid" style={{ gap: "0.65rem" }}>
+            <form action={onSubmitAction} className="people-modal-form">
               {[...selectedIds].map((id) => (
                 <input key={id} type="hidden" name="selectedPersonIds" value={id} />
               ))}
 
-              <div className="grid" style={{ gap: "0.45rem" }}>
-                <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontWeight: 600 }}>
-                  <input type="checkbox" name="enableRoleTitle" />
+              <div className="people-field-row">
+                <label className="people-field-toggle">
+                  <input
+                    type="checkbox"
+                    name="enableRoleTitle"
+                    checked={enableRoleTitle}
+                    onChange={(event) => setEnableRoleTitle(event.target.checked)}
+                  />
                   Enable Role Title
                 </label>
-                <input name="roleTitle" placeholder="New role title" />
+                <input name="roleTitle" placeholder="New role title" disabled={!enableRoleTitle} />
               </div>
 
-              <div className="grid" style={{ gap: "0.45rem" }}>
-                <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontWeight: 600 }}>
-                  <input type="checkbox" name="enableTeamType" />
+              <div className="people-field-row">
+                <label className="people-field-toggle">
+                  <input
+                    type="checkbox"
+                    name="enableTeamType"
+                    checked={enableTeamType}
+                    onChange={(event) => setEnableTeamType(event.target.checked)}
+                  />
                   Enable Category
                 </label>
-                <select name="teamType" defaultValue="production">
+                <select name="teamType" defaultValue="production" disabled={!enableTeamType}>
                   <option value="cast">cast</option>
                   <option value="production">production</option>
                 </select>
               </div>
 
-              <div className="grid" style={{ gap: "0.45rem" }}>
-                <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontWeight: 600 }}>
-                  <input type="checkbox" name="enableEmail" />
+              <div className="people-field-row">
+                <label className="people-field-toggle">
+                  <input
+                    type="checkbox"
+                    name="enableEmail"
+                    checked={enableEmail}
+                    onChange={(event) => setEnableEmail(event.target.checked)}
+                  />
                   Enable Email
                 </label>
-                <input name="email" placeholder="new@email.com" />
+                <input name="email" placeholder="new@email.com" disabled={!enableEmail} />
               </div>
 
-              <div className="grid" style={{ gap: "0.45rem" }}>
-                <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontWeight: 600 }}>
-                  <input type="checkbox" name="enableFullName" />
+              <div className="people-field-row">
+                <label className="people-field-toggle">
+                  <input
+                    type="checkbox"
+                    name="enableFullName"
+                    checked={enableFullName}
+                    onChange={(event) => setEnableFullName(event.target.checked)}
+                  />
                   Enable Full Name
                 </label>
-                <input name="fullName" placeholder="New Full Name" />
+                <input name="fullName" placeholder="New Full Name" disabled={!enableFullName} />
               </div>
 
-              <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+              <div className="people-modal-actions">
                 <button type="submit">Save Enabled Fields</button>
-                <button type="button" onClick={() => setOpen(false)}>Cancel</button>
+                <button type="button" className="ghost-button" onClick={() => setOpen(false)}>
+                  Cancel
+                </button>
               </div>
             </form>
           </div>

@@ -71,12 +71,12 @@ export function PerformanceInputs({
   };
 
   return (
-    <div className="card grid">
+    <div className="card stack-sm">
       <h3 style={{ marginBottom: 0 }}>Performance Dates & Times</h3>
-      <p style={{ margin: 0, fontSize: "0.95rem" }}>Only one date is required. Add times when relevant.</p>
+      <p className="section-note">Only one date is required. Add times when relevant.</p>
 
       {performances.map((performance, index) => (
-        <div key={`performance-${index}`} style={{ display: "grid", gap: "0.5rem", gridTemplateColumns: "1fr 1fr auto" }}>
+        <div key={`performance-${index}`} className="performance-row">
           <label>
             Date
             <input
@@ -92,13 +92,13 @@ export function PerformanceInputs({
             <input type="time" value={performance.time} onChange={(event) => update(index, "time", event.target.value)} />
           </label>
 
-          <button type="button" onClick={() => remove(index)} style={{ alignSelf: "end" }}>
+          <button type="button" onClick={() => remove(index)} className="ghost-button performance-remove">
             Remove
           </button>
         </div>
       ))}
 
-      <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+      <div className="top-actions">
         <button type="button" onClick={add}>
           Add Performance
         </button>
@@ -117,7 +117,7 @@ export function PerformanceInputs({
       <input type="hidden" name="showDates" value={summary} readOnly required />
       <input type="hidden" name="performanceSchedule" value={encodedSchedule} readOnly />
 
-      <div style={{ fontSize: "0.9rem" }}>
+      <div className="meta-text">
         <strong>Preview:</strong> {summary || "Select at least one date"}
       </div>
     </div>

@@ -23,31 +23,31 @@ export default async function ContributorTaskPage({
 
   return (
     <main>
-      <div className="container grid" style={{ maxWidth: 820 }}>
-        <div className="hide-print" style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+      <div className="container page-shell page-shell-narrow">
+        <div className="hide-print top-actions">
           <Link href="/contribute">Back to tasks</Link>
           <Link href={`/programs/${task.program_slug}`}>Program Preview</Link>
         </div>
 
-        <h1 style={{ marginBottom: 0 }}>{task.show_title}</h1>
+        <h1>{task.show_title}</h1>
         <section className="card">
           <strong>{task.person.full_name}</strong> - {task.person.role_title} ({task.person.team_type})
-          <div style={{ marginTop: "0.35rem" }}>
+          <div className="meta-text" style={{ marginTop: "0.35rem" }}>
             Status: <span className="status-pill">{task.person.submission_status}</span>
           </div>
-          <div style={{ fontSize: "0.85rem", opacity: 0.85, marginTop: "0.35rem" }}>
+          <div className="meta-text" style={{ marginTop: "0.35rem" }}>
             Bio limit: {BIO_CHAR_LIMIT_DEFAULT} chars. Current plain-text count: {task.person.bio_char_count}
           </div>
         </section>
 
         {error ? (
-          <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+          <div className="card alert">
             {error}
           </div>
         ) : null}
-        {saved ? <div className="card" style={{ borderColor: "#006b54" }}>Saved successfully.</div> : null}
+        {saved ? <div className="card alert-success">Saved successfully.</div> : null}
         {task.person.submission_status === "returned" ? (
-          <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+          <div className="card alert">
             <strong>Returned for edits.</strong>
             <div>
               {task.return_message?.reason
@@ -57,7 +57,7 @@ export default async function ContributorTaskPage({
           </div>
         ) : null}
 
-        <form action={saveAction} className="card grid" style={{ gap: "0.8rem" }}>
+        <form action={saveAction} className="card stack-md">
           <RichTextField
             name="bio"
             label="Bio"
@@ -74,9 +74,9 @@ export default async function ContributorTaskPage({
           />
 
           {isReadOnly ? (
-            <p style={{ margin: 0 }}>This task is read-only because it has been {task.person.submission_status}.</p>
+            <p className="section-note">This task is read-only because it has been {task.person.submission_status}.</p>
           ) : (
-            <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+            <div className="top-actions">
               <button type="submit" name="intent" value="save">
                 Save Draft
               </button>

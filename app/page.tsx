@@ -3,20 +3,23 @@ import Link from "next/link";
 export default function Home() {
   return (
     <main>
-      <div className="container grid" style={{ gap: "2rem" }}>
+      <div className="container page-shell">
         <section className="banner">
-          <h1 style={{ fontSize: "clamp(2rem, 4vw, 3.5rem)", marginBottom: "0.4rem" }}>Playbill Builder</h1>
-          <p style={{ margin: 0, maxWidth: "60ch" }}>
+          <h1>Playbill Builder</h1>
+          <p className="section-note">
             Build polished theatre programs from cast bios, director&apos;s notes, photos, and credits. Publish online and print beautifully.
           </p>
-          <div style={{ marginTop: "1rem" }}>
+          <div className="top-actions">
             <Link className="button-link" href="/programs/new">
               Create a New Program
+            </Link>
+            <Link className="tab-chip" href="/app/shows">
+              Open Admin Workspace
             </Link>
           </div>
         </section>
 
-        <section className="card">
+        <section className="card stack-sm">
           <h2>What this MVP does</h2>
           <ul>
             <li>Capture title, theatre info, dates, director&apos;s notes, and acknowledgements.</li>

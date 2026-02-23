@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { FlashToast } from "@/components/flash-toast";
 import { PeopleBulkEditor } from "@/components/people-bulk-editor";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
+import { SubmissionFilterPresets } from "@/components/submission-filter-presets";
+import { SubmissionViewToggle } from "@/components/submission-view-toggle";
+import { WorkspaceTabs } from "@/components/workspace-tabs";
 import {
   archiveShow,
   deleteArchivedShow,
@@ -51,10 +55,11 @@ export default async function ShowWorkspacePage({
     submissionFilter?: string;
     submissionQuery?: string;
     submissionSort?: string;
+    submissionView?: string;
   }>;
 }) {
   const { showId } = await params;
-  const { tab, error, success, submissionFilter, submissionQuery, submissionSort } = await searchParams;
+  const { tab, error, success, submissionFilter, submissionQuery, submissionSort, submissionView } = await searchParams;
   const show = await getShowById(showId);
   const activeTab = tab || "overview";
 
@@ -85,6 +90,8 @@ export default async function ShowWorkspacePage({
   const activeSubmissionFilter = submissionFilter || "all";
   const activeSubmissionQuery = (submissionQuery || "").trim().toLowerCase();
   const activeSubmissionSort = submissionSort || "name_asc";
+  const activeSubmissionView = submissionView === "cards" ? "cards" : "table";
+  const submissionViewProvided = typeof submissionView === "string";
   const filteredSubmissions =
     activeTab === "submissions"
       ? people
@@ -167,55 +174,62 @@ export default async function ShowWorkspacePage({
   return (
     <main>
       <div className="container grid workspace-grid">
-        <aside className="card grid workspace-sidebar" style={{ gap: "0.45rem" }}>
-          {tabs.map((item) => (
-            <Link
-              key={item.id}
-              href={`/app/shows/${show.id}?tab=${item.id}`}
-              className="tab-chip"
-              style={activeTab === item.id ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
-            >
-              {item.label}
-            </Link>
-          ))}
+        <aside className="card workspace-sidebar">
+          <WorkspaceTabs tabs={tabs} showId={show.id} activeTab={activeTab} />
         </aside>
 
-        <section className="grid" style={{ gap: "1rem" }}>
-          <h1 style={{ marginBottom: 0 }}>{show.title}</h1>
-          {error ? (
-            <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
-              {error}
-            </div>
-          ) : null}
-          {success ? (
-            <div className="card" style={{ borderColor: "#006b54", color: "#055a47" }}>
-              {success}
-            </div>
-          ) : null}
+        <section className="page-shell">
+          <h1>{show.title}</h1>
+          <FlashToast message={error} tone="error" />
+          <FlashToast message={success} tone="success" />
 
           {activeTab === "overview" ? (
-            <section className="grid" style={{ gap: "0.75rem" }}>
-              <article className="card grid">
-                <div>Status: <span className="status-pill">{show.status}</span></div>
-                <div>Submissions complete: {show.submission_submitted}/{show.submission_total}</div>
-                <div>Outstanding submissions: {reminderSummary.missing}</div>
-                <div>Overdue submissions: {reminderSummary.overdue}</div>
-                <div>Due within 7 days: {reminderSummary.dueSoon}</div>
-                <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+            <section className="workspace-pane">
+              <div className="pane-header">
+                <strong>Overview</strong>
+                <div className="kpi-inline">
+                  <span className="kpi-badge">{show.submission_submitted}/{show.submission_total} submitted</span>
+                  <span className="kpi-badge">{reminderSummary.missing} outstanding</span>
+                </div>
+              </div>
+              <article className="card stack-sm submissions-filter">
+                <div className="stat-grid">
+                  <div className="stat-item">
+                    <div className="stat-label">Status</div>
+                    <div className="stat-value"><span className="status-pill">{show.status}</span></div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-label">Submissions Complete</div>
+                    <div className="stat-value">{show.submission_submitted}/{show.submission_total}</div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-label">Outstanding</div>
+                    <div className="stat-value">{reminderSummary.missing}</div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-label">Overdue</div>
+                    <div className="stat-value">{reminderSummary.overdue}</div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-label">Due in 7 days</div>
+                    <div className="stat-value">{reminderSummary.dueSoon}</div>
+                  </div>
+                </div>
+                <div className="link-row">
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Preview</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition View</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
                 </div>
-                <div style={{ display: "grid", gap: "0.55rem", marginTop: "0.2rem" }}>
-                  <form action={setDueDateAction} style={{ display: "flex", gap: "0.55rem", alignItems: "center", flexWrap: "wrap" }}>
+                <div className="stack-sm">
+                  <form action={setDueDateAction} className="top-actions">
                     <label>
                       Global bio due date
                       <input type="date" name="dueDate" required />
                     </label>
                     <button type="submit">Set Due Date</button>
                   </form>
-                  <div style={{ display: "flex", gap: "0.55rem", flexWrap: "wrap" }}>
+                  <div className="top-actions">
                     <form action={sendInvitesAction}>
                       <button type="submit">Send Invites</button>
                     </form>
@@ -226,17 +240,18 @@ export default async function ShowWorkspacePage({
                 </div>
               </article>
 
-              <article className="card grid" style={{ borderColor: "#b12727" }}>
-                <strong style={{ color: "#8f1f1f" }}>Big Red Blockers</strong>
+              <article className="card stack-sm alert">
+                <strong className="danger-title">Big Red Blockers</strong>
                 {activeBlockers.length === 0 ? (
-                  <div style={{ color: "#055a47" }}>No blockers right now.</div>
+                  <div className="meta-text">No blockers right now.</div>
                 ) : (
-                  <div style={{ display: "grid", gap: "0.45rem" }}>
+                  <div className="blocker-list">
                     {activeBlockers.map((item) => (
                       <Link
                         key={item.key}
                         href={`/app/shows/${show.id}?tab=submissions&submissionFilter=${item.key}`}
-                        style={{ color: item.count > 0 ? "#8f1f1f" : undefined, fontWeight: item.count > 0 ? 700 : 500 }}
+                        className="danger-title"
+                        style={{ fontWeight: item.count > 0 ? 700 : 500 }}
                       >
                         {item.label}
                       </Link>
@@ -245,7 +260,7 @@ export default async function ShowWorkspacePage({
                 )}
               </article>
 
-              <article className="card grid">
+              <article className="card stack-sm">
                 <strong>Milestone 4 Tracker</strong>
                 <div>1. Admin review panel: done</div>
                 <div>2. Approve/return/lock workflow: done</div>
@@ -256,7 +271,7 @@ export default async function ShowWorkspacePage({
           ) : null}
 
           {activeTab === "program-plan" ? (
-            <section className="grid" style={{ gap: "0.75rem" }}>
+            <section className="panel-grid">
               <div className="card">
                 Configure module order, visibility, and behavior. This saves to `program_modules`.
               </div>
@@ -265,8 +280,8 @@ export default async function ShowWorkspacePage({
           ) : null}
 
           {activeTab === "preview" ? (
-            <section className="grid" style={{ gap: "0.75rem" }}>
-              <article className="card grid">
+            <section className="panel-grid">
+              <article className="card stack-sm">
                 <strong>Program Plan to Preview Mapping</strong>
                 <div>
                   Active preview token order:{" "}
@@ -276,7 +291,7 @@ export default async function ShowWorkspacePage({
                     "No mapped tokens. Enable visible modules in Program Plan."
                   )}
                 </div>
-                <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+                <div className="link-row">
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Reader Preview</Link> : null}
                   {show.program_slug ? (
                     <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition Preview</Link>
@@ -284,7 +299,7 @@ export default async function ShowWorkspacePage({
                 </div>
               </article>
 
-              <article className="card grid">
+              <article className="card stack-sm">
                 <strong>Module Sequence</strong>
                 {show.modules.map((module, index) => (
                   <div key={module.id}>
@@ -297,108 +312,110 @@ export default async function ShowWorkspacePage({
           ) : null}
 
           {activeTab === "people-roles" ? (
-            <section className="grid" style={{ gap: "0.75rem" }}>
-              <article className="card grid">
-                <strong>Add Person</strong>
-                <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
-                  <input type="hidden" name="mode" value="manual" />
-                  <label>
-                    Full name
-                    <input name="fullName" required placeholder="First Last" />
-                  </label>
-                  <label>
-                    Role title
-                    <input name="roleTitle" required placeholder="Stage Manager" />
-                  </label>
-                  <label>
-                    Category
-                    <select name="teamType" defaultValue="production">
-                      <option value="cast">Cast</option>
-                      <option value="production">Production</option>
-                    </select>
-                  </label>
-                  <label>
-                    Email
-                    <input name="email" type="email" required placeholder="name@example.com" />
-                  </label>
-                  <button type="submit">Add Person</button>
-                </form>
-              </article>
-
-              <article className="card grid">
-                <strong>Bulk Import</strong>
-                <p style={{ margin: 0, fontSize: "0.92rem" }}>
-                  Paste either: <code>Name | Role | cast|production | email</code> per line, or a CSV/tabular paste with headers
-                  <code> First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>.
-                </p>
-                <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
-                  <input type="hidden" name="mode" value="bulk" />
-                  <textarea name="bulkLines" className="rich-textarea" placeholder={"Name | Role | cast | email@example.com"} />
-                  <button type="submit">Import People</button>
-                </form>
-              </article>
-
-              <article className="card grid">
-                <strong>CSV Upload</strong>
-                <p style={{ margin: 0, fontSize: "0.92rem" }}>
-                  Supported headers: <code>First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>
-                </p>
-                <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.85 }}>
-                  Uses <code>Preferred Name</code> when available, maps <code>Project Role</code> to role title, and infers cast vs production.
-                </p>
-                <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
-                  <input type="hidden" name="mode" value="csv" />
-                  <input type="file" name="csvFile" accept=".csv,text/csv" required />
-                  <button type="submit">Upload CSV</button>
-                </form>
-              </article>
-
-              <article className="card grid">
-                <strong>Bulk Edit One Field</strong>
-                <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.9 }}>
-                  Select one or more fields, then paste lines using <code>lookup | field=value | field=value</code>. Only selected fields are updated.
-                </p>
-                <form action={bulkEditPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
-                  <div className="grid" style={{ gap: "0.35rem" }}>
-                    <strong style={{ fontSize: "0.95rem" }}>Fields to update</strong>
-                    <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-                      <input type="checkbox" name="targetFields" value="role_title" defaultChecked />
-                      Role Title
+            <section className="panel-grid">
+              <div className="people-forms-grid">
+                <article className="card stack-sm">
+                  <strong>Add Person</strong>
+                  <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
+                    <input type="hidden" name="mode" value="manual" />
+                    <label>
+                      Full name
+                      <input name="fullName" required placeholder="First Last" />
                     </label>
-                    <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-                      <input type="checkbox" name="targetFields" value="team_type" />
-                      Category (cast/production)
+                    <label>
+                      Role title
+                      <input name="roleTitle" required placeholder="Stage Manager" />
                     </label>
-                    <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-                      <input type="checkbox" name="targetFields" value="email" />
+                    <label>
+                      Category
+                      <select name="teamType" defaultValue="production">
+                        <option value="cast">Cast</option>
+                        <option value="production">Production</option>
+                      </select>
+                    </label>
+                    <label>
                       Email
+                      <input name="email" type="email" required placeholder="name@example.com" />
                     </label>
-                    <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-                      <input type="checkbox" name="targetFields" value="full_name" />
-                      Full Name
+                    <button type="submit">Add Person</button>
+                  </form>
+                </article>
+
+                <article className="card grid">
+                  <strong>Bulk Import</strong>
+                  <p className="section-note">
+                    Paste either: <code>Name | Role | cast|production | email</code> per line, or a CSV/tabular paste with headers
+                    <code> First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>.
+                  </p>
+                  <form action={addPeopleAction} className="stack-sm">
+                    <input type="hidden" name="mode" value="bulk" />
+                    <textarea name="bulkLines" className="rich-textarea" placeholder={"Name | Role | cast | email@example.com"} />
+                    <button type="submit">Import People</button>
+                  </form>
+                </article>
+
+                <article className="card stack-sm">
+                  <strong>CSV Upload</strong>
+                  <p className="section-note">
+                    Supported headers: <code>First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>
+                  </p>
+                  <p className="section-note">
+                    Uses <code>Preferred Name</code> when available, maps <code>Project Role</code> to role title, and infers cast vs production.
+                  </p>
+                  <form action={addPeopleAction} className="stack-sm">
+                    <input type="hidden" name="mode" value="csv" />
+                    <input type="file" name="csvFile" accept=".csv,text/csv" required />
+                    <button type="submit">Upload CSV</button>
+                  </form>
+                </article>
+
+                <article className="card stack-sm">
+                  <strong>Bulk Edit by Lookup</strong>
+                  <p className="section-note">
+                    Select one or more fields, then paste lines using <code>lookup | field=value | field=value</code>. Only selected fields are updated.
+                  </p>
+                  <form action={bulkEditPeopleAction} className="stack-sm">
+                    <div className="stack-sm">
+                      <strong>Fields to update</strong>
+                      <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                        <input type="checkbox" name="targetFields" value="role_title" defaultChecked />
+                        Role Title
+                      </label>
+                      <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                        <input type="checkbox" name="targetFields" value="team_type" />
+                        Category (cast/production)
+                      </label>
+                      <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                        <input type="checkbox" name="targetFields" value="email" />
+                        Email
+                      </label>
+                      <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                        <input type="checkbox" name="targetFields" value="full_name" />
+                        Full Name
+                      </label>
+                    </div>
+                    <label>
+                      Lookup by
+                      <select name="lookupField" defaultValue="email">
+                        <option value="email">Email</option>
+                        <option value="name">Full Name</option>
+                      </select>
                     </label>
-                  </div>
-                  <label>
-                    Lookup by
-                    <select name="lookupField" defaultValue="email">
-                      <option value="email">Email</option>
-                      <option value="name">Full Name</option>
-                    </select>
-                  </label>
-                  <label>
-                    Edit lines
-                    <textarea
-                      name="editsText"
-                      className="rich-textarea"
-                      placeholder={
-                        "lookup@example.com | role=Assistant Director | team_type=production\nanother@example.com | email=new@example.com\n\n(single selected field shortcut)\nlookup@example.com | New Value"
-                      }
-                      required
-                    />
-                  </label>
-                  <button type="submit">Apply Bulk Edit</button>
-                </form>
-              </article>
+                    <label>
+                      Edit lines
+                      <textarea
+                        name="editsText"
+                        className="rich-textarea"
+                        placeholder={
+                          "lookup@example.com | role=Assistant Director | team_type=production\nanother@example.com | email=new@example.com\n\n(single selected field shortcut)\nlookup@example.com | New Value"
+                        }
+                        required
+                      />
+                    </label>
+                    <button type="submit">Apply Bulk Edit</button>
+                  </form>
+                </article>
+              </div>
 
               <PeopleBulkEditor
                 people={people.map((person) => ({
@@ -414,14 +431,19 @@ export default async function ShowWorkspacePage({
           ) : null}
 
           {activeTab === "submissions" ? (
-            <section className="grid" style={{ gap: "0.75rem" }}>
-              <article className="card grid">
-                <strong>Submission Tasks</strong>
-                <div>
-                  {people.filter((person) => person.submission_status === "submitted" || person.submission_status === "approved" || person.submission_status === "locked").length}
-                  /{people.length} submitted or better
+            <section className="workspace-pane">
+              <div className="pane-header">
+                <strong>Submissions</strong>
+                <div className="kpi-inline">
+                  <span className="kpi-badge">
+                    {people.filter((person) => person.submission_status === "submitted" || person.submission_status === "approved" || person.submission_status === "locked").length}
+                    /{people.length} complete
+                  </span>
                 </div>
-                <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+              </div>
+              <article className="card stack-sm">
+                <strong>Filter Queue</strong>
+                <div className="chip-row">
                   {[
                     ["all", "All"],
                     ["pending", "Pending"],
@@ -435,7 +457,7 @@ export default async function ShowWorkspacePage({
                   ].map(([value, label]) => (
                     <Link
                       key={value}
-                      href={`/app/shows/${show.id}?tab=submissions&submissionFilter=${value}&submissionSort=${activeSubmissionSort}&submissionQuery=${encodeURIComponent(activeSubmissionQuery)}`}
+                      href={`/app/shows/${show.id}?tab=submissions&submissionFilter=${value}&submissionSort=${activeSubmissionSort}&submissionQuery=${encodeURIComponent(activeSubmissionQuery)}&submissionView=${activeSubmissionView}`}
                       className="tab-chip"
                       style={activeSubmissionFilter === value ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
                     >
@@ -443,9 +465,10 @@ export default async function ShowWorkspacePage({
                     </Link>
                   ))}
                 </div>
-                <form method="get" className="grid" style={{ gap: "0.45rem" }}>
+                <form method="get" className="form-row-2">
                   <input type="hidden" name="tab" value="submissions" />
                   <input type="hidden" name="submissionFilter" value={activeSubmissionFilter} />
+                  <input type="hidden" name="submissionView" value={activeSubmissionView} />
                   <label>
                     Search
                     <input name="submissionQuery" defaultValue={activeSubmissionQuery} placeholder="Name, role, or email" />
@@ -461,64 +484,132 @@ export default async function ShowWorkspacePage({
                   </label>
                   <button type="submit">Apply</button>
                 </form>
+                <SubmissionViewToggle
+                  showId={show.id}
+                  filter={activeSubmissionFilter}
+                  sort={activeSubmissionSort}
+                  query={activeSubmissionQuery}
+                  activeView={activeSubmissionView}
+                  submissionViewProvided={submissionViewProvided}
+                />
+                <SubmissionFilterPresets
+                  filter={activeSubmissionFilter}
+                  sort={activeSubmissionSort}
+                  query={activeSubmissionQuery}
+                  view={activeSubmissionView}
+                />
               </article>
 
-              <article className="card grid">
+              <article className="card stack-sm">
                 {filteredSubmissions.length === 0 ? (
                   <div>No submissions yet. Add people in People and Roles first.</div>
                 ) : (
-                  filteredSubmissions.map((person) => {
-                    const approveAction = adminQuickStatus.bind(null, show.id, person.id, "approved");
-                    const lockAction = adminQuickStatus.bind(null, show.id, person.id, "locked");
-                    const returnAction = adminReturnSubmission.bind(null, show.id, person.id);
-                    return (
-                      <div
-                        key={person.id}
-                        style={{
-                          border: "1px solid #e5e5e5",
-                          borderRadius: "10px",
-                          padding: "0.75rem",
-                          display: "grid",
-                          gap: "0.5rem"
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
-                          <div>
-                            <strong>{person.full_name}</strong> - {person.role_title}
-                            <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
-                              {person.team_type} • {person.email}
+                  activeSubmissionView === "table" ? (
+                    <div className="table-frame">
+                      <table className="simple-table">
+                        <caption className="sr-only">Submission review queue</caption>
+                        <thead>
+                          <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Role</th>
+                            <th scope="col">Category</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Chars</th>
+                            <th scope="col">Updated</th>
+                            <th scope="col">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredSubmissions.map((person) => {
+                            const approveAction = adminQuickStatus.bind(null, show.id, person.id, "approved");
+                            const lockAction = adminQuickStatus.bind(null, show.id, person.id, "locked");
+                            const returnAction = adminReturnSubmission.bind(null, show.id, person.id);
+                            return (
+                              <tr key={person.id}>
+                                <td>
+                                  <strong>{person.full_name}</strong>
+                                  <div className="meta-text">{person.email}</div>
+                                </td>
+                                <td>{person.role_title}</td>
+                                <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
+                                <td><span className="status-pill">{person.submission_status}</span></td>
+                                <td>{person.bio_char_count}</td>
+                                <td>{person.submitted_at ? new Date(person.submitted_at).toLocaleDateString("en-US") : "No submission yet"}</td>
+                                <td>
+                                  <div className="submission-actions">
+                                    <Link href={`/app/shows/${show.id}/submissions/${person.id}`}>Review</Link>
+                                    <form action={approveAction}>
+                                      <button type="submit">Approve</button>
+                                    </form>
+                                    <form action={lockAction}>
+                                      <button type="submit">Lock</button>
+                                    </form>
+                                    <form action={returnAction} className="inline-form">
+                                      <input name="message" placeholder="Return note" required />
+                                      <button type="submit">Return</button>
+                                    </form>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="submissions-grid">
+                      {filteredSubmissions.map((person) => {
+                        const approveAction = adminQuickStatus.bind(null, show.id, person.id, "approved");
+                        const lockAction = adminQuickStatus.bind(null, show.id, person.id, "locked");
+                        const returnAction = adminReturnSubmission.bind(null, show.id, person.id);
+                        return (
+                          <div key={person.id} className="submission-row">
+                            <div className="submission-row-top">
+                              <div className="submission-identity">
+                                <strong>{person.full_name}</strong> - {person.role_title}
+                                <div className="submission-meta">
+                                  {person.team_type} • {person.email}
+                                </div>
+                              </div>
+                              <div className="submission-meta">
+                                Status: <span className="status-pill">{person.submission_status}</span> • {person.bio_char_count} chars
+                              </div>
+                              <div className="submission-meta">
+                                Updated: {person.submitted_at ? new Date(person.submitted_at).toLocaleDateString("en-US") : "No submission yet"}
+                              </div>
+                            </div>
+                            <div className="submission-actions">
+                              <Link href={`/app/shows/${show.id}/submissions/${person.id}`}>Open Review</Link>
+                              <form action={approveAction}>
+                                <button type="submit">Approve</button>
+                              </form>
+                              <form action={returnAction} className="inline-form">
+                                <input name="message" placeholder="Return message" required />
+                                <button type="submit">Return</button>
+                              </form>
+                              <form action={lockAction}>
+                                <button type="submit">Lock</button>
+                              </form>
                             </div>
                           </div>
-                          <div>
-                            Status: <span className="status-pill">{person.submission_status}</span> • {person.bio_char_count} chars
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: "0.55rem", flexWrap: "wrap" }}>
-                          <Link href={`/app/shows/${show.id}/submissions/${person.id}`}>Open Review</Link>
-                          <form action={approveAction}>
-                            <button type="submit">Approve</button>
-                          </form>
-                          <form action={returnAction} style={{ display: "flex", gap: "0.45rem", alignItems: "center", flexWrap: "wrap" }}>
-                            <input name="message" placeholder="Return message" required style={{ minWidth: "14rem" }} />
-                            <button type="submit">Return</button>
-                          </form>
-                          <form action={lockAction}>
-                            <button type="submit">Lock</button>
-                          </form>
-                        </div>
-                      </div>
-                    );
-                  })
+                        );
+                      })}
+                    </div>
+                  )
                 )}
               </article>
             </section>
           ) : null}
 
           {activeTab === "export" ? (
-            <section className="grid" style={{ gap: "0.75rem" }}>
-              <article className="card grid" style={{ gap: "0.6rem" }}>
+            <section className="workspace-pane">
+              <div className="pane-header">
+                <strong>Export</strong>
+              </div>
+              <div className="export-cards">
+              <article className="card stack-sm">
                 <strong>Generate Exports</strong>
-                <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+                <div className="top-actions">
                   <form action={requestExportAction}>
                     <input type="hidden" name="exportType" value="proof" />
                     <button type="submit">Generate Proof Export</button>
@@ -528,22 +619,22 @@ export default async function ShowWorkspacePage({
                     <button type="submit">Generate Print Export</button>
                   </form>
                 </div>
-                <div style={{ fontSize: "0.88rem", opacity: 0.9 }}>
+                <div className="meta-text">
                   Print export assumes duplex short-edge booklet workflow and links to the imposition view.
                 </div>
               </article>
 
-              <article className="card grid" style={{ gap: "0.6rem" }}>
+              <article className="card stack-sm">
                 <strong>Export History</strong>
                 {exportRows.length === 0 ? (
                   <div>No exports yet.</div>
                 ) : (
                   exportRows.map((row) => (
-                    <div key={row.id} style={{ border: "1px solid #e5e5e5", borderRadius: "8px", padding: "0.55rem" }}>
+                    <div key={row.id} className="card card-soft">
                       <div>
                         <strong>{row.export_type}</strong> • <span className="status-pill">{row.status}</span>
                       </div>
-                      <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+                      <div className="meta-text">
                         Created: {new Date(row.created_at).toLocaleString("en-US")}
                         {row.completed_at ? ` • Completed: ${new Date(row.completed_at).toLocaleString("en-US")}` : ""}
                       </div>
@@ -552,17 +643,21 @@ export default async function ShowWorkspacePage({
                   ))
                 )}
               </article>
+              </div>
             </section>
           ) : null}
 
           {activeTab === "publish" ? (
-            <section className="grid" style={{ gap: "0.75rem" }}>
-              <article className="card grid" style={{ gap: "0.6rem" }}>
+            <section className="workspace-pane">
+              <div className="pane-header">
+                <strong>Publish</strong>
+              </div>
+              <article className="card stack-sm">
                 <strong>Public Program</strong>
                 <div>
                   Publish status: <span className="status-pill">{show.is_published ? "published" : "unpublished"}</span>
                 </div>
-                <div style={{ fontSize: "0.88rem", opacity: 0.9 }}>
+                <div className="meta-text">
                   Show slug: <code>{show.slug}</code>
                   {show.program_slug ? (
                     <>
@@ -571,22 +666,22 @@ export default async function ShowWorkspacePage({
                   ) : null}
                 </div>
                 {show.published_at ? (
-                  <div style={{ fontSize: "0.88rem", opacity: 0.85 }}>
+                  <div className="meta-text">
                     Published at: {new Date(show.published_at).toLocaleString("en-US")}
                   </div>
                 ) : null}
-                <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
+                <div className="top-actions">
                   <form action={setPublishAction}>
                     <input type="hidden" name="intent" value={show.is_published ? "unpublish" : "publish"} />
                     <button type="submit">{show.is_published ? "Unpublish" : "Publish"}</button>
                   </form>
                   {show.is_published ? <Link href={publicUrl}>Open Public URL</Link> : null}
                 </div>
-                <div style={{ fontSize: "0.88rem", opacity: 0.9 }}>
+                <div className="meta-text">
                   Public URL: <code>{publicUrl || "/p/{showSlug}"}</code>
                 </div>
                 {show.program_slug ? (
-                  <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                  <div className="link-row">
                     <Link href={`/programs/${show.program_slug}`}>Program Preview</Link>
                     <Link href={`/p/${show.slug}`}>Public Page</Link>
                   </div>
@@ -596,22 +691,25 @@ export default async function ShowWorkspacePage({
           ) : null}
 
           {activeTab === "settings" ? (
-            <section className="grid" style={{ gap: "0.75rem" }}>
-              <article className="card grid" style={{ gap: "0.6rem" }}>
+            <section className="workspace-pane">
+              <div className="pane-header">
+                <strong>Settings</strong>
+              </div>
+              <article className="card stack-sm">
                 <strong>Lifecycle Controls</strong>
                 <div>
                   Current status: <span className="status-pill">{show.status}</span>
                 </div>
                 {show.status !== "archived" ? (
-                  <form action={archiveShowAction} className="grid" style={{ gap: "0.5rem" }}>
-                    <p style={{ margin: 0 }}>
+                  <form action={archiveShowAction} className="stack-sm">
+                    <p className="section-note">
                       Archive this show first to disable active editing and unlock permanent deletion controls.
                     </p>
                     <button type="submit">Archive Show</button>
                   </form>
                 ) : (
-                  <form action={restoreShowAction} className="grid" style={{ gap: "0.5rem" }}>
-                    <p style={{ margin: 0 }}>
+                  <form action={restoreShowAction} className="stack-sm">
+                    <p className="section-note">
                       This show is archived. You can restore it to draft if deletion was accidental.
                     </p>
                     <button type="submit">Restore to Draft</button>
@@ -619,15 +717,15 @@ export default async function ShowWorkspacePage({
                 )}
               </article>
 
-              <article className="card grid" style={{ gap: "0.6rem", borderColor: "#b12727" }}>
-                <strong style={{ color: "#8f1f1f" }}>Danger Zone: Permanent Delete</strong>
-                <p style={{ margin: 0 }}>
+              <article className="card stack-sm alert">
+                <strong className="danger-title">Danger Zone: Permanent Delete</strong>
+                <p className="section-note">
                   Deletion is permanent and removes the show, linked program data, people, roles, and submissions.
                 </p>
-                <p style={{ margin: 0 }}>
+                <p className="section-note">
                   Required phrase: <code>{deletePhrase}</code>
                 </p>
-                <form action={deleteShowAction} className="grid" style={{ gap: "0.5rem" }}>
+                <form action={deleteShowAction} className="stack-sm">
                   <label>
                     Type confirmation phrase
                     <input
@@ -642,7 +740,7 @@ export default async function ShowWorkspacePage({
                   </button>
                 </form>
                 {show.status !== "archived" ? (
-                  <div style={{ fontSize: "0.88rem", color: "#8f1f1f" }}>
+                  <div className="meta-text danger-title">
                     Archive is required before deletion.
                   </div>
                 ) : null}

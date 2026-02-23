@@ -81,18 +81,18 @@ export function SectionOrderBuilder({ initialValue }: { initialValue?: string })
   return (
     <label>
       Section Order
-      <div className="card grid">
+      <div className="card stack-sm">
         {items.map((item, index) => (
           <div key={item.token} className="order-row">
-            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontWeight: 500 }}>
+            <label className="row-wrap" style={{ fontWeight: 500 }}>
               <input type="checkbox" checked={item.enabled} onChange={() => toggle(index)} />
               {item.label}
             </label>
-            <div style={{ display: "flex", gap: "0.35rem" }}>
-              <button type="button" onClick={() => move(index, -1)}>
+            <div className="top-actions">
+              <button type="button" className="ghost-button" onClick={() => move(index, -1)}>
                 Up
               </button>
-              <button type="button" onClick={() => move(index, 1)}>
+              <button type="button" className="ghost-button" onClick={() => move(index, 1)}>
                 Down
               </button>
             </div>

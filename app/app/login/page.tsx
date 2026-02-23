@@ -14,10 +14,12 @@ export default async function AdminLoginPage() {
 
   return (
     <main>
-      <div className="container grid" style={{ maxWidth: 680 }}>
+      <div className="container page-shell page-shell-narrow">
         <h1>Admin Login</h1>
         <MagicLinkForm redirectTo="/app/shows" />
-        <Link href="/">Back Home</Link>
+        <div className="top-actions">
+          <Link href="/">Back Home</Link>
+        </div>
       </div>
     </main>
   );

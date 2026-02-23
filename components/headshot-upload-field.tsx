@@ -83,7 +83,7 @@ export function HeadshotUploadField({ showId, personId, initialUrl = "", disable
   };
 
   return (
-    <div className="grid" style={{ gap: "0.45rem" }}>
+    <div className="stack-sm">
       <input type="hidden" name="headshotUrl" value={url} readOnly />
       <label>
         Upload headshot
@@ -94,7 +94,7 @@ export function HeadshotUploadField({ showId, personId, initialUrl = "", disable
           onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
         />
       </label>
-      <div style={{ fontSize: "0.82rem", opacity: 0.82 }}>
+      <div className="meta-text">
         Images are auto-cropped to square and optimized before upload.
       </div>
 
@@ -108,16 +108,12 @@ export function HeadshotUploadField({ showId, personId, initialUrl = "", disable
         />
       </label>
 
-      {pending ? <div style={{ fontSize: "0.88rem" }}>Uploading...</div> : null}
-      {error ? <div style={{ color: "#8f1f1f", fontSize: "0.88rem" }}>{error}</div> : null}
+      {pending ? <div className="meta-text">Uploading...</div> : null}
+      {error ? <div className="meta-text danger-title">{error}</div> : null}
       {url ? (
-        <div className="grid" style={{ gap: "0.35rem" }}>
-          <img
-            src={url}
-            alt="Headshot preview"
-            style={{ width: "160px", height: "160px", objectFit: "cover", border: "1px solid #d8d2c2", borderRadius: 8 }}
-          />
-          <button type="button" onClick={() => setUrl("")} disabled={disabled || pending}>
+        <div className="stack-sm">
+          <img src={url} alt="Headshot preview" className="headshot-preview" />
+          <button type="button" className="ghost-button" onClick={() => setUrl("")} disabled={disabled || pending}>
             Clear image
           </button>
         </div>

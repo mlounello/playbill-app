@@ -104,7 +104,7 @@ export default async function ProgramPage({
       <div className={`container${isExportMode ? " export-mode" : ""}`}>
         {!isExportMode ? (
           <>
-            <div className="hide-print" style={{ display: "flex", gap: "0.8rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+            <div className="hide-print top-actions" style={{ marginBottom: "1rem" }}>
               <Link href="/programs">All Programs</Link>
               <Link href={`/programs/${program.slug}/edit`}>Edit Program</Link>
               <Link href={`/programs/${program.slug}/submit`}>Share Bio Submission Form</Link>

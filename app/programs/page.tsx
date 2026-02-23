@@ -8,9 +8,9 @@ export default async function ProgramsIndexPage() {
 
   return (
     <main>
-      <div className="container grid">
-        <h1>Programs</h1>
-        <div className="hide-print">
+      <div className="container page-shell">
+        <div className="title-row">
+          <h1>Programs</h1>
           <Link className="button-link" href="/programs/new">
             Create New Program
           </Link>
@@ -19,15 +19,15 @@ export default async function ProgramsIndexPage() {
         {programs.length === 0 ? (
           <section className="card">No programs yet.</section>
         ) : (
-          <section className="grid" style={{ gap: "0.75rem" }}>
+          <section className="program-grid">
             {programs.map((program) => (
-              <article key={program.id} className="card" style={{ display: "grid", gap: "0.5rem" }}>
+              <article key={program.id} className="card stack-sm">
                 <strong>{program.title}</strong>
                 <div>{program.show_dates}</div>
-                <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+                <div className="meta-text">
                   Program slug: <code>{program.slug}</code>
                 </div>
-                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                <div className="link-row">
                   <Link href={`/programs/${program.slug}`}>Open</Link>
                   <Link href={`/p/${program.slug}`}>Public View</Link>
                   <Link href={`/programs/${program.slug}/edit`}>Edit</Link>

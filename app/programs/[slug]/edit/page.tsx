@@ -28,20 +28,20 @@ export default async function EditProgramPage({
 
   return (
     <main>
-      <div className="container grid">
-        <div className="hide-print" style={{ display: "flex", gap: "0.8rem" }}>
+      <div className="container page-shell">
+        <div className="hide-print top-actions">
           <Link href={`/programs/${slug}`}>Back to program</Link>
           <Link href="/programs">All programs</Link>
         </div>
 
         <h1>Edit Program</h1>
         {error ? (
-          <div className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
+          <div className="card alert">
             {error}
           </div>
         ) : null}
 
-        <form action={action} className="form-grid">
+        <form action={action} className="form-grid page-shell">
           <label>
             Show Title
             <input name="title" required defaultValue={program.title} />

@@ -196,7 +196,7 @@ export function ProgramPlanEditor({
   const payload = useMemo(() => JSON.stringify(items), [items]);
 
   return (
-    <form action={onSubmitAction} className="grid" style={{ gap: "0.75rem" }}>
+    <form action={onSubmitAction} className="card-list">
       <input type="hidden" name="modulesPayload" value={payload} readOnly />
       {items.map((item, index) => (
         <article
@@ -232,14 +232,14 @@ export function ProgramPlanEditor({
             setDraggingId(null);
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.8rem", flexWrap: "wrap" }}>
+          <div className="row-between">
             <strong>
               <span className="drag-handle" aria-hidden>
                 ::
               </span>{" "}
               {moduleTypeLabels[item.module_type] || item.module_type}
             </strong>
-            <span style={{ fontSize: "0.85rem", opacity: 0.8 }}>Drag to reorder</span>
+            <span className="meta-text">Drag to reorder</span>
           </div>
 
           <label>
@@ -247,7 +247,7 @@ export function ProgramPlanEditor({
             <input value={item.display_title} onChange={(event) => update(index, "display_title", event.target.value)} />
           </label>
 
-          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          <div className="row-wrap">
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
               <input
                 type="checkbox"
@@ -287,7 +287,7 @@ export function ProgramPlanEditor({
             </label>
           </div>
 
-          <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+          <div className="meta-text">
             Preview mapping:{" "}
             {(moduleTokenMap[item.module_type] ?? []).length > 0
               ? (moduleTokenMap[item.module_type] ?? []).join(", ")

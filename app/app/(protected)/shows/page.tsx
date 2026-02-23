@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FlashToast } from "@/components/flash-toast";
 import { getShowsForDashboard } from "@/lib/shows";
 
 export default async function AdminShowsPage({
@@ -11,31 +12,23 @@ export default async function AdminShowsPage({
 
   return (
     <main>
-      <div className="container grid">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-          <h1 style={{ marginBottom: 0 }}>Show Workspaces</h1>
+      <div className="container page-shell">
+        <div className="title-row">
+          <h1>Show Workspaces</h1>
           <Link className="button-link" href="/app/shows/new">
             Create Show
           </Link>
         </div>
 
-        {error ? (
-          <section className="card" style={{ borderColor: "#b12727", color: "#8f1f1f" }}>
-            {error}
-          </section>
-        ) : null}
-        {success ? (
-          <section className="card" style={{ borderColor: "#006b54", color: "#055a47" }}>
-            {success}
-          </section>
-        ) : null}
+        <FlashToast message={error} tone="error" />
+        <FlashToast message={success} tone="success" />
 
         {shows.length === 0 ? (
           <section className="card">No shows yet.</section>
         ) : (
-          <section className="grid" style={{ gap: "0.75rem" }}>
+          <section className="program-grid">
             {shows.map((show) => (
-              <article key={show.id} className="card" style={{ display: "grid", gap: "0.4rem" }}>
+              <article key={show.id} className="card stack-sm">
                 <strong>{show.title}</strong>
                 <div>
                   {show.start_date ?? "TBD"}
@@ -49,7 +42,7 @@ export default async function AdminShowsPage({
                   {" • "}
                   Submissions: {show.submission_submitted}/{show.submission_total}
                 </div>
-                <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>
+                <div className="meta-text">
                   Show slug: <code>{show.slug}</code>
                   {show.program_slug ? (
                     <>
@@ -57,7 +50,7 @@ export default async function AdminShowsPage({
                     </>
                   ) : null}
                 </div>
-                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                <div className="link-row">
                   <Link href={`/app/shows/${show.id}`}>Open Workspace</Link>
                   <Link href={`/app/shows/${show.id}?tab=publish`}>Publish Settings</Link>
                   <Link href={`/p/${show.slug}`}>Public Page</Link>

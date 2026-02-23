@@ -37,7 +37,7 @@ export function MagicLinkForm({ redirectTo }: { redirectTo: string }) {
   };
 
   return (
-    <form className="card grid" onSubmit={onSubmit}>
+    <form className="card stack-sm" onSubmit={onSubmit}>
       <label>
         Email
         <input
@@ -53,7 +53,7 @@ export function MagicLinkForm({ redirectTo }: { redirectTo: string }) {
         {loading ? "Sending..." : "Send Magic Link"}
       </button>
 
-      {message ? <p style={{ margin: 0 }}>{message}</p> : null}
+      {message ? <p className="section-note">{message}</p> : null}
     </form>
   );
 }
