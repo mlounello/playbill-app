@@ -53,6 +53,10 @@ alter table public.people add column if not exists headshot_url text not null de
 alter table public.people add column if not exists email text not null default '';
 alter table public.people add column if not exists submission_status text not null default 'pending';
 alter table public.people add column if not exists submitted_at timestamptz;
+alter table public.people add column if not exists first_name text not null default '';
+alter table public.people add column if not exists last_name text not null default '';
+alter table public.people add column if not exists preferred_name text not null default '';
+alter table public.people add column if not exists pronouns text not null default '';
 
 create table if not exists public.user_profiles (
   user_id uuid primary key references auth.users (id) on delete cascade,

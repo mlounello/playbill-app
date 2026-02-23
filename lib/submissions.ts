@@ -10,7 +10,11 @@ const manualPersonSchema = z.object({
   fullName: z.string().min(1),
   roleTitle: z.string().min(1),
   teamType: z.enum(["cast", "production"]),
-  email: z.string().email()
+  email: z.string().email(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  preferredName: z.string().optional(),
+  pronouns: z.string().optional()
 });
 
 const reviewSchema = z.object({
@@ -151,6 +155,27 @@ async function writeAuditLog(params: {
   });
 }
 
+async function getTableColumns(client: ReturnType<typeof getSupabaseWriteClient>, tableName: string) {
+  const { data, error } = await client
+    .from("information_schema.columns")
+    .select("column_name")
+    .eq("table_schema", "public")
+    .eq("table_name", tableName);
+
+  if (error || !data) {
+    return new Set<string>();
+  }
+
+  return new Set(data.map((item) => String(item.column_name)));
+}
+
+function filterToColumns(record: Record<string, unknown>, columns: Set<string>) {
+  if (columns.size === 0) {
+    return record;
+  }
+  return Object.fromEntries(Object.entries(record).filter(([key]) => columns.has(key)));
+}
+
 function parseBulkPeople(text: string) {
   const lines = text
     .split(/\r?\n/)
@@ -176,16 +201,22 @@ function parseBulkPeople(text: string) {
       const first = cols[firstNameIdx] ?? "";
       const last = cols[lastNameIdx] ?? "";
       const preferred = preferredNameIdx >= 0 ? cols[preferredNameIdx] ?? "" : "";
+      const pronounsIdx = findHeaderIndex(headerCols, ["pronouns"]);
+      const pronouns = pronounsIdx >= 0 ? cols[pronounsIdx] ?? "" : "";
       const role = cols[roleIdx] ?? "";
       const email = cols[emailIdx] ?? "";
-      const fullName = preferred.trim() || `${first} ${last}`.trim();
+      const fullName = preferred.trim() ? `${preferred.trim()} ${last.trim()}`.trim() : `${first} ${last}`.trim();
       const teamType = inferTeamTypeFromRole(role);
 
       return manualPersonSchema.parse({
         fullName,
         roleTitle: role,
         teamType,
-        email
+        email,
+        firstName: first,
+        lastName: last,
+        preferredName: preferred,
+        pronouns
       });
     });
   }
@@ -246,6 +277,7 @@ function parseCsvPeople(text: string) {
   const firstNameIdx = findHeaderIndex(headers, ["first name"]);
   const lastNameIdx = findHeaderIndex(headers, ["last name"]);
   const preferredNameIdx = findHeaderIndex(headers, ["preferred name"]);
+  const pronounsIdx = findHeaderIndex(headers, ["pronouns"]);
   const roleIdx = findHeaderIndex(headers, ["project role", "project roles", "role"]);
   const emailIdx = findHeaderIndex(headers, ["email", "email address"]);
   if (firstNameIdx < 0 || lastNameIdx < 0 || roleIdx < 0 || emailIdx < 0) {
@@ -257,17 +289,22 @@ function parseCsvPeople(text: string) {
     const first = cols[firstNameIdx] ?? "";
     const last = cols[lastNameIdx] ?? "";
     const preferred = preferredNameIdx >= 0 ? cols[preferredNameIdx] ?? "" : "";
+    const pronouns = pronounsIdx >= 0 ? cols[pronounsIdx] ?? "" : "";
     const role = cols[roleIdx] ?? "";
     const email = cols[emailIdx] ?? "";
 
-    const fullName = preferred.trim() || `${first} ${last}`.trim();
+    const fullName = preferred.trim() ? `${preferred.trim()} ${last.trim()}`.trim() : `${first} ${last}`.trim();
     const teamType = inferTeamTypeFromRole(role);
 
     return manualPersonSchema.parse({
       fullName,
       roleTitle: role,
       teamType,
-      email
+      email,
+      firstName: first,
+      lastName: last,
+      preferredName: preferred,
+      pronouns
     });
   });
 }
@@ -361,17 +398,27 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
   }
 
   const client = getSupabaseWriteClient();
-  const insertRows = records.map((record) => ({
-    program_id: context.program_id,
-    full_name: record.fullName.trim(),
-    role_title: record.roleTitle.trim(),
-    team_type: record.teamType,
-    email: normalizeEmail(record.email),
-    bio: "",
-    headshot_url: "",
-    submission_status: "pending",
-    submitted_at: null
-  }));
+  const peopleColumns = await getTableColumns(client, "people");
+  const insertRows = records.map((record) =>
+    filterToColumns(
+      {
+        program_id: context.program_id,
+        full_name: record.fullName.trim(),
+        role_title: record.roleTitle.trim(),
+        team_type: record.teamType,
+        email: normalizeEmail(record.email),
+        bio: "",
+        headshot_url: "",
+        submission_status: "pending",
+        submitted_at: null,
+        first_name: (record.firstName ?? "").trim(),
+        last_name: (record.lastName ?? "").trim(),
+        preferred_name: (record.preferredName ?? "").trim(),
+        pronouns: (record.pronouns ?? "").trim()
+      },
+      peopleColumns
+    )
+  );
 
   const { data: insertedPeople, error: insertError } = await client
     .from("people")
