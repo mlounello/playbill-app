@@ -32,6 +32,24 @@ main {
   min-height: 100vh;
 }
 
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 9999;
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #000000;
+  border-radius: 6px;
+  padding: 0.45rem 0.7rem;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  left: 0.7rem;
+  top: 0.7rem;
+}
+
 .site-header {
   position: sticky;
   top: 0;

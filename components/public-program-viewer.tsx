@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { sanitizeRichText } from "@/lib/rich-text";
 import type { ProgramPage } from "@/lib/programs";
 
@@ -86,6 +86,7 @@ export function PublicProgramViewer({
   programSlug: string;
 }) {
   const [spreadIndex, setSpreadIndex] = useState(0);
+  const liveRegionRef = useRef<HTMLDivElement | null>(null);
 
   const spreads = useMemo(() => {
     const items: Array<{ left: ProgramPage; right: ProgramPage | null; startPage: number }> = [];
@@ -114,16 +115,42 @@ export function PublicProgramViewer({
 
   const current = spreads[spreadIndex] ?? null;
 
+  useEffect(() => {
+    if (liveRegionRef.current) {
+      liveRegionRef.current.textContent = `Viewing spread ${spreadIndex + 1} of ${spreads.length}.`;
+    }
+  }, [spreadIndex, spreads.length]);
+
+  const goPrev = () => setSpreadIndex((v) => Math.max(0, v - 1));
+  const goNext = () => setSpreadIndex((v) => Math.min(spreads.length - 1, v + 1));
+
   return (
-    <section className="grid" style={{ gap: "0.75rem" }}>
+    <section
+      className="grid"
+      style={{ gap: "0.75rem" }}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          goPrev();
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          goNext();
+        }
+      }}
+      tabIndex={0}
+      aria-label="Public program flip viewer"
+    >
+      <div aria-live="polite" aria-atomic="true" ref={liveRegionRef} style={{ position: "absolute", left: -9999 }} />
       <article className="card" style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" onClick={() => setSpreadIndex((v) => Math.max(0, v - 1))} disabled={spreadIndex <= 0}>
+        <button type="button" onClick={goPrev} disabled={spreadIndex <= 0} aria-label="Previous spread">
           Previous
         </button>
         <button
           type="button"
-          onClick={() => setSpreadIndex((v) => Math.min(spreads.length - 1, v + 1))}
+          onClick={goNext}
           disabled={spreadIndex >= spreads.length - 1}
+          aria-label="Next spread"
         >
           Next
         </button>
@@ -153,7 +180,7 @@ export function PublicProgramViewer({
       </article>
 
       {current ? (
-        <article className="card">
+        <article className="card" aria-label={`Spread ${spreadIndex + 1} content`}>
           <div className="sheet-grid" style={{ gap: "0.3in" }}>
             <div>
               <PublicRenderPage page={current.left} />

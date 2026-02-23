@@ -142,6 +142,11 @@ In Supabase Dashboard:
 
 If these are missing, reminder/invite actions still run but are recorded as non-delivered in audit logs.
 
+## Milestone 9 QA
+
+- QA checklist for full-program import runs:
+  - `/Users/mikelounello/playbill-app/docs/MILESTONE9_QA_CHECKLIST.md`
+
 ## Platform roadmap
 
 - See `/Users/mikelounello/playbill-app/docs/IMPLEMENTATION_PLAN.md`

@@ -9,7 +9,11 @@ export async function GET() {
     env: {
       NEXT_PUBLIC_SUPABASE_URL: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
       NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-      SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
+      SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      NEXT_PUBLIC_SITE_URL: Boolean(process.env.NEXT_PUBLIC_SITE_URL),
+      RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
+      REMINDER_FROM_EMAIL: Boolean(process.env.REMINDER_FROM_EMAIL),
+      CRON_SECRET: Boolean(process.env.CRON_SECRET)
     }
   };
 
@@ -29,20 +33,33 @@ export async function GET() {
       auth: { persistSession: false }
     });
 
-    const { error } = await client.from("programs").select("id", { count: "exact", head: true });
+    const [programsCheck, showsCheck, peopleCheck] = await Promise.all([
+      client.from("programs").select("id", { count: "exact", head: true }),
+      client.from("shows").select("id", { count: "exact", head: true }),
+      client.from("people").select("id", { count: "exact", head: true })
+    ]);
 
-    if (error) {
+    if (programsCheck.error || showsCheck.error || peopleCheck.error) {
       return NextResponse.json(
         {
           ...base,
           reason: "supabase_query_failed",
-          error: error.message
+          error: programsCheck.error?.message || showsCheck.error?.message || peopleCheck.error?.message || "Unknown query error"
         },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ ok: true, env: base.env, reason: "connected" });
+    return NextResponse.json({
+      ok: true,
+      env: base.env,
+      reason: "connected",
+      checks: {
+        programs_table: "ok",
+        shows_table: "ok",
+        people_table: "ok"
+      }
+    });
   } catch (error) {
     return NextResponse.json(
       {
