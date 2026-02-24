@@ -269,7 +269,7 @@ export function ProgramPlanEditor({
     moduleType === "custom_text" || moduleType === "custom_image" || moduleType === "custom_pages";
 
   return (
-    <form action={onSubmitAction} className="card-list">
+    <form action={onSubmitAction} className="card-list" data-pending-label="Saving program plan...">
       <article className="card stack-sm">
         <strong>Program Plan Builder</strong>
         <p className="section-note">

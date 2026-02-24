@@ -22,6 +22,7 @@ import {
   requestShowExport,
   restoreArchivedShow,
   setShowPublished,
+  moveShowModule,
   updateShowActsAndSongs,
   updateShowAcknowledgements,
   updateShowPresentation,
@@ -120,6 +121,7 @@ export default async function ShowWorkspacePage({
   const setDueDateAction = setShowDueDate.bind(null, show.id);
   const sendInvitesAction = sendShowInvites.bind(null, show.id);
   const sendRemindersAction = sendShowRemindersNow.bind(null, show.id);
+  const moveShowModuleAction = moveShowModule.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
   const hasDepartmentModuleVisible = show.modules.some((module) => module.module_type === "department_info" && module.visible);
   const departmentRepository = activeTab === "settings" ? await getDepartmentRepository() : [];
@@ -307,7 +309,7 @@ export default async function ShowWorkspacePage({
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
                 </div>
                 <div className="stack-sm">
-                  <form action={setDueDateAction} className="top-actions">
+                  <form action={setDueDateAction} className="top-actions" data-pending-label="Saving due date...">
                     <label>
                       Global bio due date
                       <input type="date" name="dueDate" required />
@@ -315,15 +317,15 @@ export default async function ShowWorkspacePage({
                     <button type="submit">Set Due Date</button>
                   </form>
                   <div className="top-actions">
-                    <form action={sendInvitesAction}>
+                    <form action={sendInvitesAction} data-pending-label="Sending invites...">
                       <button type="submit">Send Invites</button>
                     </form>
-                    <form action={sendRemindersAction}>
+                    <form action={sendRemindersAction} data-pending-label="Sending reminders...">
                       <button type="submit" disabled={show.reminders_paused}>
                         {show.reminders_paused ? "Reminders Paused" : "Send Reminders Now"}
                       </button>
                     </form>
-                    <form action={setReminderPausedAction}>
+                    <form action={setReminderPausedAction} data-pending-label="Updating reminders setting...">
                       <input type="hidden" name="intent" value={show.reminders_paused ? "resume" : "pause"} />
                       <button type="submit">
                         {show.reminders_paused ? "Resume Reminders" : "Pause Reminders"}
@@ -478,11 +480,32 @@ export default async function ShowWorkspacePage({
               </article>
 
               <article className="card stack-sm">
-                <strong>Module Sequence</strong>
+                <strong>Module Sequence (Quick Reorder)</strong>
+                <div className="meta-text">
+                  Move modules here and refresh preview links. This updates Program Plan order directly.
+                </div>
                 {show.modules.map((module, index) => (
-                  <div key={module.id}>
-                    {index + 1}. {module.display_title || module.module_type}{" "}
-                    {module.visible ? "" : "(hidden)"} {module.filler_eligible ? "• filler eligible" : ""}
+                  <div key={module.id} className="row-between" style={{ gap: "0.5rem" }}>
+                    <div>
+                      {index + 1}. {module.display_title || module.module_type}{" "}
+                      {module.visible ? "" : "(hidden)"} {module.filler_eligible ? "• filler eligible" : ""}
+                    </div>
+                    <div className="top-actions">
+                      <form action={moveShowModuleAction} data-pending-label="Reordering module...">
+                        <input type="hidden" name="moduleId" value={module.id} />
+                        <input type="hidden" name="direction" value="up" />
+                        <button type="submit" className="ghost-button" disabled={index === 0}>
+                          Up
+                        </button>
+                      </form>
+                      <form action={moveShowModuleAction} data-pending-label="Reordering module...">
+                        <input type="hidden" name="moduleId" value={module.id} />
+                        <input type="hidden" name="direction" value="down" />
+                        <button type="submit" className="ghost-button" disabled={index === show.modules.length - 1}>
+                          Down
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 ))}
               </article>
@@ -496,7 +519,7 @@ export default async function ShowWorkspacePage({
                 <p className="section-note">
                   Assign who should submit Director, Dramaturgical, and Music Director notes. This updates submission requirements automatically.
                 </p>
-                <form action={updateSpecialNotesAction} className="form-row-3">
+                <form action={updateSpecialNotesAction} className="form-row-3" data-pending-label="Saving special note assignments...">
                   <label>
                     Director&apos;s Note
                     <select name="directorPersonId" defaultValue={currentDirectorNotePersonId}>
@@ -537,7 +560,7 @@ export default async function ShowWorkspacePage({
               <div className="people-forms-grid">
                 <article className="card stack-sm">
                   <strong>Add Person</strong>
-                  <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }}>
+                  <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }} data-pending-label="Adding person...">
                     <input type="hidden" name="mode" value="manual" />
                     <label>
                       Full name
@@ -578,7 +601,7 @@ export default async function ShowWorkspacePage({
                     Paste either: <code>Name | Role | cast|creative|production | email</code> per line, or a CSV/tabular paste with headers
                     <code> First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>.
                   </p>
-                  <form action={addPeopleAction} className="stack-sm">
+                  <form action={addPeopleAction} className="stack-sm" data-pending-label="Importing people...">
                     <input type="hidden" name="mode" value="bulk" />
                     <textarea name="bulkLines" className="rich-textarea" placeholder={"Name | Role | creative | email@example.com"} />
                     <button type="submit">Import People</button>
@@ -593,7 +616,7 @@ export default async function ShowWorkspacePage({
                   <p className="section-note">
                     Uses <code>Preferred Name</code> when available, maps <code>Project Role</code> to role title, and infers cast vs production.
                   </p>
-                  <form action={addPeopleAction} className="stack-sm">
+                  <form action={addPeopleAction} className="stack-sm" data-pending-label="Uploading people CSV...">
                     <input type="hidden" name="mode" value="csv" />
                     <input type="file" name="csvFile" accept=".csv,text/csv" required />
                     <button type="submit">Upload CSV</button>
@@ -605,7 +628,7 @@ export default async function ShowWorkspacePage({
                   <p className="section-note">
                     Select one or more fields, then paste lines using <code>lookup | field=value | field=value</code>. Only selected fields are updated.
                   </p>
-                  <form action={bulkEditPeopleAction} className="stack-sm">
+                  <form action={bulkEditPeopleAction} className="stack-sm" data-pending-label="Applying bulk edit...">
                     <div className="stack-sm">
                       <strong>Fields to update</strong>
                       <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
@@ -670,7 +693,7 @@ export default async function ShowWorkspacePage({
                 <p className="section-note">
                   Manage roles and categories per assignment. For multi-role people, edit each assignment row below.
                 </p>
-                <form action={addRoleAssignmentAction} className="form-row-2">
+                <form action={addRoleAssignmentAction} className="form-row-2" data-pending-label="Adding role assignment...">
                   <label>
                     Person
                     <select name="personId" required defaultValue="">
@@ -715,7 +738,7 @@ export default async function ShowWorkspacePage({
                 ) : (
                   <div className="stack-sm">
                     {roleAssignments.map((assignment) => (
-                      <form key={assignment.id} action={updateRoleAssignmentAction} className="card card-soft stack-sm">
+                      <form key={assignment.id} action={updateRoleAssignmentAction} className="card card-soft stack-sm" data-pending-label="Saving role assignment...">
                         <input type="hidden" name="roleId" value={assignment.id} />
                         <div className="meta-text">{assignment.person_name}</div>
                         <div className="form-row-2">
@@ -874,13 +897,13 @@ export default async function ShowWorkspacePage({
                                 <td>
                                   <div className="submission-actions">
                                     <Link href={`/app/shows/${show.id}/submissions/${person.id}`}>Review</Link>
-                                    <form action={approveAction}>
+                                    <form action={approveAction} data-pending-label="Approving submission...">
                                       <button type="submit">Approve</button>
                                     </form>
-                                    <form action={lockAction}>
+                                    <form action={lockAction} data-pending-label="Locking submission...">
                                       <button type="submit">Lock</button>
                                     </form>
-                                    <form action={returnAction} className="inline-form">
+                                    <form action={returnAction} className="inline-form" data-pending-label="Returning submission...">
                                       <input name="message" placeholder="Return note" required />
                                       <button type="submit">Return</button>
                                     </form>
@@ -916,14 +939,14 @@ export default async function ShowWorkspacePage({
                             </div>
                             <div className="submission-actions">
                               <Link href={`/app/shows/${show.id}/submissions/${person.id}`}>Open Review</Link>
-                              <form action={approveAction}>
+                              <form action={approveAction} data-pending-label="Approving submission...">
                                 <button type="submit">Approve</button>
                               </form>
-                              <form action={returnAction} className="inline-form">
+                              <form action={returnAction} className="inline-form" data-pending-label="Returning submission...">
                                 <input name="message" placeholder="Return message" required />
                                 <button type="submit">Return</button>
                               </form>
-                              <form action={lockAction}>
+                              <form action={lockAction} data-pending-label="Locking submission...">
                                 <button type="submit">Lock</button>
                               </form>
                             </div>
@@ -946,11 +969,11 @@ export default async function ShowWorkspacePage({
               <article className="card stack-sm">
                 <strong>Generate Exports</strong>
                 <div className="top-actions">
-                  <form action={requestExportAction}>
+                  <form action={requestExportAction} data-pending-label="Generating proof export...">
                     <input type="hidden" name="exportType" value="proof" />
                     <button type="submit">Generate Proof Export</button>
                   </form>
-                  <form action={requestExportAction}>
+                  <form action={requestExportAction} data-pending-label="Generating print export...">
                     <input type="hidden" name="exportType" value="print" />
                     <button type="submit">Generate Print Export</button>
                   </form>
@@ -1007,7 +1030,7 @@ export default async function ShowWorkspacePage({
                   </div>
                 ) : null}
                 <div className="top-actions">
-                  <form action={setPublishAction}>
+                  <form action={setPublishAction} data-pending-label="Updating publish status...">
                     <input type="hidden" name="intent" value={show.is_published ? "unpublish" : "publish"} />
                     <button type="submit">{show.is_published ? "Unpublish" : "Publish"}</button>
                   </form>
@@ -1036,7 +1059,7 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   This is the source for cover poster and program performance date/time text.
                 </div>
-                <form action={updateShowPresentationAction} className="stack-sm">
+                <form action={updateShowPresentationAction} className="stack-sm" data-pending-label="Saving poster and schedule...">
                   <PerformanceInputs
                     initialPerformances={show.performance_schedule}
                     initialShowDatesOverride={show.show_dates}
@@ -1064,7 +1087,7 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   This is the source for the Acts & Songs section in previews and exports.
                 </div>
-                <form action={updateActsAndSongsAction} className="stack-sm">
+                <form action={updateActsAndSongsAction} className="stack-sm" data-pending-label="Saving acts and songs...">
                   <RichTextField
                     name="actsAndSongs"
                     label="Acts & Songs"
@@ -1080,7 +1103,7 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   These feed separate modules in Program Plan.
                 </div>
-                <form action={updateAcknowledgementsAction} className="stack-sm">
+                <form action={updateAcknowledgementsAction} className="stack-sm" data-pending-label="Saving acknowledgements and thanks...">
                   <RichTextField
                     name="acknowledgements"
                     label="Acknowledgements"
@@ -1101,7 +1124,7 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   Choose the season for this show. Manage seasons and season events in the global Season Builder.
                 </div>
-                <form action={assignSeasonToShowAction} className="top-actions">
+                <form action={assignSeasonToShowAction} className="top-actions" data-pending-label="Applying season...">
                   <label>
                     Applied season
                     <select name="seasonId" defaultValue={seasonModuleData.selectedSeasonId}>
@@ -1138,7 +1161,7 @@ export default async function ShowWorkspacePage({
                 {departmentRepository.length === 0 ? (
                   <div className="meta-text">No profiles yet. Use Producing Profiles to create one.</div>
                 ) : (
-                  <form action={updateShowDepartmentsAction} className="stack-sm">
+                  <form action={updateShowDepartmentsAction} className="stack-sm" data-pending-label="Saving department bindings...">
                     <div className="stack-sm">
                       {departmentRepository.map((department) => (
                         <label key={department.id} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
@@ -1166,14 +1189,14 @@ export default async function ShowWorkspacePage({
                   Current status: <span className="status-pill">{show.status}</span>
                 </div>
                 {show.status !== "archived" ? (
-                  <form action={archiveShowAction} className="stack-sm">
+                  <form action={archiveShowAction} className="stack-sm" data-pending-label="Archiving show...">
                     <p className="section-note">
                       Archive this show first to disable active editing and unlock permanent deletion controls.
                     </p>
                     <button type="submit">Archive Show</button>
                   </form>
                 ) : (
-                  <form action={restoreShowAction} className="stack-sm">
+                  <form action={restoreShowAction} className="stack-sm" data-pending-label="Restoring show...">
                     <p className="section-note">
                       This show is archived. You can restore it to draft if deletion was accidental.
                     </p>
@@ -1190,7 +1213,7 @@ export default async function ShowWorkspacePage({
                 <p className="section-note">
                   Required phrase: <code>{deletePhrase}</code>
                 </p>
-                <form action={deleteShowAction} className="stack-sm">
+                <form action={deleteShowAction} className="stack-sm" data-pending-label="Deleting show...">
                   <label>
                     Type confirmation phrase
                     <input
