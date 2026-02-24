@@ -9,10 +9,6 @@ function PublicRenderPage({ page }: { page: ProgramPage }) {
     return (
       <article className="booklet-page poster-page">
         <img src={page.imageUrl} alt={page.title} className="poster-image" />
-        <div className="poster-overlay">
-          <h2 className="poster-title">{page.title}</h2>
-          <p>{page.subtitle}</p>
-        </div>
       </article>
     );
   }

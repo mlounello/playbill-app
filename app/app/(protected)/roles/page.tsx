@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { FlashToast } from "@/components/flash-toast";
-import { createRoleTemplate, deleteRoleTemplate, getRoleLibraryData, updateRoleTemplate } from "@/lib/roles";
+import {
+  createRoleTemplate,
+  deleteRoleTemplate,
+  getRoleLibraryData,
+  importRolesFromPaste,
+  importRolesFromShowRoles,
+  updateRoleTemplate
+} from "@/lib/roles";
 
 export default async function RolesLibraryPage({
   searchParams
@@ -61,6 +68,48 @@ export default async function RolesLibraryPage({
               </label>
             </div>
             <button type="submit">Create Role</button>
+          </form>
+        </section>
+
+        <section className="card stack-sm">
+          <strong>Import From Existing Show Roles</strong>
+          <form action={importRolesFromShowRoles} className="top-actions">
+            <label>
+              Limit to show (optional)
+              <select name="showId" defaultValue={data.selectedShowId}>
+                <option value="">All shows</option>
+                {data.shows.map((show) => (
+                  <option key={show.id} value={show.id}>
+                    {show.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Cast import scope
+              <select name="castScope" defaultValue="show_only">
+                <option value="show_only">show_only (recommended)</option>
+                <option value="global">global</option>
+              </select>
+            </label>
+            <button type="submit">Import From show_roles</button>
+          </form>
+        </section>
+
+        <section className="card stack-sm">
+          <strong>Paste / CSV Import</strong>
+          <p className="section-note">
+            Accepted format: <code>Role | Category | Scope | Show</code> per line, or CSV with headers
+            <code> role, category, scope, show</code>. For <code>show_only</code>, show can be id, slug, or show title.
+          </p>
+          <form action={importRolesFromPaste} className="stack-sm">
+            <textarea
+              name="rows"
+              className="rich-textarea"
+              placeholder={"Lighting Designer | creative | global\nJuliet | cast | show_only | rumors-0298"}
+              required
+            />
+            <button type="submit">Import Roles From Paste</button>
           </form>
         </section>
 

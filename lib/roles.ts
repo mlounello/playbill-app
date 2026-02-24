@@ -22,6 +22,13 @@ export type RoleLibraryData = {
   selectedShowId: string;
 };
 
+type RoleTemplateImportRow = {
+  name: string;
+  category: RoleCategory;
+  scope: RoleScope;
+  show_id: string | null;
+};
+
 function withError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
   redirect(`${path}?${qp.toString()}`);
@@ -43,6 +50,113 @@ function normalizeScope(value: string): RoleScope {
   const lowered = value.trim().toLowerCase();
   if (lowered === "show_only") return "show_only";
   return "global";
+}
+
+function parseCsvRow(line: string) {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === "\"") {
+      if (inQuotes && line[i + 1] === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  values.push(current.trim());
+  return values;
+}
+
+function normalizeHeader(value: string) {
+  return value
+    .replace(/^\uFEFF/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findHeaderIndex(headers: string[], variants: string[]) {
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const normalizedVariants = variants.map(normalizeHeader);
+  for (const variant of normalizedVariants) {
+    const direct = normalizedHeaders.indexOf(variant);
+    if (direct >= 0) return direct;
+  }
+  for (let i = 0; i < normalizedHeaders.length; i += 1) {
+    const header = normalizedHeaders[i];
+    if (normalizedVariants.some((variant) => header.includes(variant))) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function dedupeRoleTemplateRows(rows: RoleTemplateImportRow[]) {
+  const seen = new Set<string>();
+  const ordered: RoleTemplateImportRow[] = [];
+  for (const row of rows) {
+    const key = `${row.name.trim().toLowerCase()}|${row.category}|${row.scope}|${row.show_id ?? ""}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      ordered.push(row);
+    }
+  }
+  return ordered;
+}
+
+async function upsertRoleTemplates(rows: RoleTemplateImportRow[]) {
+  const client = getSupabaseWriteClient();
+  let created = 0;
+  let reactivated = 0;
+
+  for (const row of rows) {
+    const baseQuery = client
+      .from("role_templates")
+      .select("id, is_hidden")
+      .eq("name", row.name)
+      .eq("category", row.category)
+      .eq("scope", row.scope);
+    const existing = row.show_id
+      ? await baseQuery.eq("show_id", row.show_id).maybeSingle()
+      : await baseQuery.is("show_id", null).maybeSingle();
+
+    if (existing.data?.id) {
+      await client
+        .from("role_templates")
+        .update({
+          is_hidden: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", String(existing.data.id));
+      reactivated += 1;
+      continue;
+    }
+
+    const { error } = await client.from("role_templates").insert({
+      name: row.name,
+      category: row.category,
+      scope: row.scope,
+      show_id: row.scope === "show_only" ? row.show_id : null,
+      is_hidden: false,
+      updated_at: new Date().toISOString()
+    });
+    if (!error) {
+      created += 1;
+    }
+  }
+
+  return { created, reactivated };
 }
 
 export async function getRoleLibraryData(selectedShowId = ""): Promise<RoleLibraryData> {
@@ -224,4 +338,131 @@ export async function hideShowOnlyCastRoleTemplatesForShow(showId: string) {
     .eq("show_id", showId)
     .eq("scope", "show_only")
     .eq("category", "cast");
+}
+
+export async function importRolesFromShowRoles(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/roles", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const showId = String(formData.get("showId") ?? "").trim();
+  const castScope = normalizeScope(String(formData.get("castScope") ?? "show_only"));
+  const client = getSupabaseWriteClient();
+
+  const { data: showRoles, error } = showId
+    ? await client
+        .from("show_roles")
+        .select("role_name, category, show_id")
+        .eq("show_id", showId)
+    : await client.from("show_roles").select("role_name, category, show_id");
+
+  if (error) {
+    withError("/app/roles", error.message);
+  }
+
+  const rows = dedupeRoleTemplateRows(
+    (showRoles ?? [])
+      .map((row) => {
+        const name = String(row.role_name ?? "").trim();
+        if (!name) return null;
+        const category = normalizeCategory(String(row.category ?? "production"));
+        const scope = category === "cast" ? castScope : "global";
+        return {
+          name,
+          category,
+          scope,
+          show_id: scope === "show_only" ? String(row.show_id ?? "") || null : null
+        } satisfies RoleTemplateImportRow;
+      })
+      .filter((row): row is RoleTemplateImportRow => Boolean(row))
+      .filter((row) => (row.scope === "show_only" ? Boolean(row.show_id) : true))
+  );
+
+  if (rows.length === 0) {
+    withError("/app/roles", "No valid roles found in show_roles for import.");
+  }
+
+  const result = await upsertRoleTemplates(rows);
+  withSuccess("/app/roles", `Imported roles from show_roles. Created ${result.created}, reactivated ${result.reactivated}.`);
+}
+
+export async function importRolesFromPaste(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/roles", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const raw = String(formData.get("rows") ?? "").trim();
+  if (!raw) {
+    withError("/app/roles", "Paste rows are required.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: shows } = await client.from("shows").select("id, title, slug");
+  const showByAnyKey = new Map<string, string>();
+  for (const show of shows ?? []) {
+    const id = String(show.id ?? "");
+    const title = String(show.title ?? "").trim().toLowerCase();
+    const slug = String(show.slug ?? "").trim().toLowerCase();
+    if (id) showByAnyKey.set(id.toLowerCase(), id);
+    if (title) showByAnyKey.set(title, id);
+    if (slug) showByAnyKey.set(slug, id);
+  }
+
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    withError("/app/roles", "Paste rows are required.");
+  }
+
+  const headerCols = lines[0].includes("|") ? lines[0].split("|").map((v) => v.trim()) : parseCsvRow(lines[0]);
+  const roleIdx = findHeaderIndex(headerCols, ["role", "role name", "name"]);
+  const categoryIdx = findHeaderIndex(headerCols, ["category"]);
+  const scopeIdx = findHeaderIndex(headerCols, ["scope"]);
+  const showIdx = findHeaderIndex(headerCols, ["show", "show id", "show slug"]);
+  const looksLikeHeader = roleIdx >= 0 && categoryIdx >= 0;
+
+  const dataLines = looksLikeHeader ? lines.slice(1) : lines;
+  const parsedRows: RoleTemplateImportRow[] = [];
+
+  for (const line of dataLines) {
+    const cols = line.includes("|") ? line.split("|").map((v) => v.trim()) : parseCsvRow(line);
+    const roleName = looksLikeHeader ? String(cols[roleIdx] ?? "").trim() : String(cols[0] ?? "").trim();
+    const categoryRaw = looksLikeHeader ? String(cols[categoryIdx] ?? "") : String(cols[1] ?? "");
+    const scopeRaw = looksLikeHeader ? String(cols[scopeIdx] ?? "") : String(cols[2] ?? "");
+    const showRaw = looksLikeHeader ? String(cols[showIdx] ?? "") : String(cols[3] ?? "");
+    if (!roleName) continue;
+    const category = normalizeCategory(categoryRaw || "production");
+    const scope = normalizeScope(scopeRaw || (category === "cast" ? "show_only" : "global"));
+    const showResolved = showRaw ? showByAnyKey.get(showRaw.trim().toLowerCase()) ?? null : null;
+    if (scope === "show_only" && !showResolved) {
+      continue;
+    }
+    parsedRows.push({
+      name: roleName,
+      category,
+      scope,
+      show_id: scope === "show_only" ? showResolved : null
+    });
+  }
+
+  const rows = dedupeRoleTemplateRows(parsedRows);
+  if (rows.length === 0) {
+    withError(
+      "/app/roles",
+      "No valid rows found. Use: role|category|scope|show (scope/show optional; cast defaults to show_only with a valid show)."
+    );
+  }
+
+  const result = await upsertRoleTemplates(rows);
+  withSuccess("/app/roles", `Imported roles from paste/CSV. Created ${result.created}, reactivated ${result.reactivated}.`);
 }

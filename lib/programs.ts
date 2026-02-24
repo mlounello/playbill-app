@@ -838,7 +838,7 @@ function renderModulePages(
         id: idBase,
         type: "poster",
         title: program.title,
-        subtitle: `${program.theatre_name} | ${program.show_dates}`,
+        subtitle: "",
         imageUrl: program.poster_image_url
       }
     ] satisfies ProgramPage[];
@@ -1323,7 +1323,7 @@ function buildRenderablePages(
       id: "poster",
       type: "poster",
       title: program.title,
-      subtitle: `${program.theatre_name} | ${program.show_dates}`,
+      subtitle: "",
       imageUrl: program.poster_image_url
     },
     director_note: { id: "director-note", type: "text", title: "Director's Note", body: program.director_notes },

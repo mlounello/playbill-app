@@ -9,12 +9,8 @@ import type { ProgramPage } from "@/lib/programs";
 function RenderPageContent({ page }: { page: ProgramPage }) {
   if (page.type === "poster") {
     return (
-        <article className="booklet-page poster-page">
+      <article className="booklet-page poster-page">
         <img src={page.imageUrl} alt={page.title} className="poster-image" />
-        <div className="poster-overlay">
-          <h2 className="poster-title">{page.title}</h2>
-          <p>{page.subtitle}</p>
-        </div>
       </article>
     );
   }
