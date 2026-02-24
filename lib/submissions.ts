@@ -1817,7 +1817,77 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=people-roles`, updateError.message);
   }
 
-  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role assignment updated.")}`);
+  redirect(
+    `/app/shows/${showId}?tab=people-roles&roleSaved=${encodeURIComponent(roleId)}&success=${encodeURIComponent("Role assignment updated.")}`
+  );
+}
+
+export async function removeRoleAssignment(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const roleId = String(formData.get("roleId") ?? "").trim();
+  if (!roleId) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment id is required.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: existingRole } = await client
+    .from("show_roles")
+    .select("id, person_id")
+    .eq("id", roleId)
+    .eq("show_id", showId)
+    .maybeSingle();
+  if (!existingRole?.id) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment not found.");
+  }
+
+  const personId = String(existingRole.person_id ?? "");
+  const { data: roleRequests } = await client
+    .from("submission_requests")
+    .select("id, request_type")
+    .eq("show_role_id", roleId);
+  const bioRequestIds = (roleRequests ?? [])
+    .filter((row) => String(row.request_type ?? "bio") === "bio")
+    .map((row) => String(row.id))
+    .filter(Boolean);
+
+  if (bioRequestIds.length > 0) {
+    const { data: otherRoles } = await client
+      .from("show_roles")
+      .select("id")
+      .eq("show_id", showId)
+      .eq("person_id", personId)
+      .neq("id", roleId)
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    const replacementRoleId = otherRoles?.[0]?.id ? String(otherRoles[0].id) : "";
+    if (!replacementRoleId) {
+      withError(
+        `/app/shows/${showId}?tab=people-roles`,
+        "Cannot remove this role because it currently carries the bio request and no replacement role exists."
+      );
+    }
+
+    await client
+      .from("submission_requests")
+      .update({ show_role_id: replacementRoleId, updated_at: new Date().toISOString() })
+      .in("id", bioRequestIds);
+  }
+
+  await client
+    .from("submission_requests")
+    .delete()
+    .eq("show_role_id", roleId);
+
+  const { error } = await client.from("show_roles").delete().eq("id", roleId).eq("show_id", showId);
+  if (error) {
+    withError(`/app/shows/${showId}?tab=people-roles`, error.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role assignment removed.")}`);
 }
 
 export async function updateSpecialNoteAssignments(showId: string, formData: FormData) {

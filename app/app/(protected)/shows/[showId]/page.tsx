@@ -44,6 +44,7 @@ import {
   getShowRoleAssignments,
   getShowSpecialNoteAssignments,
   getShowSubmissionQueue,
+  removeRoleAssignment,
   resyncShowSubmissionRequests,
   getShowSubmissionPeople,
   updateRoleAssignment,
@@ -79,6 +80,9 @@ export default async function ShowWorkspacePage({
     error?: string;
     success?: string;
     personForRole?: string;
+    roleQuery?: string;
+    roleCategory?: string;
+    roleSaved?: string;
     submissionFilter?: string;
     submissionQuery?: string;
     submissionSort?: string;
@@ -88,7 +92,21 @@ export default async function ShowWorkspacePage({
   }>;
 }) {
   const { showId } = await params;
-  const { tab, error, success, personForRole, submissionFilter, submissionQuery, submissionSort, submissionView, paddingSim, modulePreviewId } = await searchParams;
+  const {
+    tab,
+    error,
+    success,
+    personForRole,
+    roleQuery,
+    roleCategory,
+    roleSaved,
+    submissionFilter,
+    submissionQuery,
+    submissionSort,
+    submissionView,
+    paddingSim,
+    modulePreviewId
+  } = await searchParams;
   const show = await getShowById(showId);
   const validTabIds = new Set(tabs.map((item) => item.id));
   const normalizedTab = String(tab ?? "overview").split("?")[0];
@@ -116,6 +134,7 @@ export default async function ShowWorkspacePage({
   const resyncSubmissionRequestsAction = resyncShowSubmissionRequests.bind(null, show.id);
   const addRoleAssignmentAction = addRoleAssignmentToPerson.bind(null, show.id);
   const updateRoleAssignmentAction = updateRoleAssignment.bind(null, show.id);
+  const removeRoleAssignmentAction = removeRoleAssignment.bind(null, show.id);
   const importBiosAction = importBiosFromCsv.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
@@ -288,6 +307,21 @@ export default async function ShowWorkspacePage({
       ? await getRoleLibraryData(show.id)
       : { roles: [], shows: [], selectedShowId: "" };
   const availableRoleTemplates = roleLibrary.roles.filter((role) => !role.is_hidden);
+  const activeRoleQuery = (roleQuery || "").trim().toLowerCase();
+  const activeRoleCategory = roleCategory || "all";
+  const filteredRoleAssignments =
+    activeTab === "people-roles"
+      ? roleAssignments.filter((assignment) => {
+          if (activeRoleCategory !== "all" && assignment.category !== activeRoleCategory) {
+            return false;
+          }
+          if (!activeRoleQuery) {
+            return true;
+          }
+          const haystack = `${assignment.person_name} ${assignment.role_name} ${assignment.category}`.toLowerCase();
+          return haystack.includes(activeRoleQuery);
+        })
+      : [];
   const roleAssignmentSummaryByPersonId = new Map<string, { count: number; summary: string }>();
   if (activeTab === "people-roles") {
     const grouped = new Map<string, string[]>();
@@ -754,6 +788,14 @@ export default async function ShowWorkspacePage({
                 }))}
                 onSubmitAction={bulkEditSelectedPeopleAction}
                 onEditAction={updatePersonProfileAction}
+                onAddRoleAction={addRoleAssignmentAction}
+                onRemoveRoleAction={removeRoleAssignmentAction}
+                personRoles={roleAssignments}
+                roleTemplates={availableRoleTemplates.map((template) => ({
+                  id: template.id,
+                  name: template.name,
+                  category: template.category
+                }))}
                 getRoleManageHref={(personId) => `/app/shows/${show.id}?tab=people-roles&personForRole=${personId}#role-assignments`}
               />
               <p className="section-note">
@@ -765,6 +807,24 @@ export default async function ShowWorkspacePage({
                 <p className="section-note">
                   Use this section for role/category changes and multi-role setup. Use "Current People" above for person identity fields (name/email/submission type).
                 </p>
+                <form method="get" className="form-row-2">
+                  <input type="hidden" name="tab" value="people-roles" />
+                  {personForRole ? <input type="hidden" name="personForRole" value={personForRole} /> : null}
+                  <label>
+                    Search roles
+                    <input name="roleQuery" defaultValue={activeRoleQuery} placeholder="Person or role name" />
+                  </label>
+                  <label>
+                    Category
+                    <select name="roleCategory" defaultValue={activeRoleCategory}>
+                      <option value="all">All</option>
+                      <option value="cast">cast</option>
+                      <option value="creative">creative</option>
+                      <option value="production">production</option>
+                    </select>
+                  </label>
+                  <button type="submit">Apply Role Filters</button>
+                </form>
                 <form action={addRoleAssignmentAction} className="form-row-2" data-pending-label="Adding role assignment...">
                   <label>
                     Person
@@ -805,11 +865,11 @@ export default async function ShowWorkspacePage({
                   <button type="submit">Add Role Assignment</button>
                 </form>
 
-                {roleAssignments.length === 0 ? (
+                {filteredRoleAssignments.length === 0 ? (
                   <div className="meta-text">No role assignments yet.</div>
                 ) : (
                   <div className="role-assignments-list">
-                    {roleAssignments.map((assignment) => (
+                    {filteredRoleAssignments.map((assignment) => (
                       <form key={assignment.id} action={updateRoleAssignmentAction} className="role-assignment-row" data-pending-label="Saving role assignment...">
                         <input type="hidden" name="roleId" value={assignment.id} />
                         <label className="role-assign-person">
@@ -839,7 +899,10 @@ export default async function ShowWorkspacePage({
                             <option value="production">production</option>
                           </select>
                         </label>
-                        <button type="submit">Save</button>
+                        <div className="stack-sm">
+                          <button type="submit">Save</button>
+                          {roleSaved === assignment.id ? <span className="meta-text">Saved</span> : null}
+                        </div>
                       </form>
                     ))}
                   </div>

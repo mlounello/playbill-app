@@ -13,15 +13,37 @@ type PersonRow = {
   submission_type?: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
 };
 
+type PersonRoleRow = {
+  id: string;
+  person_id: string;
+  role_name: string;
+  category: "cast" | "creative" | "production";
+  role_template_id: string | null;
+};
+
+type RoleTemplateOption = {
+  id: string;
+  name: string;
+  category: "cast" | "creative" | "production";
+};
+
 export function PeopleBulkEditor({
   people,
   onSubmitAction,
   onEditAction,
+  onAddRoleAction,
+  onRemoveRoleAction,
+  personRoles,
+  roleTemplates,
   getRoleManageHref
 }: {
   people: PersonRow[];
   onSubmitAction: (formData: FormData) => void;
   onEditAction: (formData: FormData) => void;
+  onAddRoleAction: (formData: FormData) => void;
+  onRemoveRoleAction: (formData: FormData) => void;
+  personRoles: PersonRoleRow[];
+  roleTemplates: RoleTemplateOption[];
   getRoleManageHref?: (personId: string) => string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -77,6 +99,10 @@ export function PeopleBulkEditor({
     setEditSubmissionType(person.submission_type ?? "bio");
     setEditOpen(true);
   };
+  const editPersonRoles = useMemo(
+    () => personRoles.filter((role) => role.person_id === editPersonId),
+    [personRoles, editPersonId]
+  );
 
   return (
     <section className="card people-editor">
@@ -329,6 +355,56 @@ export function PeopleBulkEditor({
                 </button>
               </div>
             </form>
+            <div className="people-field-row">
+              <label className="people-field-toggle">Roles for this person</label>
+              <div className="stack-sm">
+                {editPersonRoles.length === 0 ? (
+                  <div className="meta-text">No roles assigned yet.</div>
+                ) : (
+                  editPersonRoles.map((role) => (
+                    <div key={role.id} className="row-between">
+                      <div className="meta-text">
+                        {role.role_name} ({role.category})
+                      </div>
+                      <form action={onRemoveRoleAction}>
+                        <input type="hidden" name="roleId" value={role.id} />
+                        <button type="submit" className="ghost-button">Remove Role</button>
+                      </form>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="people-field-row">
+              <label className="people-field-toggle">Add role</label>
+              <form action={onAddRoleAction} className="stack-sm">
+                <input type="hidden" name="personId" value={editPersonId} />
+                <label>
+                  Role template (optional)
+                  <select name="roleTemplateId" defaultValue="">
+                    <option value="">None</option>
+                    {roleTemplates.map((template) => (
+                      <option key={`modal-template-${template.id}`} value={template.id}>
+                        {template.name} ({template.category})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Role name
+                  <input name="roleName" placeholder="If no template selected" />
+                </label>
+                <label>
+                  Category fallback
+                  <select name="roleCategory" defaultValue="production">
+                    <option value="cast">cast</option>
+                    <option value="creative">creative</option>
+                    <option value="production">production</option>
+                  </select>
+                </label>
+                <button type="submit" className="ghost-button">Add Role</button>
+              </form>
+            </div>
           </div>
         </div>
       ) : null}
