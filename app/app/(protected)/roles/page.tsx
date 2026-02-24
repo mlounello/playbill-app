@@ -5,7 +5,6 @@ import {
   deleteRoleTemplate,
   getRoleLibraryData,
   importRolesFromPaste,
-  importRolesFromShowRoles,
   updateRoleTemplate
 } from "@/lib/roles";
 
@@ -68,31 +67,6 @@ export default async function RolesLibraryPage({
               </label>
             </div>
             <button type="submit">Create Role</button>
-          </form>
-        </section>
-
-        <section className="card stack-sm">
-          <strong>Import From Existing Show Roles</strong>
-          <form action={importRolesFromShowRoles} className="top-actions">
-            <label>
-              Limit to show (optional)
-              <select name="showId" defaultValue={data.selectedShowId}>
-                <option value="">All shows</option>
-                {data.shows.map((show) => (
-                  <option key={show.id} value={show.id}>
-                    {show.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Cast import scope
-              <select name="castScope" defaultValue="show_only">
-                <option value="show_only">show_only (recommended)</option>
-                <option value="global">global</option>
-              </select>
-            </label>
-            <button type="submit">Import From show_roles</button>
           </form>
         </section>
 

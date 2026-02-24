@@ -346,59 +346,6 @@ export async function hideShowOnlyCastRoleTemplatesForShow(showId: string) {
     .eq("category", "cast");
 }
 
-export async function importRolesFromShowRoles(formData: FormData) {
-  "use server";
-
-  await requireRole(["owner", "admin", "editor"]);
-  const missing = getMissingSupabaseEnvVars();
-  if (missing.length > 0) {
-    withError("/app/roles", `Supabase is not configured: ${missing.join(", ")}`);
-  }
-
-  const showId = String(formData.get("showId") ?? "").trim();
-  const castScope = normalizeScope(String(formData.get("castScope") ?? "show_only"));
-  const client = getSupabaseWriteClient();
-
-  const { data: showRoles, error } = showId
-    ? await client
-        .from("show_roles")
-        .select("role_name, category, show_id")
-        .eq("show_id", showId)
-    : await client.from("show_roles").select("role_name, category, show_id");
-
-  if (error) {
-    withError("/app/roles", error.message);
-  }
-
-  const rows = dedupeRoleTemplateRows(
-    (showRoles ?? [])
-      .map((row) => {
-        const name = String(row.role_name ?? "").trim();
-        if (!name) return null;
-        const category = normalizeCategory(String(row.category ?? "production"));
-        const scope = category === "cast" ? castScope : "global";
-        return {
-          name,
-          category,
-          scope,
-          show_id: scope === "show_only" ? String(row.show_id ?? "") || null : null
-        } satisfies RoleTemplateImportRow;
-      })
-      .filter((row): row is RoleTemplateImportRow => Boolean(row))
-      .filter((row) => (row.scope === "show_only" ? Boolean(row.show_id) : true))
-  );
-
-  if (rows.length === 0) {
-    withError("/app/roles", "No valid roles found in show_roles for import.");
-  }
-
-  const result = await upsertRoleTemplates(rows);
-  withSuccess(
-    "/app/roles",
-    `Imported roles from show_roles. Created ${result.created}, reactivated ${result.reactivated}, failed ${result.failed}.`
-  );
-}
-
 export async function importRolesFromPaste(formData: FormData) {
   "use server";
 
