@@ -11,6 +11,7 @@ import { SubmissionViewToggle } from "@/components/submission-view-toggle";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { getDepartmentRepository, getShowDepartmentSelection, updateShowDepartments } from "@/lib/departments";
 import { getProgramBySlug } from "@/lib/programs";
+import { getRoleLibraryData } from "@/lib/roles";
 import { assignSeasonToShow, getSeasonModuleData } from "@/lib/seasons";
 import {
   archiveShow,
@@ -27,14 +28,17 @@ import {
   updateShowModules
 } from "@/lib/shows";
 import {
+  addRoleAssignmentToPerson,
   addPeopleToShow,
   adminQuickStatus,
   adminReturnSubmission,
   bulkEditPeopleField,
   bulkEditSelectedPeople,
   importBiosFromCsv,
+  getShowRoleAssignments,
   getShowSpecialNoteAssignments,
   getShowSubmissionPeople,
+  updateRoleAssignment,
   updatePersonProfile,
   updateSpecialNoteAssignments
 } from "@/lib/submissions";
@@ -97,6 +101,8 @@ export default async function ShowWorkspacePage({
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
   const updatePersonProfileAction = updatePersonProfile.bind(null, show.id);
   const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
+  const addRoleAssignmentAction = addRoleAssignmentToPerson.bind(null, show.id);
+  const updateRoleAssignmentAction = updateRoleAssignment.bind(null, show.id);
   const importBiosAction = importBiosFromCsv.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
@@ -239,6 +245,12 @@ export default async function ShowWorkspacePage({
   const currentDirectorNotePersonId = specialNoteAssignments.directorPersonId;
   const currentDramaturgNotePersonId = specialNoteAssignments.dramaturgPersonId;
   const currentMusicDirectorNotePersonId = specialNoteAssignments.musicDirectorPersonId;
+  const roleAssignments = activeTab === "people-roles" ? await getShowRoleAssignments(show.id) : [];
+  const roleLibrary =
+    activeTab === "people-roles"
+      ? await getRoleLibraryData(show.id)
+      : { roles: [], shows: [], selectedShowId: "" };
+  const availableRoleTemplates = roleLibrary.roles.filter((role) => !role.is_hidden);
 
   return (
     <main>
@@ -650,6 +662,91 @@ export default async function ShowWorkspacePage({
                 onSubmitAction={bulkEditSelectedPeopleAction}
                 onEditAction={updatePersonProfileAction}
               />
+
+              <article className="card stack-sm">
+                <strong>Role Assignments</strong>
+                <p className="section-note">
+                  Manage roles and categories per assignment. For multi-role people, edit each assignment row below.
+                </p>
+                <form action={addRoleAssignmentAction} className="form-row-2">
+                  <label>
+                    Person
+                    <select name="personId" required defaultValue="">
+                      <option value="" disabled>
+                        Select person
+                      </option>
+                      {people.map((person) => (
+                        <option key={`role-person-${person.id}`} value={person.id}>
+                          {person.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Role template (optional)
+                    <select name="roleTemplateId" defaultValue="">
+                      <option value="">None</option>
+                      {availableRoleTemplates.map((template) => (
+                        <option key={`template-${template.id}`} value={template.id}>
+                          {template.name} ({template.category})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Custom role name
+                    <input name="roleName" placeholder="Used when no template selected" />
+                  </label>
+                  <label>
+                    Category fallback
+                    <select name="roleCategory" defaultValue="production">
+                      <option value="cast">cast</option>
+                      <option value="creative">creative</option>
+                      <option value="production">production</option>
+                    </select>
+                  </label>
+                  <button type="submit">Add Role Assignment</button>
+                </form>
+
+                {roleAssignments.length === 0 ? (
+                  <div className="meta-text">No role assignments yet.</div>
+                ) : (
+                  <div className="stack-sm">
+                    {roleAssignments.map((assignment) => (
+                      <form key={assignment.id} action={updateRoleAssignmentAction} className="card card-soft stack-sm">
+                        <input type="hidden" name="roleId" value={assignment.id} />
+                        <div className="meta-text">{assignment.person_name}</div>
+                        <div className="form-row-2">
+                          <label>
+                            Role template
+                            <select name="roleTemplateId" defaultValue={assignment.role_template_id ?? ""}>
+                              <option value="">None</option>
+                              {availableRoleTemplates.map((template) => (
+                                <option key={`template-edit-${assignment.id}-${template.id}`} value={template.id}>
+                                  {template.name} ({template.category})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Role name
+                            <input name="roleName" defaultValue={assignment.role_name} required />
+                          </label>
+                          <label>
+                            Category
+                            <select name="roleCategory" defaultValue={assignment.category}>
+                              <option value="cast">cast</option>
+                              <option value="creative">creative</option>
+                              <option value="production">production</option>
+                            </select>
+                          </label>
+                          <button type="submit">Save Role Assignment</button>
+                        </div>
+                      </form>
+                    ))}
+                  </div>
+                )}
+              </article>
             </section>
           ) : null}
 

@@ -107,6 +107,15 @@ export type ContributorTaskSummary = {
   submitted_at: string | null;
 };
 
+export type ShowRoleAssignment = {
+  id: string;
+  person_id: string;
+  person_name: string;
+  role_name: string;
+  category: RoleCategory;
+  role_template_id: string | null;
+};
+
 function withError(path: string, message: string): never {
   const separator = path.includes("?") ? "&" : "?";
   const qp = new URLSearchParams({ error: message });
@@ -1372,8 +1381,6 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
 
   const personId = String(formData.get("personId") ?? "").trim();
   const fullName = String(formData.get("fullName") ?? "").trim();
-  const roleTitle = String(formData.get("roleTitle") ?? "").trim();
-  const teamType = String(formData.get("teamType") ?? "").trim().toLowerCase();
   const email = normalizeEmail(String(formData.get("email") ?? "").trim());
   const submissionType = normalizeSubmissionType(String(formData.get("submissionType") ?? "bio"));
 
@@ -1382,12 +1389,6 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
   }
   if (!fullName) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Full Name is required.");
-  }
-  if (!roleTitle) {
-    withError(`/app/shows/${showId}?tab=people-roles`, "Role Title is required.");
-  }
-  if (!["cast", "creative", "production"].includes(teamType)) {
-    withError(`/app/shows/${showId}?tab=people-roles`, "Category must be cast, creative, or production.");
   }
   if (!z.string().email().safeParse(email).success) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Email must be valid.");
@@ -1412,27 +1413,16 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
   const current = {
     id: String(personRow.id),
     full_name: String(personRow.full_name ?? ""),
-    role_title: String(personRow.role_title ?? ""),
-    team_type: personRow.team_type === "cast" ? "cast" : "production",
     email: normalizeEmail(String(personRow.email ?? "")),
     submission_type: normalizeSubmissionType(String(personRow.submission_type ?? "bio"))
   };
 
-  const nextPeopleTeamType = teamType === "cast" ? "cast" : "production";
   const peopleUpdate: Record<string, string> = {};
   const audits: Array<{ field: string; beforeValue: string; afterValue: string }> = [];
 
   if (current.full_name !== fullName) {
     peopleUpdate.full_name = fullName;
     audits.push({ field: "full_name", beforeValue: current.full_name, afterValue: fullName });
-  }
-  if (current.role_title !== roleTitle) {
-    peopleUpdate.role_title = roleTitle;
-    audits.push({ field: "role_title", beforeValue: current.role_title, afterValue: roleTitle });
-  }
-  if (current.team_type !== nextPeopleTeamType) {
-    peopleUpdate.team_type = nextPeopleTeamType;
-    audits.push({ field: "team_type", beforeValue: current.team_type, afterValue: teamType });
   }
   if (current.email !== email) {
     peopleUpdate.email = email;
@@ -1449,13 +1439,6 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
       withError(`/app/shows/${showId}?tab=people-roles`, updateError.message || "Could not update person.");
     }
   }
-
-  if (current.role_title !== roleTitle) {
-    await client.from("show_roles").update({ role_name: roleTitle }).eq("show_id", showId).eq("person_id", current.id);
-  }
-
-  const roleCategory = teamType === "cast" ? "cast" : teamType === "creative" ? "creative" : "production";
-  await client.from("show_roles").update({ category: roleCategory }).eq("show_id", showId).eq("person_id", current.id);
 
   if (current.submission_type !== submissionType) {
     const { data: roleRow } = await client
@@ -1487,6 +1470,193 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
   }
 
   redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Person profile updated.")}`);
+}
+
+export async function getShowRoleAssignments(showId: string) {
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    return [] as ShowRoleAssignment[];
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: roles } = await client
+    .from("show_roles")
+    .select("id, person_id, role_name, category, role_template_id")
+    .eq("show_id", showId)
+    .order("created_at", { ascending: true });
+  if (!roles || roles.length === 0) {
+    return [] as ShowRoleAssignment[];
+  }
+
+  const personIds = [...new Set(roles.map((row) => String(row.person_id ?? "")).filter(Boolean))];
+  const { data: peopleRows } = await client
+    .from("people")
+    .select("id, full_name")
+    .eq("program_id", context.program_id)
+    .in("id", personIds);
+  const personNameById = new Map((peopleRows ?? []).map((row) => [String(row.id), String(row.full_name ?? "")]));
+
+  return roles.map((row) => ({
+    id: String(row.id ?? ""),
+    person_id: String(row.person_id ?? ""),
+    person_name: personNameById.get(String(row.person_id ?? "")) ?? "Unknown Person",
+    role_name: String(row.role_name ?? ""),
+    category: normalizeRoleCategoryValue(String(row.category ?? "production")),
+    role_template_id: row.role_template_id ? String(row.role_template_id) : null
+  }));
+}
+
+export async function addRoleAssignmentToPerson(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const personId = String(formData.get("personId") ?? "").trim();
+  const roleTemplateId = String(formData.get("roleTemplateId") ?? "").trim();
+  const typedRoleName = String(formData.get("roleName") ?? "").trim();
+  const typedCategory = normalizeRoleCategoryValue(String(formData.get("roleCategory") ?? "production"));
+
+  if (!personId) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Person is required.");
+  }
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const showRolesColumns = await getTableColumns(client, "show_roles");
+  const { data: personRow } = await client
+    .from("people")
+    .select("id, program_id")
+    .eq("id", personId)
+    .eq("program_id", context.program_id)
+    .maybeSingle();
+  if (!personRow?.id) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Person not found.");
+  }
+
+  let roleName = typedRoleName;
+  let category: RoleCategory = typedCategory;
+  let resolvedTemplateId: string | null = null;
+  if (roleTemplateId) {
+    const { data: template } = await client
+      .from("role_templates")
+      .select("id, name, category")
+      .eq("id", roleTemplateId)
+      .maybeSingle();
+    if (template?.id) {
+      roleName = String(template.name ?? "").trim() || roleName;
+      category = normalizeRoleCategoryValue(String(template.category ?? typedCategory));
+      resolvedTemplateId = String(template.id);
+    }
+  }
+
+  if (!roleName) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Role is required.");
+  }
+
+  const { data: existing } = await client
+    .from("show_roles")
+    .select("id")
+    .eq("show_id", showId)
+    .eq("person_id", personId)
+    .eq("role_name", roleName)
+    .eq("category", category)
+    .maybeSingle();
+  if (existing?.id) {
+    redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role already assigned to this person.")}`);
+  }
+
+  const { data: castMax } = await client
+    .from("show_roles")
+    .select("billing_order")
+    .eq("show_id", showId)
+    .eq("category", "cast");
+  const nextCastBillingOrder =
+    Math.max(0, ...((castMax ?? []).map((row) => Number(row.billing_order ?? 0)).filter((num) => Number.isFinite(num)))) + 1;
+
+  const insertRow = filterToColumns(
+    {
+      show_id: showId,
+      person_id: personId,
+      role_name: roleName,
+      category,
+      role_template_id: resolvedTemplateId,
+      billing_order: category === "cast" ? nextCastBillingOrder : null,
+      bio_order: null
+    },
+    showRolesColumns
+  );
+  const { error: insertError } = await client.from("show_roles").insert(insertRow);
+  if (insertError) {
+    withError(`/app/shows/${showId}?tab=people-roles`, insertError.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role assignment added.")}`);
+}
+
+export async function updateRoleAssignment(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const roleId = String(formData.get("roleId") ?? "").trim();
+  const roleTemplateId = String(formData.get("roleTemplateId") ?? "").trim();
+  const typedRoleName = String(formData.get("roleName") ?? "").trim();
+  const typedCategory = normalizeRoleCategoryValue(String(formData.get("roleCategory") ?? "production"));
+  if (!roleId) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment id is required.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const showRolesColumns = await getTableColumns(client, "show_roles");
+  const { data: existingRole } = await client
+    .from("show_roles")
+    .select("id, show_id")
+    .eq("id", roleId)
+    .eq("show_id", showId)
+    .maybeSingle();
+  if (!existingRole?.id) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment not found.");
+  }
+
+  let roleName = typedRoleName;
+  let category: RoleCategory = typedCategory;
+  let resolvedTemplateId: string | null = roleTemplateId || null;
+  if (roleTemplateId) {
+    const { data: template } = await client
+      .from("role_templates")
+      .select("id, name, category")
+      .eq("id", roleTemplateId)
+      .maybeSingle();
+    if (template?.id) {
+      roleName = String(template.name ?? "").trim() || roleName;
+      category = normalizeRoleCategoryValue(String(template.category ?? typedCategory));
+      resolvedTemplateId = String(template.id);
+    }
+  }
+
+  if (!roleName) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Role is required.");
+  }
+
+  const updateRow = filterToColumns(
+    {
+      role_name: roleName,
+      category,
+      role_template_id: resolvedTemplateId
+    },
+    showRolesColumns
+  );
+
+  const { error: updateError } = await client.from("show_roles").update(updateRow).eq("id", roleId).eq("show_id", showId);
+  if (updateError) {
+    withError(`/app/shows/${showId}?tab=people-roles`, updateError.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role assignment updated.")}`);
 }
 
 export async function updateSpecialNoteAssignments(showId: string, formData: FormData) {

@@ -31,8 +31,6 @@ export function PeopleBulkEditor({
   const [editOpen, setEditOpen] = useState(false);
   const [editPersonId, setEditPersonId] = useState("");
   const [editFullName, setEditFullName] = useState("");
-  const [editRoleTitle, setEditRoleTitle] = useState("");
-  const [editTeamType, setEditTeamType] = useState<"cast" | "creative" | "production">("production");
   const [editEmail, setEditEmail] = useState("");
   const [editSubmissionType, setEditSubmissionType] = useState<
     "bio" | "director_note" | "dramaturgical_note" | "music_director_note"
@@ -71,8 +69,6 @@ export function PeopleBulkEditor({
   const openEdit = (person: PersonRow) => {
     setEditPersonId(person.id);
     setEditFullName(person.full_name);
-    setEditRoleTitle(person.role_title);
-    setEditTeamType(person.team_type === "cast" ? "cast" : person.team_type === "creative" ? "creative" : "production");
     setEditEmail(person.email);
     setEditSubmissionType(person.submission_type ?? "bio");
     setEditOpen(true);
@@ -288,17 +284,12 @@ export function PeopleBulkEditor({
                 <input name="fullName" value={editFullName} onChange={(event) => setEditFullName(event.target.value)} required />
               </div>
               <div className="people-field-row">
-                <label className="people-field-toggle">Role Title</label>
-                <input name="roleTitle" value={editRoleTitle} onChange={(event) => setEditRoleTitle(event.target.value)} required />
+                <label className="people-field-toggle">Role and category</label>
+                <input value="Edit roles below in Role Assignments" disabled />
+                <input type="hidden" name="roleTitle" value="" />
+                <input type="hidden" name="teamType" value="production" />
               </div>
-              <div className="people-field-row">
-                <label className="people-field-toggle">Category</label>
-                <select name="teamType" value={editTeamType} onChange={(event) => setEditTeamType(event.target.value as "cast" | "creative" | "production")}>
-                  <option value="cast">cast</option>
-                  <option value="creative">creative</option>
-                  <option value="production">production</option>
-                </select>
-              </div>
+              <div className="meta-text">Use the Role Assignments section for multi-role and category changes.</div>
               <div className="people-field-row">
                 <label className="people-field-toggle">Email</label>
                 <input name="email" type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} required />
