@@ -94,6 +94,7 @@ type DensityMode = "normal" | "compact" | "loose";
 export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string }
+  | { id: string; type: "stacked"; title: string; sections: Array<{ title: string; body: string }> }
   | { id: string; type: "bios"; title: string; people: PersonRecord[] }
   | { id: string; type: "image"; title: string; imageUrl: string }
   | { id: string; type: "photo_grid"; title: string; photos: string[] }
@@ -786,6 +787,29 @@ function normalizeDensityMode(value: unknown): DensityMode {
   return "normal";
 }
 
+function isStackablePage(page: ProgramPage) {
+  return page.type === "text" || (page.type === "filler" && richTextHasContent(page.body));
+}
+
+function estimateStackUnits(page: ProgramPage) {
+  if (page.type === "text" || page.type === "filler") {
+    const textBody = page.type === "text" ? page.body : page.body;
+    const textLength = richTextToPlain(textBody).length + (page.title?.trim().length ?? 0);
+    return 120 + Math.min(820, Math.round(textLength * 0.42));
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function getStackPageBudget(densityMode: DensityMode) {
+  if (densityMode === "compact") {
+    return 980;
+  }
+  if (densityMode === "loose") {
+    return 800;
+  }
+  return 900;
+}
+
 function renderModulePages(
   module: ProgramModuleRecord,
   index: number,
@@ -1094,9 +1118,77 @@ function buildRenderablePagesFromModules(
 ) {
   const pages: ProgramPage[] = [];
   const visibleModules = modules.filter((module) => module.visible).sort((a, b) => a.module_order - b.module_order);
+  const stackBudget = getStackPageBudget(densityMode);
+  let stackCounter = 0;
+  let stackBuffer: Array<{ title: string; body: string; units: number; originalPage: ProgramPage }> = [];
+  let stackUsed = 0;
+
+  const flushStackBuffer = () => {
+    if (stackBuffer.length === 0) {
+      return;
+    }
+    if (stackBuffer.length === 1) {
+      pages.push(stackBuffer[0].originalPage);
+      stackBuffer = [];
+      stackUsed = 0;
+      return;
+    }
+    const firstTitle = stackBuffer.find((section) => section.title.trim())?.title ?? "Combined Sections";
+    pages.push({
+      id: `stacked-${stackCounter + 1}`,
+      type: "stacked",
+      title: firstTitle,
+      sections: stackBuffer.map((section) => ({
+        title: section.title,
+        body: section.body
+      }))
+    });
+    stackCounter += 1;
+    stackBuffer = [];
+    stackUsed = 0;
+  };
+
   for (let index = 0; index < visibleModules.length; index += 1) {
-    pages.push(...renderModulePages(visibleModules[index], index, program, cast, production, showRoles, densityMode));
+    const module = visibleModules[index];
+    const renderedPages = renderModulePages(module, index, program, cast, production, showRoles, densityMode);
+    if (renderedPages.length === 0) {
+      continue;
+    }
+
+    const separatePage = Boolean(module.settings.separate_page ?? true);
+    const canStackModule = !separatePage && renderedPages.length === 1 && isStackablePage(renderedPages[0]);
+    if (!canStackModule) {
+      flushStackBuffer();
+      pages.push(...renderedPages);
+      continue;
+    }
+
+    const page = renderedPages[0];
+    const units = estimateStackUnits(page);
+    if (units > stackBudget) {
+      flushStackBuffer();
+      pages.push(page);
+      continue;
+    }
+
+    if (stackUsed > 0 && stackUsed + units > stackBudget) {
+      flushStackBuffer();
+    }
+
+    if (page.type === "text" || page.type === "filler") {
+      stackBuffer.push({
+        title: page.title,
+        body: page.body,
+        units,
+        originalPage: page
+      });
+      stackUsed += units;
+    } else {
+      flushStackBuffer();
+      pages.push(page);
+    }
   }
+  flushStackBuffer();
 
   if (!modules.some((module) => module.visible && normalizeModuleType(module.module_type) === "custom_pages")) {
     for (let i = 0; i < program.custom_pages.length; i += 1) {

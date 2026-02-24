@@ -276,7 +276,10 @@ export function ProgramPlanEditor({
           Reorder by drag-and-drop, or use Move Up/Move Down. Turn sections on or off with the Visible toggle.
         </p>
         <p className="section-note">
-          Modules stay together as blocks. Use “Allow multiple pages” for sections that may need continuation pages.
+          Modules stay together as blocks. “Must remain by itself” forces a new page. Turn it off to allow this module to share a page with others.
+        </p>
+        <p className="section-note">
+          “Allow module to span multiple pages” only controls whether a long section can continue to another page.
         </p>
         <div className="top-actions">
           <label>
@@ -387,7 +390,7 @@ export function ProgramPlanEditor({
                 checked={Boolean(item.settings.separate_page ?? true)}
                 onChange={(event) => update(index, "settings", { ...item.settings, separate_page: event.target.checked })}
               />
-              Separate page
+              Must remain by itself (new page)
             </label>
 
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
@@ -396,7 +399,7 @@ export function ProgramPlanEditor({
                 checked={item.filler_eligible}
                 onChange={(event) => update(index, "filler_eligible", event.target.checked)}
               />
-              Filler eligible
+              Filler eligible (auto-use when hidden)
             </label>
 
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
@@ -407,7 +410,7 @@ export function ProgramPlanEditor({
                   update(index, "settings", { ...item.settings, allow_multiple_pages: event.target.checked })
                 }
               />
-              Allow multiple pages
+              Allow module to span multiple pages
             </label>
           </div>
 

@@ -1010,6 +1010,21 @@ body.density-compact .admin-surface textarea {
   border: 1px solid #c9c3b2;
 }
 
+.stacked-sections {
+  display: grid;
+  gap: 0.18in;
+}
+
+.stacked-section {
+  display: grid;
+  gap: 0.08in;
+}
+
+.stacked-section-title {
+  margin: 0;
+  font-size: 13pt;
+}
+
 .bios-list {
   display: grid;
   gap: 0.2in;

@@ -24,6 +24,21 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
     );
   }
 
+  if (page.type === "stacked") {
+    return (
+      <article className="booklet-page">
+        <div className="stacked-sections">
+          {page.sections.map((section, index) => (
+            <section key={`${page.id}-${index}`} className="stacked-section">
+              {section.title.trim() ? <h3 className="playbill-title stacked-section-title">{section.title}</h3> : null}
+              <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(section.body) }} />
+            </section>
+          ))}
+        </div>
+      </article>
+    );
+  }
+
   if (page.type === "image") {
     return (
       <article className="booklet-page">

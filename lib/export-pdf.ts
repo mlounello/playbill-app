@@ -17,6 +17,11 @@ function summarizePage(page: ProgramPage) {
   if (page.type === "text") {
     return stripHtml(page.body);
   }
+  if (page.type === "stacked") {
+    return page.sections
+      .map((section) => `${section.title ? `${section.title}: ` : ""}${stripHtml(section.body)}`)
+      .join(" | ");
+  }
   if (page.type === "image") {
     return "Image page";
   }
