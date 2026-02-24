@@ -532,9 +532,10 @@ export default async function ShowWorkspacePage({
                       <input name="roleTitle" required placeholder="Stage Manager" />
                     </label>
                     <label>
-                      Category
-                      <select name="teamType" defaultValue="production">
+                      Role category
+                      <select name="roleCategory" defaultValue="production">
                         <option value="cast">Cast</option>
+                        <option value="creative">Creative Team</option>
                         <option value="production">Production</option>
                       </select>
                     </label>
@@ -558,12 +559,12 @@ export default async function ShowWorkspacePage({
                 <article className="card grid">
                   <strong>Bulk Import</strong>
                   <p className="section-note">
-                    Paste either: <code>Name | Role | cast|production | email</code> per line, or a CSV/tabular paste with headers
+                    Paste either: <code>Name | Role | cast|creative|production | email</code> per line, or a CSV/tabular paste with headers
                     <code> First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>.
                   </p>
                   <form action={addPeopleAction} className="stack-sm">
                     <input type="hidden" name="mode" value="bulk" />
-                    <textarea name="bulkLines" className="rich-textarea" placeholder={"Name | Role | cast | email@example.com"} />
+                    <textarea name="bulkLines" className="rich-textarea" placeholder={"Name | Role | creative | email@example.com"} />
                     <button type="submit">Import People</button>
                   </form>
                 </article>

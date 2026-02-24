@@ -7,6 +7,7 @@ import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabas
 export const BIO_CHAR_LIMIT_DEFAULT = 375;
 export const NO_BIO_PLACEHOLDER = "<p><em>No biography provided.</em></p>";
 export type SubmissionType = "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
+export type RoleCategory = "cast" | "creative" | "production";
 
 export function normalizeSubmissionType(value: string): SubmissionType {
   if (value === "director_note" || value === "dramaturgical_note" || value === "music_director_note") {
@@ -46,7 +47,7 @@ function inferSubmissionTypeFromRole(roleTitle: string): SubmissionType {
 const manualPersonSchema = z.object({
   fullName: z.string().min(1),
   roleTitle: z.string().min(1),
-  teamType: z.enum(["cast", "production"]),
+  roleCategory: z.enum(["cast", "creative", "production"]).default("production"),
   email: z.string().email(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
@@ -117,6 +118,21 @@ function normalizeEmail(value: string) {
 
 function normalizeName(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function joinRoles(values: string[]) {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      ordered.push(trimmed);
+    }
+  }
+  return ordered.join(" & ");
 }
 
 function normalizeHeader(value: string) {
@@ -261,12 +277,12 @@ function parseBulkPeople(text: string) {
       const role = cols[roleIdx] ?? "";
       const email = cols[emailIdx] ?? "";
       const fullName = preferred.trim() ? `${preferred.trim()} ${last.trim()}`.trim() : `${first} ${last}`.trim();
-      const teamType = inferTeamTypeFromRole(role);
+      const roleCategory = inferRoleCategoryFromRole(role);
 
       return manualPersonSchema.parse({
         fullName,
         roleTitle: role,
-        teamType,
+        roleCategory,
         email,
         firstName: first,
         lastName: last,
@@ -278,11 +294,17 @@ function parseBulkPeople(text: string) {
   }
 
   return lines.map((line) => {
-    const [fullName = "", roleTitle = "", teamTypeRaw = "production", email = ""] = line.split("|").map((part) => part.trim());
+    const [fullName = "", roleTitle = "", roleCategoryRaw = "production", email = ""] = line.split("|").map((part) => part.trim());
+    const roleCategory =
+      roleCategoryRaw.toLowerCase() === "cast"
+        ? "cast"
+        : roleCategoryRaw.toLowerCase() === "creative"
+          ? "creative"
+          : "production";
     return manualPersonSchema.parse({
       fullName,
       roleTitle,
-      teamType: teamTypeRaw.toLowerCase() === "cast" ? "cast" : "production",
+      roleCategory,
       email,
       submissionType: inferSubmissionTypeFromRole(roleTitle)
     });
@@ -321,6 +343,21 @@ function inferTeamTypeFromRole(roleTitle: string): "cast" | "production" {
   return castPattern.test(roleTitle) ? "cast" : "production";
 }
 
+function inferRoleCategoryFromRole(roleTitle: string): RoleCategory {
+  const normalized = roleTitle.trim().toLowerCase();
+  if (/cast|actor|actress|character|ensemble|understudy|swing/.test(normalized)) {
+    return "cast";
+  }
+  if (
+    /director|assistant director|dramaturg|music director|choreographer|fight director|intimacy|designer|composer|lyricist|playwright|book by/.test(
+      normalized
+    )
+  ) {
+    return "creative";
+  }
+  return "production";
+}
+
 function isValidEmail(value: string) {
   return z.string().email().safeParse(value).success;
 }
@@ -355,12 +392,12 @@ function parseCsvPeople(text: string) {
     const email = cols[emailIdx] ?? "";
 
     const fullName = preferred.trim() ? `${preferred.trim()} ${last.trim()}`.trim() : `${first} ${last}`.trim();
-    const teamType = inferTeamTypeFromRole(role);
+    const roleCategory = inferRoleCategoryFromRole(role);
 
     return manualPersonSchema.parse({
       fullName,
       roleTitle: role,
-      teamType,
+      roleCategory,
       email,
       firstName: first,
       lastName: last,
@@ -440,15 +477,45 @@ export async function getShowSubmissionPeople(showId: string) {
     .eq("program_id", context.program_id)
     .order("team_type", { ascending: true })
     .order("full_name", { ascending: true });
+  const { data: roleRows } = await client
+    .from("show_roles")
+    .select("person_id, role_name, category, billing_order")
+    .eq("show_id", showId);
+  const rolesByPersonId = new Map<string, Array<{ role_name: string; category: string; billing_order: number | null }>>();
+  for (const role of roleRows ?? []) {
+    const personId = String(role.person_id ?? "");
+    if (!personId) continue;
+    const list = rolesByPersonId.get(personId) ?? [];
+    list.push({
+      role_name: String(role.role_name ?? ""),
+      category: String(role.category ?? "production"),
+      billing_order: role.billing_order === null ? null : Number(role.billing_order ?? null)
+    });
+    rolesByPersonId.set(personId, list);
+  }
 
   return (peopleRows ?? []).map((person) => {
     const row = person as Record<string, unknown>;
     const cleanBio = String(person.bio ?? "");
+    const personId = String(person.id);
+    const roles = rolesByPersonId.get(personId) ?? [];
+    const castRoles = roles
+      .filter((role) => role.category.toLowerCase() === "cast")
+      .sort((a, b) => (a.billing_order ?? Number.MAX_SAFE_INTEGER) - (b.billing_order ?? Number.MAX_SAFE_INTEGER))
+      .map((role) => role.role_name);
+    const nonCastRoles = roles
+      .filter((role) => role.category.toLowerCase() !== "cast")
+      .map((role) => role.role_name);
+    const combinedRoleTitle = castRoles.length > 0
+      ? `${joinRoles(castRoles)}${nonCastRoles.length > 0 ? ` (${joinRoles(nonCastRoles)})` : ""}`
+      : nonCastRoles.length > 0
+        ? joinRoles(nonCastRoles)
+        : String(person.role_title ?? "");
     return {
-      id: String(person.id),
+      id: personId,
       full_name: String(person.full_name ?? ""),
-      role_title: String(person.role_title ?? ""),
-      team_type: person.team_type === "cast" ? "cast" : "production",
+      role_title: combinedRoleTitle,
+      team_type: castRoles.length > 0 ? "cast" : "production",
       email: String(person.email ?? ""),
       submission_type: rowHasColumn(row, "submission_type")
         ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
@@ -541,7 +608,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         manualPersonSchema.parse({
           fullName: formData.get("fullName"),
           roleTitle: formData.get("roleTitle"),
-          teamType: formData.get("teamType"),
+          roleCategory: formData.get("roleCategory"),
           email: formData.get("email"),
           submissionType: formData.get("submissionType")
         })
@@ -552,7 +619,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
       `/app/shows/${showId}?tab=people-roles`,
       error instanceof Error
         ? error.message
-        : "Invalid person data. Use Name | Role | cast|production | email for bulk rows, or the required CSV headers."
+        : "Invalid person data. Use Name | Role | cast|creative|production | email for bulk rows, or the required CSV headers."
     );
   }
 
@@ -567,13 +634,26 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
 
   const client = getSupabaseWriteClient();
   const peopleColumns = await getTableColumns(client, "people");
-  const insertRows = records.map((record) =>
+  const { data: existingPeopleRows } = await client
+    .from("people")
+    .select("id, full_name, email, team_type")
+    .eq("program_id", context.program_id);
+  const existingPeople = (existingPeopleRows ?? []).map((row) => ({
+    id: String(row.id),
+    full_name: String(row.full_name ?? ""),
+    email: normalizeEmail(String(row.email ?? "")),
+    team_type: row.team_type === "cast" ? "cast" : "production"
+  }));
+  const peopleByEmail = new Map(existingPeople.map((person) => [person.email, person]));
+
+  const newPeopleRecords = records.filter((record) => !peopleByEmail.has(normalizeEmail(record.email)));
+  const insertRows = newPeopleRecords.map((record) =>
     filterToColumns(
       {
         program_id: context.program_id,
         full_name: record.fullName.trim(),
         role_title: record.roleTitle.trim(),
-        team_type: record.teamType,
+        team_type: record.roleCategory === "cast" ? "cast" : "production",
         email: normalizeEmail(record.email),
         submission_type: "bio",
         bio: "",
@@ -589,44 +669,142 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     )
   );
 
-  const { data: insertedPeople, error: insertError } = await client
-    .from("people")
-    .insert(insertRows)
-    .select("id, full_name, role_title, team_type, submission_type");
-
-  if (insertError || !insertedPeople) {
-    withError(`/app/shows/${showId}?tab=people-roles`, insertError?.message ?? "Could not add people.");
+  let insertedPeople: Array<{ id: string; full_name: string; email: string; team_type: "cast" | "production" }> = [];
+  if (insertRows.length > 0) {
+    const { data, error: insertError } = await client
+      .from("people")
+      .insert(insertRows)
+      .select("id, full_name, email, team_type");
+    if (insertError || !data) {
+      withError(`/app/shows/${showId}?tab=people-roles`, insertError?.message ?? "Could not add people.");
+    }
+    insertedPeople = data.map((row) => ({
+      id: String(row.id),
+      full_name: String(row.full_name ?? ""),
+      email: normalizeEmail(String(row.email ?? "")),
+      team_type: row.team_type === "cast" ? "cast" : "production"
+    }));
   }
 
-  const roleRows = insertedPeople.map((person, index) => ({
-    show_id: showId,
-    person_id: person.id,
-    role_name: String(person.role_title ?? ""),
-    category: person.team_type === "cast" ? "cast" : "production",
-    billing_order: person.team_type === "cast" ? index + 1 : null,
-    bio_order: null
-  }));
-  await client.from("show_roles").insert(roleRows);
+  const allPeople = [...existingPeople, ...insertedPeople];
+  const personIdByEmail = new Map(allPeople.map((person) => [person.email, person.id]));
 
-  const { data: showRoles } = await client
+  // Keep people.team_type as bio grouping: cast if any cast role exists.
+  const castEmails = new Set(records.filter((record) => record.roleCategory === "cast").map((record) => normalizeEmail(record.email)));
+  for (const email of castEmails) {
+    const personId = personIdByEmail.get(email);
+    if (!personId) continue;
+    await client
+      .from("people")
+      .update(filterToColumns({ team_type: "cast" }, peopleColumns))
+      .eq("id", personId);
+  }
+
+  const { data: existingRoleRows } = await client
     .from("show_roles")
-    .select("id, person_id")
-    .eq("show_id", showId)
-    .in(
-      "person_id",
-      insertedPeople.map((person) => person.id)
-    );
+    .select("id, person_id, role_name, category, billing_order")
+    .eq("show_id", showId);
+  const existingRoleKeys = new Set(
+    (existingRoleRows ?? []).map(
+      (row) => `${String(row.person_id ?? "")}|${String(row.role_name ?? "").trim().toLowerCase()}|${String(row.category ?? "").trim().toLowerCase()}`
+    )
+  );
+  let nextCastBillingOrder =
+    Math.max(
+      0,
+      ...(existingRoleRows ?? [])
+        .filter((row) => String(row.category ?? "").trim().toLowerCase() === "cast")
+        .map((row) => Number(row.billing_order ?? 0))
+    ) + 1;
 
-  if ((showRoles ?? []).length > 0) {
-    await client.from("submission_requests").insert(
-      (showRoles ?? []).map((role) => ({
-        show_role_id: String(role.id),
+  const newRoleRows: Array<{
+    show_id: string;
+    person_id: string;
+    role_name: string;
+    category: string;
+    billing_order: number | null;
+    bio_order: number | null;
+  }> = [];
+  for (const record of records) {
+    const personId = personIdByEmail.get(normalizeEmail(record.email));
+    if (!personId) {
+      continue;
+    }
+    const roleName = record.roleTitle.trim();
+    const category = record.roleCategory;
+    const roleKey = `${personId}|${roleName.toLowerCase()}|${category}`;
+    if (existingRoleKeys.has(roleKey)) {
+      continue;
+    }
+    existingRoleKeys.add(roleKey);
+    newRoleRows.push({
+      show_id: showId,
+      person_id: personId,
+      role_name: roleName,
+      category,
+      billing_order: category === "cast" ? nextCastBillingOrder++ : null,
+      bio_order: null
+    });
+  }
+
+  if (newRoleRows.length > 0) {
+    await client.from("show_roles").insert(newRoleRows);
+  }
+
+  // Ensure exactly one bio request per person (not per role).
+  const personIds = [...new Set(records.map((record) => personIdByEmail.get(normalizeEmail(record.email)) ?? "").filter(Boolean))];
+  if (personIds.length > 0) {
+    const { data: allRolesForPeople } = await client
+      .from("show_roles")
+      .select("id, person_id, category, billing_order")
+      .eq("show_id", showId)
+      .in("person_id", personIds);
+    const roleIds = (allRolesForPeople ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
+    const { data: existingBioRequests } = roleIds.length
+      ? await client
+          .from("submission_requests")
+          .select("id, show_role_id, request_type")
+          .in("show_role_id", roleIds)
+      : { data: [] as Array<Record<string, unknown>> };
+    const roleById = new Map((allRolesForPeople ?? []).map((row) => [String(row.id), String(row.person_id ?? "")]));
+    const hasBioByPersonId = new Set(
+      (existingBioRequests ?? [])
+        .filter((row) => String(row.request_type ?? "bio") === "bio")
+        .map((row) => roleById.get(String(row.show_role_id ?? "")) ?? "")
+        .filter(Boolean)
+    );
+    const rowsToInsert: Array<{
+      show_role_id: string;
+      request_type: string;
+      label: string;
+      constraints: { maxChars: number };
+      status: string;
+    }> = [];
+    for (const personId of personIds) {
+      if (hasBioByPersonId.has(personId)) {
+        continue;
+      }
+      const rolesForPerson = (allRolesForPeople ?? [])
+        .filter((row) => String(row.person_id ?? "") === personId)
+        .sort((a, b) => {
+          const aCast = String(a.category ?? "").toLowerCase() === "cast" ? 0 : 1;
+          const bCast = String(b.category ?? "").toLowerCase() === "cast" ? 0 : 1;
+          if (aCast !== bCast) return aCast - bCast;
+          return Number(a.billing_order ?? Number.MAX_SAFE_INTEGER) - Number(b.billing_order ?? Number.MAX_SAFE_INTEGER);
+        });
+      const chosenRoleId = rolesForPerson[0]?.id ? String(rolesForPerson[0].id) : "";
+      if (!chosenRoleId) continue;
+      rowsToInsert.push({
+        show_role_id: chosenRoleId,
         request_type: "bio",
         label: `${getSubmissionTypeLabel("bio")} Submission`,
         constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
         status: "pending"
-      }))
-    );
+      });
+    }
+    if (rowsToInsert.length > 0) {
+      await client.from("submission_requests").insert(rowsToInsert);
+    }
   }
 
   await writeAuditLog({
@@ -635,12 +813,16 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     field: "people_add",
     beforeValue: null,
     afterValue: {
-      added: insertedPeople.map((person) => ({
+      added_people: insertedPeople.map((person) => ({
         id: person.id,
         full_name: person.full_name,
-        role_title: person.role_title,
         team_type: person.team_type,
-        submission_type: person.submission_type
+        email: person.email
+      })),
+      added_roles: newRoleRows.map((role) => ({
+        person_id: role.person_id,
+        role_name: role.role_name,
+        category: role.category
       }))
     },
     reason: mode === "bulk" ? "bulk import" : "manual add"
@@ -927,8 +1109,8 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
   if (enableRoleTitle && !roleTitle) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Role Title is required when enabled.");
   }
-  if (enableTeamType && !["cast", "production"].includes(teamType)) {
-    withError(`/app/shows/${showId}?tab=people-roles`, "Category must be cast or production.");
+  if (enableTeamType && !["cast", "creative", "production"].includes(teamType)) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Category must be cast, creative, or production.");
   }
   if (enableEmail && !z.string().email().safeParse(email).success) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Email must be valid when enabled.");
@@ -973,7 +1155,7 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
       audits.push({ field: "role_title", beforeValue: person.role_title, afterValue: roleTitle });
     }
     if (enableTeamType && person.team_type !== teamType) {
-      peopleUpdate.team_type = teamType;
+      peopleUpdate.team_type = teamType === "cast" ? "cast" : "production";
       audits.push({ field: "team_type", beforeValue: person.team_type, afterValue: teamType });
     }
     if (enableEmail && normalizeEmail(person.email) !== normalizedEmail) {
@@ -1000,7 +1182,7 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
     if (enableTeamType) {
       await client
         .from("show_roles")
-        .update({ category: teamType === "cast" ? "cast" : "production" })
+        .update({ category: teamType === "cast" ? "cast" : teamType === "creative" ? "creative" : "production" })
         .eq("show_id", showId)
         .eq("person_id", person.id);
     }

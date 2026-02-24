@@ -79,6 +79,15 @@ type ProgramModuleRecord = {
   settings: Record<string, unknown>;
 };
 
+type ShowRoleRecord = {
+  id: string;
+  person_id: string;
+  role_name: string;
+  category: string;
+  billing_order: number | null;
+  bio_order: number | null;
+};
+
 type DensityMode = "normal" | "compact" | "loose";
 
 export type ProgramPage =
@@ -553,6 +562,147 @@ function buildRoleListHtml(people: PersonRecord[]) {
     .join("")}</ul>`;
 }
 
+function normalizeRoleCategory(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "cast") return "cast";
+  if (normalized === "creative" || normalized === "creative_team") return "creative";
+  return "production";
+}
+
+function uniqueRoleNames(values: string[]) {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const item of values) {
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      ordered.push(trimmed);
+    }
+  }
+  return ordered;
+}
+
+function joinRoles(values: string[]) {
+  return uniqueRoleNames(values).join(" & ");
+}
+
+function buildCategoryRoleListHtml(title: string, rows: Array<{ role: string; name: string }>) {
+  if (rows.length === 0) {
+    return "";
+  }
+  const listItems = rows
+    .map(
+      (row) =>
+        `<li class="billing-item"><span class="billing-left">${escapeHtml(row.role)}</span><span class="billing-leader" aria-hidden="true"></span><span class="billing-right">${escapeHtml(row.name)}</span></li>`
+    )
+    .join("");
+  return `<section class="billing-section"><h3 class="billing-section-title">${escapeHtml(title)}</h3><ul class="billing-list">${listItems}</ul></section>`;
+}
+
+function derivePeopleForBiosFromRoles(
+  people: PersonRecord[],
+  roles: ShowRoleRecord[]
+) {
+  const rolesByPersonId = new Map<string, ShowRoleRecord[]>();
+  for (const role of roles) {
+    const list = rolesByPersonId.get(role.person_id) ?? [];
+    list.push(role);
+    rolesByPersonId.set(role.person_id, list);
+  }
+
+  const castPeople: PersonRecord[] = [];
+  const productionPeople: PersonRecord[] = [];
+
+  for (const person of people) {
+    const personRoles = rolesByPersonId.get(person.id) ?? [];
+    if (personRoles.length === 0) {
+      // Legacy fallback when roles are unavailable.
+      if (person.team_type === "cast") {
+        castPeople.push(person);
+      } else {
+        productionPeople.push(person);
+      }
+      continue;
+    }
+
+    const castRoles = personRoles
+      .filter((role) => normalizeRoleCategory(role.category) === "cast")
+      .sort((a, b) => (a.billing_order ?? Number.MAX_SAFE_INTEGER) - (b.billing_order ?? Number.MAX_SAFE_INTEGER))
+      .map((role) => role.role_name);
+    const nonCastRoles = personRoles
+      .filter((role) => normalizeRoleCategory(role.category) !== "cast")
+      .sort((a, b) => (a.bio_order ?? Number.MAX_SAFE_INTEGER) - (b.bio_order ?? Number.MAX_SAFE_INTEGER))
+      .map((role) => role.role_name);
+
+    if (castRoles.length > 0) {
+      const castRoleLine = joinRoles(castRoles);
+      const appended = nonCastRoles.length > 0 ? ` (${joinRoles(nonCastRoles)})` : "";
+      castPeople.push({
+        ...person,
+        team_type: "cast",
+        role_title: `${castRoleLine}${appended}`
+      });
+    } else {
+      productionPeople.push({
+        ...person,
+        team_type: "production",
+        role_title: joinRoles(nonCastRoles)
+      });
+    }
+  }
+
+  castPeople.sort((a, b) => a.full_name.localeCompare(b.full_name));
+  productionPeople.sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  return { castPeople, productionPeople };
+}
+
+function buildRoleListRowsByCategory(
+  people: PersonRecord[],
+  roles: ShowRoleRecord[],
+  category: "cast" | "creative" | "production"
+) {
+  const personNameById = new Map(people.map((person) => [person.id, person.full_name]));
+  const grouped = new Map<string, { personId: string; name: string; roles: string[]; billingOrder: number | null }>();
+
+  for (const role of roles) {
+    if (normalizeRoleCategory(role.category) !== category) {
+      continue;
+    }
+    const personName = personNameById.get(role.person_id);
+    if (!personName) {
+      continue;
+    }
+    const existing = grouped.get(role.person_id) ?? {
+      personId: role.person_id,
+      name: personName,
+      roles: [],
+      billingOrder: role.billing_order ?? null
+    };
+    existing.roles.push(role.role_name);
+    if (existing.billingOrder === null && role.billing_order !== null) {
+      existing.billingOrder = role.billing_order;
+    }
+    grouped.set(role.person_id, existing);
+  }
+
+  return [...grouped.values()]
+    .sort((a, b) => {
+      if (category === "cast") {
+        const aOrder = a.billingOrder ?? Number.MAX_SAFE_INTEGER;
+        const bOrder = b.billingOrder ?? Number.MAX_SAFE_INTEGER;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+      }
+      return a.name.localeCompare(b.name);
+    })
+    .map((row) => ({
+      role: joinRoles(row.roles),
+      name: row.name
+    }));
+}
+
 function buildProductionInfoHtml(program: { theatre_name: string; show_dates: string; performance_schedule: PerformanceRecord[] }) {
   const rows: string[] = [];
   if (program.theatre_name.trim()) {
@@ -619,6 +769,7 @@ function renderModulePages(
   },
   cast: PersonRecord[],
   production: PersonRecord[],
+  showRoles: ShowRoleRecord[],
   densityMode: DensityMode
 ) {
   const title = module.display_title.trim() || module.module_type.replace(/_/g, " ");
@@ -667,33 +818,49 @@ function renderModulePages(
   if (module.module_type === "production_info") {
     const body = buildProductionInfoHtml(program);
     if (!richTextHasContent(body)) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(
+        title,
+        "Production Info is enabled, but no venue/date/schedule data is available yet. Update Show Settings: Poster + Performance Schedule."
+      );
     }
     return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
   }
 
   if (module.module_type === "cast_list") {
-    const body = buildRoleListHtml(cast);
+    const body = buildCategoryRoleListHtml("CAST", buildRoleListRowsByCategory([...cast, ...production], showRoles, "cast"));
     if (!richTextHasContent(body)) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(
+        title,
+        "Cast List is enabled, but no cast records were found. In People and Roles, confirm entries are assigned to category: cast."
+      );
     }
     return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
   }
 
   if (module.module_type === "creative_team") {
-    const source = creativeTeam.length > 0 ? creativeTeam : production;
-    const body = buildRoleListHtml(source);
+    const body = buildCategoryRoleListHtml(
+      "CREATIVE TEAM",
+      buildRoleListRowsByCategory([...cast, ...production], showRoles, "creative")
+    );
     if (!richTextHasContent(body)) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(
+        title,
+        "Creative Team module is enabled, but no production records were found. Add people in People and Roles with category: production."
+      );
     }
     return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
   }
 
   if (module.module_type === "production_team") {
-    const source = productionTeam.length > 0 ? productionTeam : production;
-    const body = buildRoleListHtml(source);
+    const body = buildCategoryRoleListHtml(
+      "PRODUCTION TEAM",
+      buildRoleListRowsByCategory([...cast, ...production], showRoles, "production")
+    );
     if (!richTextHasContent(body)) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(
+        title,
+        "Production Team module is enabled, but no production records were found. Add people in People and Roles with category: production."
+      );
     }
     return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
   }
@@ -870,13 +1037,14 @@ function buildRenderablePagesFromModules(
   },
   cast: PersonRecord[],
   production: PersonRecord[],
+  showRoles: ShowRoleRecord[],
   modules: ProgramModuleRecord[],
   densityMode: DensityMode = "normal"
 ) {
   const pages: ProgramPage[] = [];
   const visibleModules = modules.filter((module) => module.visible).sort((a, b) => a.module_order - b.module_order);
   for (let index = 0; index < visibleModules.length; index += 1) {
-    pages.push(...renderModulePages(visibleModules[index], index, program, cast, production, densityMode));
+    pages.push(...renderModulePages(visibleModules[index], index, program, cast, production, showRoles, densityMode));
   }
 
   if (!modules.some((module) => module.visible && module.module_type === "custom_pages")) {
@@ -1283,10 +1451,10 @@ export async function getProgramBySlug(
       submission_status: String(person.submission_status ?? "pending")
     })) as PersonRecord[];
 
-    const castPeople = normalizedPeople
+    let castPeople = normalizedPeople
       .filter((person) => person.team_type === "cast")
       .sort((a, b) => a.full_name.localeCompare(b.full_name));
-    const productionPeople = normalizedPeople
+    let productionPeople = normalizedPeople
       .filter((person) => person.team_type === "production")
       .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
@@ -1317,6 +1485,7 @@ export async function getProgramBySlug(
     let optimizationSteps: string[] = [];
     let fillerModulesUsed: string[] = [];
     let normalizedModules: ProgramModuleRecord[] = [];
+    let showRoleAssignments: ShowRoleRecord[] = [];
     const { data: show } = await client
       .from("shows")
       .select("id, season_id, start_date, end_date")
@@ -1324,6 +1493,28 @@ export async function getProgramBySlug(
       .maybeSingle();
 
     if (show?.id) {
+      try {
+        const { data: roleRows } = await client
+          .from("show_roles")
+          .select("id, person_id, role_name, category, billing_order, bio_order")
+          .eq("show_id", String(show.id));
+        showRoleAssignments = (roleRows ?? []).map((row) => ({
+          id: String(row.id ?? ""),
+          person_id: String(row.person_id ?? ""),
+          role_name: String(row.role_name ?? ""),
+          category: String(row.category ?? "production"),
+          billing_order: row.billing_order === null ? null : Number(row.billing_order ?? null),
+          bio_order: row.bio_order === null ? null : Number(row.bio_order ?? null)
+        }));
+        if (showRoleAssignments.length > 0) {
+          const derived = derivePeopleForBiosFromRoles(normalizedPeople, showRoleAssignments);
+          castPeople = derived.castPeople;
+          productionPeople = derived.productionPeople;
+        }
+      } catch {
+        // keep legacy people-role data if show_roles table is unavailable
+      }
+
       try {
         if (show.season_id) {
           const { data: events } = await client
@@ -1423,6 +1614,7 @@ export async function getProgramBySlug(
         safeProgram,
         castPeople,
         productionPeople,
+        showRoleAssignments,
         normalizedModules,
         appliedDensityMode
       );
@@ -1440,6 +1632,7 @@ export async function getProgramBySlug(
         safeProgram,
         castPeople,
         productionPeople,
+        showRoleAssignments,
         normalizedModules,
         "compact"
       );
@@ -1470,6 +1663,7 @@ export async function getProgramBySlug(
             safeProgram,
             castPeople,
             productionPeople,
+            showRoleAssignments,
             appliedDensityMode
           );
           if (rendered.length === 0) {

@@ -6,7 +6,7 @@ type PersonRow = {
   id: string;
   full_name: string;
   role_title: string;
-  team_type: "cast" | "production";
+  team_type: "cast" | "production" | "creative";
   email: string;
   submission_type?: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
 };
@@ -181,6 +181,7 @@ export function PeopleBulkEditor({
                 </label>
                 <select name="teamType" defaultValue="production" disabled={!enableTeamType}>
                   <option value="cast">cast</option>
+                  <option value="creative">creative</option>
                   <option value="production">production</option>
                 </select>
               </div>
