@@ -305,6 +305,12 @@ button:disabled,
   margin-bottom: 0.3rem;
 }
 
+.bio-body {
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+}
+
 .sequence-view,
 .booklet-sheets {
   display: grid;
@@ -967,6 +973,21 @@ body.density-compact .admin-surface textarea {
   object-fit: cover;
 }
 
+.blank-padding-page {
+  background: #ffffff;
+  border-style: dashed;
+  border-color: #d6d1c5;
+  display: grid;
+  place-items: center;
+}
+
+.blank-padding-label {
+  color: #7a7468;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .folio {
   font-size: 0.85rem;
   text-align: center;
@@ -1262,6 +1283,10 @@ body.density-compact .admin-surface textarea {
     background: #fff;
     width: 5.5in;
     height: 8.5in;
+  }
+
+  .blank-padding-page {
+    border: 0;
   }
 
   .print-proof .sequence-item,

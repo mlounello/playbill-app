@@ -45,7 +45,8 @@ create table if not exists public.people (
   headshot_url text not null default '',
   email text not null default '',
   submission_status text not null default 'pending',
-  submitted_at timestamptz
+  submitted_at timestamptz,
+  no_bio boolean not null default false
 );
 
 alter table public.people add column if not exists team_type text not null default 'cast';
@@ -57,6 +58,7 @@ alter table public.people add column if not exists first_name text not null defa
 alter table public.people add column if not exists last_name text not null default '';
 alter table public.people add column if not exists preferred_name text not null default '';
 alter table public.people add column if not exists pronouns text not null default '';
+alter table public.people add column if not exists no_bio boolean not null default false;
 
 create table if not exists public.user_profiles (
   user_id uuid primary key references auth.users (id) on delete cascade,

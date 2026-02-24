@@ -76,6 +76,8 @@ type ProgramModuleRecord = {
   settings: Record<string, unknown>;
 };
 
+type DensityMode = "normal" | "compact" | "loose";
+
 export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string }
@@ -175,8 +177,18 @@ function estimateBioWeight(person: PersonRecord) {
   return 220 + Math.min(1900, Math.round(plainLength * 0.45)) + headshotWeight;
 }
 
-function paginateBios(title: string, idBase: string, people: PersonRecord[]) {
-  const PAGE_BUDGET = 1900;
+function getBioPageBudget(densityMode: DensityMode) {
+  if (densityMode === "compact") {
+    return 2200;
+  }
+  if (densityMode === "loose") {
+    return 1700;
+  }
+  return 1900;
+}
+
+function paginateBios(title: string, idBase: string, people: PersonRecord[], densityMode: DensityMode = "normal") {
+  const PAGE_BUDGET = getBioPageBudget(densityMode);
   const pages: ProgramPage[] = [];
   let current: PersonRecord[] = [];
   let currentWeight = 0;
@@ -527,6 +539,247 @@ function getSettingString(settings: Record<string, unknown>, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function normalizeDensityMode(value: unknown): DensityMode {
+  if (value === "compact" || value === "loose") {
+    return value;
+  }
+  return "normal";
+}
+
+function renderModulePages(
+  module: ProgramModuleRecord,
+  index: number,
+  program: {
+    title: string;
+    theatre_name: string;
+    show_dates: string;
+    performance_schedule: PerformanceRecord[];
+    poster_image_url: string;
+    director_notes: string;
+    dramaturgical_note: string;
+    billing_page: string;
+    acts_songs: string;
+    department_info: string;
+    actf_ad_image_url: string;
+    acknowledgements: string;
+    season_calendar: string;
+    production_photo_urls: string[];
+    custom_pages: CustomPageRecord[];
+  },
+  cast: PersonRecord[],
+  production: PersonRecord[],
+  densityMode: DensityMode
+) {
+  const title = module.display_title.trim() || module.module_type.replace(/_/g, " ");
+  const safeModuleId = module.id ? module.id.slice(0, 8) : String(index);
+  const idBase = `${module.module_type}-${index}-${safeModuleId}`;
+  const hasPoster = Boolean(program.poster_image_url.trim());
+  const hasDirectorNote = richTextHasContent(program.director_notes);
+  const hasDramaturgicalNote = richTextHasContent(program.dramaturgical_note);
+  const hasBilling = richTextHasContent(program.billing_page);
+  const hasActsSongs = richTextHasContent(program.acts_songs);
+  const hasDepartmentInfo = richTextHasContent(program.department_info);
+  const hasAcknowledgements = richTextHasContent(program.acknowledgements);
+  const hasSeasonCalendar = richTextHasContent(program.season_calendar);
+  const hasActfImage = Boolean(program.actf_ad_image_url.trim());
+  const castWithBios = peopleWithBios(cast);
+  const productionWithBios = peopleWithBios(production);
+  const allHeadshots = [...cast, ...production].map((person) => person.headshot_url).filter((url) => Boolean(url.trim()));
+  const { creativeTeam, productionTeam } = splitCreativeAndProductionTeam(production);
+
+  if (module.module_type === "cover") {
+    if (!hasPoster) {
+      return [] as ProgramPage[];
+    }
+    return [
+      {
+        id: idBase,
+        type: "poster",
+        title: program.title,
+        subtitle: `${program.theatre_name} | ${program.show_dates}`,
+        imageUrl: program.poster_image_url
+      }
+    ] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "production_info") {
+    const body = buildProductionInfoHtml(program);
+    if (!richTextHasContent(body)) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "cast_list") {
+    const body = buildRoleListHtml(cast);
+    if (!richTextHasContent(body)) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "creative_team") {
+    const source = creativeTeam.length > 0 ? creativeTeam : production;
+    const body = buildRoleListHtml(source);
+    if (!richTextHasContent(body)) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "production_team") {
+    const source = productionTeam.length > 0 ? productionTeam : production;
+    const body = buildRoleListHtml(source);
+    if (!richTextHasContent(body)) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "bios") {
+    const pages: ProgramPage[] = [];
+    const scope = getSettingString(module.settings, "scope");
+    const allowMultiplePages = Boolean(module.settings.allow_multiple_pages ?? true);
+    if (scope !== "production" && cast.length > 0) {
+      const castPages = paginateBios(`${title}: Cast`, `${idBase}-cast`, castWithBios, densityMode);
+      if (allowMultiplePages) {
+        pages.push(...castPages);
+      } else if (castPages.length > 0) {
+        pages.push(castPages[0]);
+      }
+    }
+    if (scope !== "cast" && production.length > 0) {
+      const productionPages = paginateBios(`${title}: Production Team`, `${idBase}-production`, productionWithBios, densityMode);
+      if (allowMultiplePages) {
+        pages.push(...productionPages);
+      } else if (productionPages.length > 0) {
+        pages.push(productionPages[0]);
+      }
+    }
+    return pages;
+  }
+
+  if (module.module_type === "director_note") {
+    if (!hasDirectorNote) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body: program.director_notes }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "dramaturgical_note") {
+    if (!hasDramaturgicalNote) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body: program.dramaturgical_note }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "acts_scenes" || module.module_type === "songs") {
+    if (!hasActsSongs) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body: program.acts_songs }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "headshots_grid") {
+    const photos = allHeadshots.length > 0 ? allHeadshots : program.production_photo_urls;
+    if (photos.length === 0) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "photo_grid", title, photos }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "production_photos") {
+    if (program.production_photo_urls.length === 0) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "photo_grid", title, photos: program.production_photo_urls }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "sponsors") {
+    const pages: ProgramPage[] = [];
+    if (hasActfImage) {
+      pages.push({ id: `${idBase}-image`, type: "image", title, imageUrl: program.actf_ad_image_url });
+    }
+    if (hasAcknowledgements) {
+      pages.push({ id: `${idBase}-text`, type: "text", title, body: program.acknowledgements });
+    }
+    return pages;
+  }
+
+  if (module.module_type === "special_thanks") {
+    if (!hasAcknowledgements) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body: program.acknowledgements }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "acknowledgements") {
+    if (!hasAcknowledgements) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body: program.acknowledgements }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "back_cover") {
+    const mode = getSettingString(module.settings, "mode") || "schedule";
+    if (mode === "image") {
+      if (hasActfImage) {
+        return [{ id: idBase, type: "image", title, imageUrl: program.actf_ad_image_url }] satisfies ProgramPage[];
+      }
+      return [] as ProgramPage[];
+    }
+
+    if (mode === "auto") {
+      if (hasSeasonCalendar) {
+        return [{ id: idBase, type: "text", title, body: program.season_calendar }] satisfies ProgramPage[];
+      }
+      if (hasActfImage) {
+        return [{ id: idBase, type: "image", title, imageUrl: program.actf_ad_image_url }] satisfies ProgramPage[];
+      }
+      return [] as ProgramPage[];
+    }
+
+    if (hasSeasonCalendar) {
+      return [{ id: idBase, type: "text", title, body: program.season_calendar }] satisfies ProgramPage[];
+    }
+    return [] as ProgramPage[];
+  }
+
+  if (module.module_type === "billing" && hasBilling) {
+    return [{ id: idBase, type: "text", title, body: program.billing_page }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "department_info" && hasDepartmentInfo) {
+    return [{ id: idBase, type: "text", title, body: program.department_info }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "custom_pages") {
+    const pages: ProgramPage[] = [];
+    for (let i = 0; i < program.custom_pages.length; i += 1) {
+      pages.push(mapCustomPageToRenderable(program.custom_pages[i], i));
+    }
+    return pages;
+  }
+
+  if (module.module_type === "custom_text") {
+    const body = sanitizeRichText(getSettingString(module.settings, "body"));
+    if (!richTextHasContent(body)) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+  }
+
+  if (module.module_type === "custom_image") {
+    const imageUrl = getSettingString(module.settings, "image_url");
+    if (!isValidHttpUrl(imageUrl)) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "image", title, imageUrl }] satisfies ProgramPage[];
+  }
+
+  return [] as ProgramPage[];
+}
+
 function buildRenderablePagesFromModules(
   program: {
     title: string;
@@ -547,232 +800,14 @@ function buildRenderablePagesFromModules(
   },
   cast: PersonRecord[],
   production: PersonRecord[],
-  modules: ProgramModuleRecord[]
+  modules: ProgramModuleRecord[],
+  densityMode: DensityMode = "normal"
 ) {
-  const hasPoster = Boolean(program.poster_image_url.trim());
-  const hasDirectorNote = richTextHasContent(program.director_notes);
-  const hasDramaturgicalNote = richTextHasContent(program.dramaturgical_note);
-  const hasBilling = richTextHasContent(program.billing_page);
-  const hasActsSongs = richTextHasContent(program.acts_songs);
-  const hasDepartmentInfo = richTextHasContent(program.department_info);
-  const hasAcknowledgements = richTextHasContent(program.acknowledgements);
-  const hasSeasonCalendar = richTextHasContent(program.season_calendar);
-  const hasActfImage = Boolean(program.actf_ad_image_url.trim());
-  const castWithBios = peopleWithBios(cast);
-  const productionWithBios = peopleWithBios(production);
-  const allHeadshots = [...cast, ...production].map((person) => person.headshot_url).filter((url) => Boolean(url.trim()));
-  const { creativeTeam, productionTeam } = splitCreativeAndProductionTeam(production);
   const pages: ProgramPage[] = [];
-
-  modules
-    .filter((module) => module.visible)
-    .sort((a, b) => a.module_order - b.module_order)
-    .forEach((module, index) => {
-      const title = module.display_title.trim() || module.module_type.replace(/_/g, " ");
-      const idBase = `${module.module_type}-${index}`;
-
-      if (module.module_type === "cover") {
-        if (!hasPoster) {
-          return;
-        }
-        pages.push({
-          id: idBase,
-          type: "poster",
-          title: program.title,
-          subtitle: `${program.theatre_name} | ${program.show_dates}`,
-          imageUrl: program.poster_image_url
-        });
-        return;
-      }
-
-      if (module.module_type === "production_info") {
-        const body = buildProductionInfoHtml(program);
-        if (!richTextHasContent(body)) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body });
-        return;
-      }
-
-      if (module.module_type === "cast_list") {
-        const body = buildRoleListHtml(cast);
-        if (!richTextHasContent(body)) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body });
-        return;
-      }
-
-      if (module.module_type === "creative_team") {
-        const source = creativeTeam.length > 0 ? creativeTeam : production;
-        const body = buildRoleListHtml(source);
-        if (!richTextHasContent(body)) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body });
-        return;
-      }
-
-      if (module.module_type === "production_team") {
-        const source = productionTeam.length > 0 ? productionTeam : production;
-        const body = buildRoleListHtml(source);
-        if (!richTextHasContent(body)) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body });
-        return;
-      }
-
-      if (module.module_type === "bios") {
-        const scope = getSettingString(module.settings, "scope");
-        const allowMultiplePages = Boolean(module.settings.allow_multiple_pages ?? true);
-        if (scope !== "production" && cast.length > 0) {
-          const castPages = paginateBios(`${title}: Cast`, `${idBase}-cast`, castWithBios);
-          if (allowMultiplePages) {
-            pages.push(...castPages);
-          } else if (castPages.length > 0) {
-            pages.push(castPages[0]);
-          }
-        }
-        if (scope !== "cast" && production.length > 0) {
-          const productionPages = paginateBios(`${title}: Production Team`, `${idBase}-production`, productionWithBios);
-          if (allowMultiplePages) {
-            pages.push(...productionPages);
-          } else if (productionPages.length > 0) {
-            pages.push(productionPages[0]);
-          }
-        }
-        return;
-      }
-
-      if (module.module_type === "director_note") {
-        if (!hasDirectorNote) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body: program.director_notes });
-        return;
-      }
-
-      if (module.module_type === "dramaturgical_note") {
-        if (!hasDramaturgicalNote) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body: program.dramaturgical_note });
-        return;
-      }
-
-      if (module.module_type === "acts_scenes" || module.module_type === "songs") {
-        if (!hasActsSongs) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body: program.acts_songs });
-        return;
-      }
-
-      if (module.module_type === "headshots_grid") {
-        const photos = allHeadshots.length > 0 ? allHeadshots : program.production_photo_urls;
-        if (photos.length === 0) {
-          return;
-        }
-        pages.push({ id: idBase, type: "photo_grid", title, photos });
-        return;
-      }
-
-      if (module.module_type === "production_photos") {
-        if (program.production_photo_urls.length === 0) {
-          return;
-        }
-        pages.push({ id: idBase, type: "photo_grid", title, photos: program.production_photo_urls });
-        return;
-      }
-
-      if (module.module_type === "sponsors") {
-        if (hasActfImage) {
-          pages.push({ id: `${idBase}-image`, type: "image", title, imageUrl: program.actf_ad_image_url });
-        }
-        if (hasAcknowledgements) {
-          pages.push({ id: `${idBase}-text`, type: "text", title, body: program.acknowledgements });
-        }
-        return;
-      }
-
-      if (module.module_type === "special_thanks") {
-        if (!hasAcknowledgements) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body: program.acknowledgements });
-        return;
-      }
-
-      if (module.module_type === "acknowledgements") {
-        if (!hasAcknowledgements) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body: program.acknowledgements });
-        return;
-      }
-
-      if (module.module_type === "back_cover") {
-        const mode = getSettingString(module.settings, "mode") || "schedule";
-        if (mode === "image") {
-          if (hasActfImage) {
-            pages.push({ id: idBase, type: "image", title, imageUrl: program.actf_ad_image_url });
-          }
-          return;
-        }
-
-        if (mode === "auto") {
-          if (hasSeasonCalendar) {
-            pages.push({ id: idBase, type: "text", title, body: program.season_calendar });
-            return;
-          }
-          if (hasActfImage) {
-            pages.push({ id: idBase, type: "image", title, imageUrl: program.actf_ad_image_url });
-            return;
-          }
-          return;
-        }
-
-        if (hasSeasonCalendar) {
-          pages.push({ id: idBase, type: "text", title, body: program.season_calendar });
-        }
-        return;
-      }
-
-      if (module.module_type === "billing" && hasBilling) {
-        pages.push({ id: idBase, type: "text", title, body: program.billing_page });
-        return;
-      }
-
-      if (module.module_type === "department_info" && hasDepartmentInfo) {
-        pages.push({ id: idBase, type: "text", title, body: program.department_info });
-        return;
-      }
-
-      if (module.module_type === "custom_pages") {
-        for (let i = 0; i < program.custom_pages.length; i += 1) {
-          pages.push(mapCustomPageToRenderable(program.custom_pages[i], i));
-        }
-        return;
-      }
-
-      if (module.module_type === "custom_text") {
-        const body = sanitizeRichText(getSettingString(module.settings, "body"));
-        if (!richTextHasContent(body)) {
-          return;
-        }
-        pages.push({ id: idBase, type: "text", title, body });
-        return;
-      }
-
-      if (module.module_type === "custom_image") {
-        const imageUrl = getSettingString(module.settings, "image_url");
-        if (!isValidHttpUrl(imageUrl)) {
-          return;
-        }
-        pages.push({ id: idBase, type: "image", title, imageUrl });
-      }
-    });
+  const visibleModules = modules.filter((module) => module.visible).sort((a, b) => a.module_order - b.module_order);
+  for (let index = 0; index < visibleModules.length; index += 1) {
+    pages.push(...renderModulePages(visibleModules[index], index, program, cast, production, densityMode));
+  }
 
   if (!modules.some((module) => module.visible && module.module_type === "custom_pages")) {
     for (let i = 0; i < program.custom_pages.length; i += 1) {
@@ -982,7 +1017,8 @@ function buildRenderablePages(
     layout_order: LayoutToken[];
   },
   cast: PersonRecord[],
-  production: PersonRecord[]
+  production: PersonRecord[],
+  densityMode: DensityMode = "normal"
 ) {
   const hasText = (value: string) => Boolean(value && value.trim().length > 0);
   const castWithBios = peopleWithBios(cast);
@@ -1090,12 +1126,12 @@ function buildRenderablePages(
     }
 
     if (token === "cast_bios") {
-      pages.push(...paginateBios("Who's Who in the Cast", "cast-bios", castWithBios));
+      pages.push(...paginateBios("Who's Who in the Cast", "cast-bios", castWithBios, densityMode));
       continue;
     }
 
     if (token === "team_bios") {
-      pages.push(...paginateBios("Who's Who in the Production Team", "team-bios", productionWithBios));
+      pages.push(...paginateBios("Who's Who in the Production Team", "team-bios", productionWithBios, densityMode));
       continue;
     }
 
@@ -1114,7 +1150,12 @@ function buildRenderablePages(
   return pages;
 }
 
-export async function getProgramBySlug(slug: string) {
+export async function getProgramBySlug(
+  slug: string,
+  options?: {
+    forceVisibleModuleIds?: string[];
+  }
+) {
   try {
     const client = getSupabaseReadClient();
 
@@ -1168,6 +1209,10 @@ export async function getProgramBySlug(slug: string) {
     };
 
     let pageSequence: ProgramPage[] = [];
+    let appliedDensityMode: DensityMode = "normal";
+    let optimizationSteps: string[] = [];
+    let fillerModulesUsed: string[] = [];
+    let normalizedModules: ProgramModuleRecord[] = [];
     const { data: show } = await client
       .from("shows")
       .select("id")
@@ -1175,13 +1220,20 @@ export async function getProgramBySlug(slug: string) {
       .maybeSingle();
 
     if (show?.id) {
+      const { data: styleRow } = await client
+        .from("show_style_settings")
+        .select("density_mode")
+        .eq("show_id", String(show.id))
+        .maybeSingle();
+      appliedDensityMode = normalizeDensityMode(styleRow?.density_mode);
+
       const { data: modules } = await client
         .from("program_modules")
         .select("id, module_type, display_title, module_order, visible, filler_eligible, settings")
         .eq("show_id", String(show.id))
         .order("module_order", { ascending: true });
 
-      const normalizedModules = (modules ?? []).map((module) => ({
+      normalizedModules = (modules ?? []).map((module) => ({
         id: String(module.id),
         module_type: String(module.module_type ?? ""),
         display_title: String(module.display_title ?? ""),
@@ -1190,20 +1242,98 @@ export async function getProgramBySlug(slug: string) {
         filler_eligible: Boolean(module.filler_eligible),
         settings: (module.settings as Record<string, unknown>) ?? {}
       })) as ProgramModuleRecord[];
+      const forcedVisible = new Set((options?.forceVisibleModuleIds ?? []).map((id) => String(id)));
+      if (forcedVisible.size > 0) {
+        normalizedModules = normalizedModules.map((module) =>
+          forcedVisible.has(module.id) ? { ...module, visible: true } : module
+        );
+      }
 
-      pageSequence = buildRenderablePagesFromModules(safeProgram, castPeople, productionPeople, normalizedModules);
+      pageSequence = buildRenderablePagesFromModules(
+        safeProgram,
+        castPeople,
+        productionPeople,
+        normalizedModules,
+        appliedDensityMode
+      );
     }
 
     if (pageSequence.length === 0) {
-      pageSequence = buildRenderablePages(safeProgram, castPeople, productionPeople);
+      pageSequence = buildRenderablePages(safeProgram, castPeople, productionPeople, appliedDensityMode);
+    }
+
+    const getPaddingNeeded = (count: number) => (4 - (count % 4)) % 4;
+    let currentPaddingNeeded = getPaddingNeeded(pageSequence.length);
+
+    if (currentPaddingNeeded > 0 && appliedDensityMode !== "compact" && normalizedModules.length > 0) {
+      const compactPages = buildRenderablePagesFromModules(
+        safeProgram,
+        castPeople,
+        productionPeople,
+        normalizedModules,
+        "compact"
+      );
+      if (compactPages.length > 0) {
+        const compactPaddingNeeded = getPaddingNeeded(compactPages.length);
+        if (compactPaddingNeeded < currentPaddingNeeded) {
+          pageSequence = compactPages;
+          appliedDensityMode = "compact";
+          currentPaddingNeeded = compactPaddingNeeded;
+          optimizationSteps.push("Applied compact density to reduce booklet padding.");
+        }
+      }
+    }
+
+    if (currentPaddingNeeded > 0 && normalizedModules.length > 0) {
+      const fillerPool = normalizedModules
+        .filter((module) => !module.visible && module.filler_eligible)
+        .sort((a, b) => a.module_order - b.module_order);
+
+      if (fillerPool.length > 0) {
+        const candidatePages = [...pageSequence];
+        const used: string[] = [];
+        for (let index = 0; index < fillerPool.length; index += 1) {
+          const module = fillerPool[index];
+          const rendered = renderModulePages(
+            module,
+            normalizedModules.length + index,
+            safeProgram,
+            castPeople,
+            productionPeople,
+            appliedDensityMode
+          );
+          if (rendered.length === 0) {
+            continue;
+          }
+          candidatePages.push(...rendered);
+          used.push(module.display_title || module.module_type);
+          if (getPaddingNeeded(candidatePages.length) === 0) {
+            break;
+          }
+        }
+
+        if (candidatePages.length > pageSequence.length) {
+          pageSequence = candidatePages;
+          fillerModulesUsed = used;
+          const nextPadding = getPaddingNeeded(pageSequence.length);
+          if (nextPadding < currentPaddingNeeded) {
+            optimizationSteps.push(`Used filler-eligible hidden modules: ${used.join(", ")}`);
+          }
+          currentPaddingNeeded = nextPadding;
+        }
+      }
     }
 
     const paddedPages = padToMultipleOf4<ProgramPage>(pageSequence, (index) => ({
       id: `filler-${index}`,
       type: "filler",
-      title: "Additional Information",
-      body: "Space reserved for additional production notes, photos, or sponsor content."
+      title: "",
+      body: ""
     }));
+    const paddingNeeded = Math.max(0, paddedPages.length - pageSequence.length);
+    if (paddingNeeded > 0) {
+      optimizationSteps.push(`Still requires ${paddingNeeded} blank padding page${paddingNeeded === 1 ? "" : "s"}.`);
+    }
 
     const bookletSpreads = buildBookletSpreads(paddedPages);
 
@@ -1216,6 +1346,10 @@ export async function getProgramBySlug(slug: string) {
       productionPeople,
       pageSequence,
       paddedPages,
+      paddingNeeded,
+      appliedDensityMode,
+      fillerModulesUsed,
+      optimizationSteps,
       bookletSpreads
     };
   } catch {

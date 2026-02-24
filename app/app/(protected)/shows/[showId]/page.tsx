@@ -6,6 +6,7 @@ import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import { SubmissionFilterPresets } from "@/components/submission-filter-presets";
 import { SubmissionViewToggle } from "@/components/submission-view-toggle";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
+import { getProgramBySlug } from "@/lib/programs";
 import {
   archiveShow,
   deleteArchivedShow,
@@ -57,10 +58,11 @@ export default async function ShowWorkspacePage({
     submissionQuery?: string;
     submissionSort?: string;
     submissionView?: string;
+    paddingSim?: string;
   }>;
 }) {
   const { showId } = await params;
-  const { tab, error, success, submissionFilter, submissionQuery, submissionSort, submissionView } = await searchParams;
+  const { tab, error, success, submissionFilter, submissionQuery, submissionSort, submissionView, paddingSim } = await searchParams;
   const show = await getShowById(showId);
   const activeTab = tab || "overview";
 
@@ -100,7 +102,7 @@ export default async function ShowWorkspacePage({
           .filter((person) => {
             if (activeSubmissionFilter === "all") return true;
             if (activeSubmissionFilter === "needs_review") return person.submission_status === "submitted";
-            if (activeSubmissionFilter === "bio_missing") return person.bio_char_count === 0;
+            if (activeSubmissionFilter === "bio_missing") return person.bio_char_count === 0 && !person.no_bio;
             if (activeSubmissionFilter === "headshot_missing") return !person.headshot_url.trim();
             if (activeSubmissionFilter === "over_limit") return person.bio_char_count > 375;
             return person.submission_status === activeSubmissionFilter;
@@ -130,7 +132,7 @@ export default async function ShowWorkspacePage({
   const blockers =
     activeTab === "overview"
       ? {
-          missingBios: people.filter((person) => person.bio_char_count === 0).length,
+          missingBios: people.filter((person) => person.bio_char_count === 0 && !person.no_bio).length,
           missingHeadshots: people.filter((person) => !person.headshot_url.trim()).length,
           returnedForEdits: people.filter((person) => person.submission_status === "returned").length,
           overLimit: people.filter((person) => person.bio_char_count > 375).length,
@@ -144,6 +146,34 @@ export default async function ShowWorkspacePage({
           needsReview: 0
         };
   const reminderSummary = activeTab === "overview" ? await getShowReminderSummary(show.id) : { missing: 0, overdue: 0, dueSoon: 0 };
+  const paddingSimIds =
+    activeTab === "program-plan"
+      ? (paddingSim ?? "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
+  const paddingPlanProgram =
+    activeTab === "program-plan" && show.program_slug
+      ? await getProgramBySlug(show.program_slug, { forceVisibleModuleIds: paddingSimIds })
+      : null;
+  const fillerCandidates =
+    activeTab === "program-plan"
+      ? show.modules
+          .filter((module) => !module.visible && module.filler_eligible)
+          .map((module) => ({
+            id: module.id,
+            label: module.display_title || module.module_type
+          }))
+      : [];
+  const makePaddingSimHref = (ids: string[]) => {
+    const params = new URLSearchParams();
+    params.set("tab", "program-plan");
+    if (ids.length > 0) {
+      params.set("paddingSim", ids.join(","));
+    }
+    return `/app/shows/${show.id}?${params.toString()}`;
+  };
   const blockerItems = [
     {
       key: "bio_missing",
@@ -277,6 +307,91 @@ export default async function ShowWorkspacePage({
               <div className="card">
                 Configure module order, visibility, and behavior. This saves to `program_modules`.
               </div>
+              <article className="card stack-sm">
+                <strong>Padding Plan</strong>
+                {paddingPlanProgram ? (
+                  <>
+                    <div>
+                      Designed pages: <strong>{paddingPlanProgram.pageSequence.length}</strong>
+                    </div>
+                    <div>
+                      Booklet pages (multiple of 4): <strong>{paddingPlanProgram.paddedPages.length}</strong>
+                    </div>
+                    <div>
+                      Blank pages required:{" "}
+                      <strong style={{ color: paddingPlanProgram.paddingNeeded > 0 ? "#8f1f1f" : undefined }}>
+                        {paddingPlanProgram.paddingNeeded}
+                      </strong>
+                    </div>
+                    <div>
+                      Density used by optimizer: <strong>{paddingPlanProgram.appliedDensityMode}</strong>
+                    </div>
+                    <div>
+                      Hidden filler candidates: <strong>{fillerCandidates.length}</strong>
+                    </div>
+                    <div>
+                      Hidden filler used:{" "}
+                      <strong>
+                        {paddingPlanProgram.fillerModulesUsed.length > 0
+                          ? paddingPlanProgram.fillerModulesUsed.join(", ")
+                          : "None"}
+                      </strong>
+                    </div>
+                    <div>
+                      Optimizer steps:{" "}
+                      <strong>
+                        {paddingPlanProgram.optimizationSteps.length > 0
+                          ? paddingPlanProgram.optimizationSteps.join(" ")
+                          : "No optimization needed."}
+                      </strong>
+                    </div>
+                    {fillerCandidates.length > 0 ? (
+                      <div className="stack-sm">
+                        <div className="meta-text">Simulate enabling hidden filler modules (without saving):</div>
+                        <div className="chip-row">
+                          {fillerCandidates.map((candidate) => {
+                            const isActive = paddingSimIds.includes(candidate.id);
+                            const nextIds = isActive
+                              ? paddingSimIds.filter((id) => id !== candidate.id)
+                              : [...paddingSimIds, candidate.id];
+                            return (
+                              <Link
+                                key={candidate.id}
+                                href={makePaddingSimHref(nextIds)}
+                                className="tab-chip"
+                                style={{
+                                  fontWeight: isActive ? 700 : 500,
+                                  background: isActive ? "#e8f4ef" : undefined,
+                                  borderColor: isActive ? "#89b8a8" : undefined
+                                }}
+                              >
+                                {isActive ? "Remove" : "Try"} {candidate.label}
+                              </Link>
+                            );
+                          })}
+                          {paddingSimIds.length > 0 ? (
+                            <Link href={makePaddingSimHref([])} className="tab-chip">
+                              Clear Simulation
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="meta-text">
+                        No hidden filler-eligible modules available. Mark optional modules as hidden + filler eligible to give the optimizer options.
+                      </div>
+                    )}
+                    <div className="meta-text">
+                      Preview this in action:{" "}
+                      <Link href={`/programs/${show.program_slug}?view=booklet`}>Open booklet preview</Link>
+                    </div>
+                  </>
+                ) : (
+                  <div className="meta-text">
+                    Padding plan appears once this show is linked to a program.
+                  </div>
+                )}
+              </article>
               <ProgramPlanEditor modules={show.modules} onSubmitAction={savePlanAction} />
             </section>
           ) : null}

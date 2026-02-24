@@ -60,7 +60,7 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
               <div>
                 <div className="bio-name">{person.full_name}</div>
                 <div className="bio-role">{person.role_title}</div>
-                <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(person.bio) }} />
+                <div className="page-body rich-render bio-body" dangerouslySetInnerHTML={{ __html: sanitizeRichText(person.bio) }} />
               </div>
             </section>
           ))}
@@ -69,12 +69,15 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
     );
   }
 
-  return (
-    <article className="booklet-page">
-      <h2 className="section-title playbill-title">{page.title}</h2>
-      <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(page.body) }} />
-    </article>
-  );
+  if (page.type === "filler") {
+    return (
+      <article className="booklet-page blank-padding-page" aria-label="Blank padding page">
+        <div className="blank-padding-label hide-print">Blank padding page</div>
+      </article>
+    );
+  }
+
+  return null;
 }
 
 export default async function ProgramPage({
@@ -116,6 +119,26 @@ export default async function ProgramPage({
             <section className="card hide-print" style={{ marginBottom: "1rem" }}>
               <strong>Booklet Summary:</strong> {program.pageSequence.length} designed pages, padded to {program.paddedPages.length} for saddle-stitch (multiple of 4), {program.paddedPages.length / 4} sheets total.
               <br />
+              <strong>Density used:</strong> {program.appliedDensityMode}
+              {program.fillerModulesUsed.length > 0 ? (
+                <>
+                  <br />
+                  <strong>Auto-filled with modules:</strong> {program.fillerModulesUsed.join(", ")}
+                </>
+              ) : null}
+              {program.paddingNeeded > 0 ? (
+                <>
+                  <br />
+                  <strong style={{ color: "#8f1f1f" }}>Warning:</strong> {program.paddingNeeded} blank padding page{program.paddingNeeded === 1 ? "" : "s"} required for booklet printing. Add/adjust modules to fill this.
+                </>
+              ) : null}
+              {program.optimizationSteps.length > 0 ? (
+                <>
+                  <br />
+                  <strong>Auto-fit steps:</strong> {program.optimizationSteps.join(" ")}
+                </>
+              ) : null}
+              <br />
               <strong>Bio Submission Progress:</strong> {submittedRoster}/{totalRoster} submitted.
             </section>
           </>
@@ -144,7 +167,7 @@ export default async function ProgramPage({
             {program.paddedPages.map((page, index) => (
               <div key={`${page.id}-${index}`} className={`sequence-item${isExportMode ? " export-sequence-item" : ""}`}>
                 <RenderPageContent page={page} />
-                <div className="folio">Program Page {index + 1}</div>
+                <div className="folio">{page.type === "filler" ? `Blank Padding Page (${index + 1})` : `Program Page ${index + 1}`}</div>
               </div>
             ))}
           </section>

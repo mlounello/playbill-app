@@ -44,6 +44,7 @@ export type ShowSubmissionPerson = {
   team_type: "cast" | "production";
   email: string;
   bio: string;
+  no_bio: boolean;
   headshot_url: string;
   submission_status: "pending" | "draft" | "submitted" | "returned" | "approved" | "locked";
   submitted_at: string | null;
@@ -385,9 +386,10 @@ export async function getShowSubmissionPeople(showId: string) {
   }
 
   const client = getSupabaseWriteClient();
+  const peopleColumns = await getTableColumns(client, "people");
   const { data: peopleRows } = await client
     .from("people")
-    .select("id, full_name, role_title, team_type, email, bio, headshot_url, submission_status, submitted_at")
+    .select("*")
     .eq("program_id", context.program_id)
     .order("team_type", { ascending: true })
     .order("full_name", { ascending: true });
@@ -401,6 +403,7 @@ export async function getShowSubmissionPeople(showId: string) {
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
       bio: cleanBio,
+      no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: String(person.headshot_url ?? ""),
       submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
@@ -971,9 +974,10 @@ export async function getContributorTaskById(showId: string, personId: string) {
   }
 
   const client = getSupabaseWriteClient();
+  const peopleColumns = await getTableColumns(client, "people");
   const { data: person } = await client
     .from("people")
-    .select("id, full_name, role_title, team_type, email, bio, headshot_url, submission_status, submitted_at")
+    .select("*")
     .eq("id", personId)
     .eq("program_id", context.program_id)
     .single();
@@ -1007,6 +1011,7 @@ export async function getContributorTaskById(showId: string, personId: string) {
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
       bio: String(person.bio ?? ""),
+      no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: String(person.headshot_url ?? ""),
       submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
@@ -1040,9 +1045,10 @@ async function updateSubmissionCore(args: {
   }
 
   const client = getSupabaseWriteClient();
+  const peopleColumns = await getTableColumns(client, "people");
   const { data: person } = await client
     .from("people")
-    .select("id, bio, headshot_url, submission_status")
+    .select("*")
     .eq("id", args.personId)
     .eq("program_id", context.program_id)
     .single();
@@ -1069,12 +1075,18 @@ async function updateSubmissionCore(args: {
 
   const { error: updateError } = await client
     .from("people")
-    .update({
-      bio: cleanBio,
-      headshot_url: args.headshotUrl,
-      submission_status: args.status,
-      submitted_at: submittedAt
-    })
+    .update(
+      filterToColumns(
+        {
+          bio: cleanBio,
+          headshot_url: args.headshotUrl,
+          submission_status: args.status,
+          submitted_at: submittedAt,
+          no_bio: Boolean(args.skipBio)
+        },
+        peopleColumns
+      )
+    )
     .eq("id", args.personId);
 
   if (updateError) {
@@ -1090,6 +1102,9 @@ async function updateSubmissionCore(args: {
   }
   if (String(person.submission_status ?? "pending") !== args.status) {
     updates.push({ field: "submission_status", before: person.submission_status, after: args.status });
+  }
+  if (peopleColumns.has("no_bio") && Boolean(person.no_bio) !== Boolean(args.skipBio)) {
+    updates.push({ field: "no_bio", before: Boolean(person.no_bio), after: Boolean(args.skipBio) });
   }
 
   for (const entry of updates) {
@@ -1151,9 +1166,10 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
   }
 
   const client = getSupabaseWriteClient();
+  const peopleColumns = await getTableColumns(client, "people");
   const { data: person } = await client
     .from("people")
-    .select("id, full_name, role_title, team_type, email, bio, headshot_url, submission_status, submitted_at")
+    .select("*")
     .eq("id", personId)
     .eq("program_id", context.program_id)
     .single();
@@ -1188,6 +1204,7 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
       bio: String(person.bio ?? ""),
+      no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: String(person.headshot_url ?? ""),
       submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
@@ -1271,7 +1288,8 @@ export async function adminReturnSubmission(showId: string, personId: string, fo
     bio: current.person.bio,
     headshotUrl: current.person.headshot_url,
     status: "returned",
-    reason: message
+    reason: message,
+    skipBio: current.person.no_bio
   });
   if (!result.ok) {
     withError(`/app/shows/${showId}?tab=submissions`, result.message);
@@ -1304,7 +1322,8 @@ export async function adminQuickStatus(showId: string, personId: string, status:
     bio: current.person.bio,
     headshotUrl: current.person.headshot_url,
     status,
-    reason: `admin quick status -> ${status}`
+    reason: `admin quick status -> ${status}`,
+    skipBio: current.person.no_bio
   });
   if (!result.ok) {
     withError(`/app/shows/${showId}?tab=submissions`, result.message);
@@ -1344,6 +1363,7 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
   }
 
   const client = getSupabaseWriteClient();
+  const peopleColumns = await getTableColumns(client, "people");
   const { data: peopleRows } = await client
     .from("people")
     .select("id, full_name, role_title, email, bio, submission_status")
@@ -1425,11 +1445,17 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
 
     const { error: updateError } = await client
       .from("people")
-      .update({
-        bio: cleanBio,
-        submission_status: "submitted",
-        submitted_at: new Date().toISOString()
-      })
+      .update(
+        filterToColumns(
+          {
+            bio: cleanBio,
+            submission_status: "submitted",
+            submitted_at: new Date().toISOString(),
+            no_bio: false
+          },
+          peopleColumns
+        )
+      )
       .eq("id", person.id);
     if (updateError) {
       unmatched.push(row.email || `${row.name ?? "Unknown"} | ${row.role ?? "Unknown role"}`);
