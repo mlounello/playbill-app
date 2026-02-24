@@ -1297,6 +1297,26 @@ body.density-compact .admin-surface textarea {
   grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
 }
 
+.role-assignments-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.role-assignment-row {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1fr) minmax(220px, 1.2fr) minmax(150px, 0.8fr) auto;
+  align-items: end;
+  border: 1px solid #e7dece;
+  border-radius: 0.65rem;
+  padding: 0.6rem;
+  background: #fff;
+}
+
+.role-assignment-row .role-assign-person input {
+  background: #f8f5ee;
+}
+
 @media (max-width: 1200px) {
   .sheet-grid {
     grid-template-columns: 1fr;
@@ -1341,6 +1361,11 @@ body.density-compact .admin-surface textarea {
 
   .submission-row-top {
     grid-template-columns: 1fr;
+  }
+
+  .role-assignment-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .simple-table td .submission-actions {

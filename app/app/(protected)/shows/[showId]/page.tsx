@@ -604,7 +604,10 @@ export default async function ShowWorkspacePage({
 
               <div className="people-forms-grid">
                 <article className="card stack-sm">
-                  <strong>Add Person</strong>
+                  <strong>Quick Add</strong>
+                  <p className="section-note">
+                    Add one person at a time. Use Import options for larger casts/crews.
+                  </p>
                   <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }} data-pending-label="Adding person...">
                     <input type="hidden" name="mode" value="manual" />
                     <label>
@@ -641,7 +644,7 @@ export default async function ShowWorkspacePage({
                 </article>
 
                 <article className="card grid">
-                  <strong>Bulk Import</strong>
+                  <strong>Paste Import</strong>
                   <p className="section-note">
                     Paste either: <code>Name | Role | cast|creative|production | email</code> per line, or a CSV/tabular paste with headers
                     <code> First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>.
@@ -667,13 +670,15 @@ export default async function ShowWorkspacePage({
                     <button type="submit">Upload CSV</button>
                   </form>
                 </article>
+              </div>
 
-                <article className="card stack-sm">
-                  <strong>Bulk Edit by Lookup</strong>
-                  <p className="section-note">
+              <article className="card stack-sm">
+                <details>
+                  <summary><strong>Advanced: Bulk Edit by Lookup</strong></summary>
+                  <p className="section-note" style={{ marginTop: "0.45rem" }}>
                     Select one or more fields, then paste lines using <code>lookup | field=value | field=value</code>. Only selected fields are updated.
                   </p>
-                  <form action={bulkEditPeopleAction} className="stack-sm" data-pending-label="Applying bulk edit...">
+                  <form action={bulkEditPeopleAction} className="stack-sm" data-pending-label="Applying bulk edit..." style={{ marginTop: "0.45rem" }}>
                     <div className="stack-sm">
                       <strong>Fields to update</strong>
                       <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
@@ -717,8 +722,8 @@ export default async function ShowWorkspacePage({
                     </label>
                     <button type="submit">Apply Bulk Edit</button>
                   </form>
-                </article>
-              </div>
+                </details>
+              </article>
 
               <PeopleBulkEditor
                 people={people.map((person) => ({
@@ -781,37 +786,38 @@ export default async function ShowWorkspacePage({
                 {roleAssignments.length === 0 ? (
                   <div className="meta-text">No role assignments yet.</div>
                 ) : (
-                  <div className="stack-sm">
+                  <div className="role-assignments-list">
                     {roleAssignments.map((assignment) => (
-                      <form key={assignment.id} action={updateRoleAssignmentAction} className="card card-soft stack-sm" data-pending-label="Saving role assignment...">
+                      <form key={assignment.id} action={updateRoleAssignmentAction} className="role-assignment-row" data-pending-label="Saving role assignment...">
                         <input type="hidden" name="roleId" value={assignment.id} />
-                        <div className="meta-text">{assignment.person_name}</div>
-                        <div className="form-row-2">
-                          <label>
-                            Role template
-                            <select name="roleTemplateId" defaultValue={assignment.role_template_id ?? ""}>
-                              <option value="">None</option>
-                              {availableRoleTemplates.map((template) => (
-                                <option key={`template-edit-${assignment.id}-${template.id}`} value={template.id}>
-                                  {template.name} ({template.category})
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            Role name
-                            <input name="roleName" defaultValue={assignment.role_name} required />
-                          </label>
-                          <label>
-                            Category
-                            <select name="roleCategory" defaultValue={assignment.category}>
-                              <option value="cast">cast</option>
-                              <option value="creative">creative</option>
-                              <option value="production">production</option>
-                            </select>
-                          </label>
-                          <button type="submit">Save Role Assignment</button>
-                        </div>
+                        <label className="role-assign-person">
+                          Person
+                          <input value={assignment.person_name} readOnly />
+                        </label>
+                        <label>
+                          Template
+                          <select name="roleTemplateId" defaultValue={assignment.role_template_id ?? ""}>
+                            <option value="">None</option>
+                            {availableRoleTemplates.map((template) => (
+                              <option key={`template-edit-${assignment.id}-${template.id}`} value={template.id}>
+                                {template.name} ({template.category})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Role name
+                          <input name="roleName" defaultValue={assignment.role_name} required />
+                        </label>
+                        <label>
+                          Category
+                          <select name="roleCategory" defaultValue={assignment.category}>
+                            <option value="cast">cast</option>
+                            <option value="creative">creative</option>
+                            <option value="production">production</option>
+                          </select>
+                        </label>
+                        <button type="submit">Save</button>
                       </form>
                     ))}
                   </div>
