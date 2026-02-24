@@ -72,6 +72,7 @@ const moduleMoveSchema = z.object({
   moduleId: z.string().uuid(),
   direction: z.enum(["up", "down"])
 });
+const moduleReorderSchema = z.array(z.string().uuid());
 
 export const moduleToProgramTokens: Record<string, string[]> = {
   cover: ["poster"],
@@ -624,6 +625,59 @@ export async function moveShowModule(showId: string, formData: FormData) {
   }
 
   redirect(`/app/shows/${showId}?tab=preview&success=${encodeURIComponent("Module order updated.")}`);
+}
+
+export async function reorderShowModules(showId: string, formData: FormData) {
+  "use server";
+
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=preview`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const raw = String(formData.get("orderedModuleIds") ?? "[]");
+  let orderedIds: string[] = [];
+  try {
+    orderedIds = moduleReorderSchema.parse(JSON.parse(raw));
+  } catch {
+    withError(`/app/shows/${showId}?tab=preview`, "Invalid reorder payload.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: modules, error: modulesError } = await client
+    .from("program_modules")
+    .select("id")
+    .eq("show_id", showId)
+    .order("module_order", { ascending: true });
+
+  if (modulesError) {
+    withError(`/app/shows/${showId}?tab=preview`, modulesError.message);
+  }
+
+  const existingIds = (modules ?? []).map((row) => String(row.id ?? ""));
+  if (existingIds.length !== orderedIds.length) {
+    withError(`/app/shows/${showId}?tab=preview`, "Reorder payload does not match module list.");
+  }
+  const existingSet = new Set(existingIds);
+  if (orderedIds.some((id) => !existingSet.has(id))) {
+    withError(`/app/shows/${showId}?tab=preview`, "Reorder payload contains unknown module ids.");
+  }
+  if (new Set(orderedIds).size !== orderedIds.length) {
+    withError(`/app/shows/${showId}?tab=preview`, "Reorder payload contains duplicate module ids.");
+  }
+
+  for (let index = 0; index < orderedIds.length; index += 1) {
+    const { error: updateError } = await client
+      .from("program_modules")
+      .update({ module_order: index })
+      .eq("show_id", showId)
+      .eq("id", orderedIds[index]);
+    if (updateError) {
+      withError(`/app/shows/${showId}?tab=preview`, updateError.message);
+    }
+  }
+
+  redirect(`/app/shows/${showId}?tab=preview&success=${encodeURIComponent("Module order saved.")}`);
 }
 
 export async function archiveShow(showId: string) {

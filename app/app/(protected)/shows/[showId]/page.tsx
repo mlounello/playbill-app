@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { FlashToast } from "@/components/flash-toast";
 import { PeopleBulkEditor } from "@/components/people-bulk-editor";
 import { PerformanceInputs } from "@/components/performance-inputs";
+import { PreviewModuleReorder } from "@/components/preview-module-reorder";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import { ProgramImageUpload } from "@/components/program-image-upload";
 import { RichTextField } from "@/components/rich-text-field";
@@ -22,7 +23,7 @@ import {
   requestShowExport,
   restoreArchivedShow,
   setShowPublished,
-  moveShowModule,
+  reorderShowModules,
   updateShowActsAndSongs,
   updateShowAcknowledgements,
   updateShowPresentation,
@@ -121,7 +122,7 @@ export default async function ShowWorkspacePage({
   const setDueDateAction = setShowDueDate.bind(null, show.id);
   const sendInvitesAction = sendShowInvites.bind(null, show.id);
   const sendRemindersAction = sendShowRemindersNow.bind(null, show.id);
-  const moveShowModuleAction = moveShowModule.bind(null, show.id);
+  const reorderShowModulesAction = reorderShowModules.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
   const hasDepartmentModuleVisible = show.modules.some((module) => module.module_type === "department_info" && module.visible);
   const departmentRepository = activeTab === "settings" ? await getDepartmentRepository() : [];
@@ -482,32 +483,17 @@ export default async function ShowWorkspacePage({
               <article className="card stack-sm">
                 <strong>Module Sequence (Quick Reorder)</strong>
                 <div className="meta-text">
-                  Move modules here and refresh preview links. This updates Program Plan order directly.
+                  Drag modules to reorder, then save. This updates Program Plan order directly.
                 </div>
-                {show.modules.map((module, index) => (
-                  <div key={module.id} className="row-between" style={{ gap: "0.5rem" }}>
-                    <div>
-                      {index + 1}. {module.display_title || module.module_type}{" "}
-                      {module.visible ? "" : "(hidden)"} {module.filler_eligible ? "• filler eligible" : ""}
-                    </div>
-                    <div className="top-actions">
-                      <form action={moveShowModuleAction} data-pending-label="Reordering module...">
-                        <input type="hidden" name="moduleId" value={module.id} />
-                        <input type="hidden" name="direction" value="up" />
-                        <button type="submit" className="ghost-button" disabled={index === 0}>
-                          Up
-                        </button>
-                      </form>
-                      <form action={moveShowModuleAction} data-pending-label="Reordering module...">
-                        <input type="hidden" name="moduleId" value={module.id} />
-                        <input type="hidden" name="direction" value="down" />
-                        <button type="submit" className="ghost-button" disabled={index === show.modules.length - 1}>
-                          Down
-                        </button>
-                      </form>
-                    </div>
-                  </div>
-                ))}
+                <PreviewModuleReorder
+                  modules={show.modules.map((module) => ({
+                    id: module.id,
+                    label: module.display_title || module.module_type,
+                    visible: module.visible,
+                    fillerEligible: module.filler_eligible
+                  }))}
+                  onSubmitAction={reorderShowModulesAction}
+                />
               </article>
             </section>
           ) : null}
