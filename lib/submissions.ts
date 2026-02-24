@@ -2767,11 +2767,15 @@ export async function adminSaveSubmission(showId: string, personId: string, form
 
   let parsed: z.infer<typeof reviewSchema>;
   try {
+    const rawBio = formData.get("bio");
+    const rawHeadshotUrl = formData.get("headshotUrl");
+    const rawStatus = formData.get("status");
+    const rawReason = formData.get("reason");
     parsed = reviewSchema.parse({
-      bio: formData.get("bio"),
-      headshotUrl: formData.get("headshotUrl"),
-      status: formData.get("status"),
-      reason: formData.get("reason"),
+      bio: typeof rawBio === "string" ? rawBio : "",
+      headshotUrl: typeof rawHeadshotUrl === "string" ? rawHeadshotUrl : "",
+      status: typeof rawStatus === "string" ? rawStatus : "pending",
+      reason: typeof rawReason === "string" ? rawReason : "",
       skipBio: String(formData.get("skipBio") ?? "") === "on"
     });
   } catch {

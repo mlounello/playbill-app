@@ -271,6 +271,20 @@ a:focus-visible,
   min-height: 180px;
 }
 
+.rich-editor p,
+.rich-editor div,
+.rich-editor h3,
+.rich-editor h4,
+.rich-editor blockquote {
+  margin: 0;
+}
+
+.rich-editor ul,
+.rich-editor ol {
+  margin: 0.2rem 0 0.2rem 1.1rem;
+  padding: 0;
+}
+
 button,
 .button-link {
   display: inline-block;
@@ -319,12 +333,12 @@ button:disabled,
 }
 
 .rich-render p {
-  margin: 0 0 0.55rem;
+  margin: 0;
 }
 
 .rich-render ul,
 .rich-render ol {
-  margin: 0.3rem 0 0.55rem 1.15rem;
+  margin: 0.2rem 0 0.2rem 1.15rem;
   padding: 0;
 }
 

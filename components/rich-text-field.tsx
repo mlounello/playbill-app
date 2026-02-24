@@ -37,8 +37,8 @@ export function RichTextField({ name, label, placeholder, required = false, init
   }, [draftNamespace, name, value]);
 
   return (
-    <label>
-      {label}
+    <div className="stack-sm">
+      <div style={{ fontWeight: 600 }}>{label}</div>
       <RichTextEditor
         label={label}
         value={value}
@@ -46,6 +46,6 @@ export function RichTextField({ name, label, placeholder, required = false, init
         placeholder={placeholder}
       />
       <textarea name={name} value={value} onChange={() => {}} required={required} className="sr-only" />
-    </label>
+    </div>
   );
 }
