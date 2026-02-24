@@ -119,26 +119,30 @@ async function upsertRoleTemplates(rows: RoleTemplateImportRow[]) {
   const client = getSupabaseWriteClient();
   let created = 0;
   let reactivated = 0;
+  let failed = 0;
 
   for (const row of rows) {
-    const baseQuery = client
+    const existingQuery = client
       .from("role_templates")
       .select("id, is_hidden")
       .eq("name", row.name)
       .eq("category", row.category)
       .eq("scope", row.scope);
-    const existing = row.show_id
-      ? await baseQuery.eq("show_id", row.show_id).maybeSingle()
-      : await baseQuery.is("show_id", null).maybeSingle();
+    const existingRows = row.show_id
+      ? await existingQuery.eq("show_id", row.show_id).limit(1)
+      : await existingQuery.is("show_id", null).limit(1);
+    const existing = existingRows.data?.[0]
+      ? { id: String(existingRows.data[0].id) }
+      : null;
 
-    if (existing.data?.id) {
+    if (existing?.id) {
       await client
         .from("role_templates")
         .update({
           is_hidden: false,
           updated_at: new Date().toISOString()
         })
-        .eq("id", String(existing.data.id));
+        .eq("id", existing.id);
       reactivated += 1;
       continue;
     }
@@ -153,10 +157,12 @@ async function upsertRoleTemplates(rows: RoleTemplateImportRow[]) {
     });
     if (!error) {
       created += 1;
+    } else {
+      failed += 1;
     }
   }
 
-  return { created, reactivated };
+  return { created, reactivated, failed };
 }
 
 export async function getRoleLibraryData(selectedShowId = ""): Promise<RoleLibraryData> {
@@ -387,7 +393,10 @@ export async function importRolesFromShowRoles(formData: FormData) {
   }
 
   const result = await upsertRoleTemplates(rows);
-  withSuccess("/app/roles", `Imported roles from show_roles. Created ${result.created}, reactivated ${result.reactivated}.`);
+  withSuccess(
+    "/app/roles",
+    `Imported roles from show_roles. Created ${result.created}, reactivated ${result.reactivated}, failed ${result.failed}.`
+  );
 }
 
 export async function importRolesFromPaste(formData: FormData) {
@@ -407,6 +416,11 @@ export async function importRolesFromPaste(formData: FormData) {
   const client = getSupabaseWriteClient();
   const { data: shows } = await client.from("shows").select("id, title, slug");
   const showByAnyKey = new Map<string, string>();
+  const showRowsNormalized = (shows ?? []).map((show) => ({
+    id: String(show.id ?? ""),
+    title: String(show.title ?? "").trim().toLowerCase(),
+    slug: String(show.slug ?? "").trim().toLowerCase()
+  }));
   for (const show of shows ?? []) {
     const id = String(show.id ?? "");
     const title = String(show.title ?? "").trim().toLowerCase();
@@ -434,6 +448,7 @@ export async function importRolesFromPaste(formData: FormData) {
   const dataLines = looksLikeHeader ? lines.slice(1) : lines;
   const parsedRows: RoleTemplateImportRow[] = [];
 
+  let skippedMissingShow = 0;
   for (const line of dataLines) {
     const cols = line.includes("|") ? line.split("|").map((v) => v.trim()) : parseCsvRow(line);
     const roleName = looksLikeHeader ? String(cols[roleIdx] ?? "").trim() : String(cols[0] ?? "").trim();
@@ -443,8 +458,14 @@ export async function importRolesFromPaste(formData: FormData) {
     if (!roleName) continue;
     const category = normalizeCategory(categoryRaw || "production");
     const scope = normalizeScope(scopeRaw || (category === "cast" ? "show_only" : "global"));
-    const showResolved = showRaw ? showByAnyKey.get(showRaw.trim().toLowerCase()) ?? null : null;
+    const showNeedle = showRaw.trim().toLowerCase();
+    let showResolved = showRaw ? showByAnyKey.get(showNeedle) ?? null : null;
+    if (!showResolved && showNeedle) {
+      const fuzzy = showRowsNormalized.find((show) => show.title.includes(showNeedle) || show.slug.includes(showNeedle));
+      showResolved = fuzzy?.id ?? null;
+    }
     if (scope === "show_only" && !showResolved) {
+      skippedMissingShow += 1;
       continue;
     }
     parsedRows.push({
@@ -464,5 +485,8 @@ export async function importRolesFromPaste(formData: FormData) {
   }
 
   const result = await upsertRoleTemplates(rows);
-  withSuccess("/app/roles", `Imported roles from paste/CSV. Created ${result.created}, reactivated ${result.reactivated}.`);
+  withSuccess(
+    "/app/roles",
+    `Imported roles from paste/CSV. Created ${result.created}, reactivated ${result.reactivated}, failed ${result.failed}, skipped missing show ${skippedMissingShow}.`
+  );
 }
