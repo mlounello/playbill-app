@@ -18,6 +18,7 @@ const layoutTokenValues = [
   "department_info",
   "actf_ad",
   "acknowledgements",
+  "special_thanks",
   "season_calendar",
   "production_photos",
   "custom_pages"
@@ -127,6 +128,7 @@ const payloadSchema = z.object({
   departmentInfo: z.string().optional().or(z.literal("")),
   seasonCalendar: z.string().optional().or(z.literal("")),
   acknowledgements: z.string().optional().or(z.literal("")),
+  specialThanks: z.string().optional().or(z.literal("")),
   actfAdImageUrl: z.string().optional().or(z.literal("")),
   rosterLines: z.string().optional().or(z.literal("")),
   castLines: z.string().optional().or(z.literal("")),
@@ -763,6 +765,7 @@ function renderModulePages(
     department_info: string;
     actf_ad_image_url: string;
     acknowledgements: string;
+    special_thanks: string;
     season_calendar: string;
     production_photo_urls: string[];
     custom_pages: CustomPageRecord[];
@@ -784,6 +787,7 @@ function renderModulePages(
   const hasActsSongs = richTextHasContent(program.acts_songs);
   const hasDepartmentInfo = richTextHasContent(program.department_info);
   const hasAcknowledgements = richTextHasContent(program.acknowledgements);
+  const hasSpecialThanks = richTextHasContent(program.special_thanks);
   const hasSeasonCalendar = richTextHasContent(program.season_calendar);
   const hasActfImage = Boolean(program.actf_ad_image_url.trim());
   const castWithBios = peopleWithBios(cast);
@@ -943,10 +947,10 @@ function renderModulePages(
   }
 
   if (module.module_type === "special_thanks") {
-    if (!hasAcknowledgements) {
-      return emptyPlaceholder(title, "Special thanks module is enabled, but no acknowledgements/special thanks content was added yet.");
+    if (!hasSpecialThanks) {
+      return emptyPlaceholder(title, "Special Thanks module is enabled, but no Special Thanks content was added yet.");
     }
-    return [{ id: idBase, type: "text", title, body: program.acknowledgements }] satisfies ProgramPage[];
+    return [{ id: idBase, type: "text", title, body: program.special_thanks }] satisfies ProgramPage[];
   }
 
   if (module.module_type === "acknowledgements") {
@@ -1031,6 +1035,7 @@ function buildRenderablePagesFromModules(
     department_info: string;
     actf_ad_image_url: string;
     acknowledgements: string;
+    special_thanks: string;
     season_calendar: string;
     production_photo_urls: string[];
     custom_pages: CustomPageRecord[];
@@ -1129,6 +1134,7 @@ export async function createProgram(formData: FormData) {
     departmentInfo: readText("departmentInfo"),
     seasonCalendar: readText("seasonCalendar"),
     acknowledgements: readText("acknowledgements"),
+    specialThanks: readText("specialThanks"),
     actfAdImageUrl: readText("actfAdImageUrl"),
     rosterLines: readText("rosterLines"),
     castLines: readText("castLines"),
@@ -1215,6 +1221,7 @@ export async function createProgram(formData: FormData) {
     department_info: sanitizeRichText(parsed.departmentInfo),
     actf_ad_image_url: actfAdImageUrl,
     acknowledgements: sanitizeRichText(parsed.acknowledgements),
+    special_thanks: sanitizeRichText(parsed.specialThanks),
     season_calendar: sanitizeRichText(parsed.seasonCalendar),
     production_photo_urls: productionPhotoUrls,
     custom_pages: customPages,
@@ -1272,10 +1279,11 @@ function buildRenderablePages(
     department_info: string;
     actf_ad_image_url: string;
     acknowledgements: string;
-    season_calendar: string;
-    production_photo_urls: string[];
-    custom_pages: CustomPageRecord[];
-    layout_order: LayoutToken[];
+  season_calendar: string;
+  production_photo_urls: string[];
+  custom_pages: CustomPageRecord[];
+  special_thanks: string;
+  layout_order: LayoutToken[];
   },
   cast: PersonRecord[],
   production: PersonRecord[],
@@ -1327,6 +1335,12 @@ function buildRenderablePages(
       type: "text",
       title: "Acknowledgements",
       body: program.acknowledgements
+    },
+    special_thanks: {
+      id: "special-thanks",
+      type: "text",
+      title: "Special Thanks",
+      body: program.special_thanks
     },
     season_calendar: {
       id: "season-calendar",
@@ -1390,6 +1404,9 @@ function buildRenderablePages(
       continue;
     }
     if (token === "acknowledgements" && !richTextHasContent(program.acknowledgements)) {
+      continue;
+    }
+    if (token === "special_thanks" && !richTextHasContent(program.special_thanks)) {
       continue;
     }
     if (token === "season_calendar" && !richTextHasContent(program.season_calendar)) {
@@ -1474,6 +1491,7 @@ export async function getProgramBySlug(
       department_info: String(program.department_info ?? ""),
       actf_ad_image_url: String(program.actf_ad_image_url ?? ""),
       acknowledgements: String(program.acknowledgements ?? ""),
+      special_thanks: String((program as Record<string, unknown>).special_thanks ?? ""),
       season_calendar: String(program.season_calendar ?? ""),
       production_photo_urls: Array.isArray(program.production_photo_urls) ? (program.production_photo_urls as string[]) : [],
       custom_pages: Array.isArray(program.custom_pages) ? (program.custom_pages as CustomPageRecord[]) : [],
@@ -1832,6 +1850,7 @@ export async function updateProgram(slug: string, formData: FormData) {
     departmentInfo: readText("departmentInfo"),
     seasonCalendar: readText("seasonCalendar"),
     acknowledgements: readText("acknowledgements"),
+    specialThanks: readText("specialThanks"),
     actfAdImageUrl: readText("actfAdImageUrl"),
     rosterLines: readText("rosterLines"),
     castLines: readText("castLines"),
@@ -1959,6 +1978,7 @@ export async function updateProgram(slug: string, formData: FormData) {
       department_info: resolvedDepartmentInfo,
       actf_ad_image_url: actfAdImageUrl,
       acknowledgements: sanitizeRichText(parsed.acknowledgements),
+      special_thanks: sanitizeRichText(parsed.specialThanks),
       season_calendar: resolvedSeasonCalendar,
       production_photo_urls: productionPhotoUrls,
       custom_pages: customPages,

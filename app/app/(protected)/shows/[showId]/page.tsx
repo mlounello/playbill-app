@@ -35,6 +35,7 @@ import {
   importBiosFromCsv,
   getShowSpecialNoteAssignments,
   getShowSubmissionPeople,
+  updatePersonProfile,
   updateSpecialNoteAssignments
 } from "@/lib/submissions";
 import {
@@ -94,6 +95,7 @@ export default async function ShowWorkspacePage({
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
+  const updatePersonProfileAction = updatePersonProfile.bind(null, show.id);
   const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
   const importBiosAction = importBiosFromCsv.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
@@ -233,7 +235,7 @@ export default async function ShowWorkspacePage({
     }
   ];
   const activeBlockers = blockerItems.filter((item) => item.count > 0);
-  const specialNotePeople = people.filter((person) => person.team_type === "production");
+  const specialNotePeople = people.filter((person) => person.role_category_display !== "cast");
   const currentDirectorNotePersonId = specialNoteAssignments.directorPersonId;
   const currentDramaturgNotePersonId = specialNoteAssignments.dramaturgPersonId;
   const currentMusicDirectorNotePersonId = specialNoteAssignments.musicDirectorPersonId;
@@ -598,7 +600,7 @@ export default async function ShowWorkspacePage({
                       </label>
                       <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
                         <input type="checkbox" name="targetFields" value="team_type" />
-                        Category (cast/production)
+                        Category (cast/creative/production)
                       </label>
                       <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
                         <input type="checkbox" name="targetFields" value="email" />
@@ -641,10 +643,12 @@ export default async function ShowWorkspacePage({
                   id: person.id,
                   full_name: person.full_name,
                   role_title: person.role_title,
-                  team_type: person.team_type,
-                  email: person.email
+                  team_type: person.role_category_display ?? person.team_type,
+                  email: person.email,
+                  submission_type: person.submission_type
                 }))}
                 onSubmitAction={bulkEditSelectedPeopleAction}
+                onEditAction={updatePersonProfileAction}
               />
             </section>
           ) : null}
@@ -763,7 +767,7 @@ export default async function ShowWorkspacePage({
                                   <div className="meta-text">{person.email}</div>
                                 </td>
                                 <td>{person.role_title}</td>
-                                <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
+                                <td style={{ textTransform: "capitalize" }}>{person.role_category_display ?? person.team_type}</td>
                                 <td>{person.submission_type.replace(/_/g, " ")}</td>
                                 <td><span className="status-pill">{person.submission_status}</span></td>
                                 <td>{person.bio_char_count}</td>
@@ -801,7 +805,7 @@ export default async function ShowWorkspacePage({
                               <div className="submission-identity">
                                 <strong>{person.full_name}</strong> - {person.role_title}
                                 <div className="submission-meta">
-                                  {person.team_type} • {person.email}
+                                  {person.role_category_display ?? person.team_type} • {person.email}
                                 </div>
                               </div>
                               <div className="submission-meta">
@@ -973,18 +977,24 @@ export default async function ShowWorkspacePage({
               </article>
 
               <article className="card stack-sm">
-                <strong>Show Setup: Acknowledgements / Special Thanks</strong>
+                <strong>Show Setup: Acknowledgements + Special Thanks</strong>
                 <div className="meta-text">
-                  This content powers both the Special Thanks and Acknowledgements modules.
+                  These feed separate modules in Program Plan.
                 </div>
                 <form action={updateAcknowledgementsAction} className="stack-sm">
                   <RichTextField
                     name="acknowledgements"
-                    label="Acknowledgements / Special Thanks"
+                    label="Acknowledgements"
                     initialValue={show.acknowledgements}
                     draftNamespace={`show-acknowledgements:${show.id}`}
                   />
-                  <button type="submit">Save Acknowledgements</button>
+                  <RichTextField
+                    name="specialThanks"
+                    label="Special Thanks"
+                    initialValue={show.special_thanks}
+                    draftNamespace={`show-special-thanks:${show.id}`}
+                  />
+                  <button type="submit">Save Acknowledgements + Special Thanks</button>
                 </form>
               </article>
               <article className="card stack-sm">

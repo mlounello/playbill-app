@@ -81,6 +81,7 @@ export type ShowSubmissionPerson = {
   full_name: string;
   role_title: string;
   team_type: "cast" | "production";
+  role_category_display?: "cast" | "creative" | "production" | "mixed";
   email: string;
   submission_type: SubmissionType;
   bio: string;
@@ -133,6 +134,19 @@ function joinRoles(values: string[]) {
     }
   }
   return ordered.join(" & ");
+}
+
+function getRoleCategoryDisplay(categories: string[]): "cast" | "creative" | "production" | "mixed" {
+  const normalized = [...new Set(categories.map((value) => value.trim().toLowerCase()).filter(Boolean))];
+  if (normalized.length === 0) return "production";
+  if (normalized.length === 1) {
+    const only = normalized[0];
+    if (only === "cast" || only === "creative" || only === "production") {
+      return only;
+    }
+    return "production";
+  }
+  return "mixed";
 }
 
 function normalizeHeader(value: string) {
@@ -506,6 +520,7 @@ export async function getShowSubmissionPeople(showId: string) {
     const nonCastRoles = roles
       .filter((role) => role.category.toLowerCase() !== "cast")
       .map((role) => role.role_name);
+    const roleCategoryDisplay = getRoleCategoryDisplay(roles.map((role) => role.category));
     const combinedRoleTitle = castRoles.length > 0
       ? `${joinRoles(castRoles)}${nonCastRoles.length > 0 ? ` (${joinRoles(nonCastRoles)})` : ""}`
       : nonCastRoles.length > 0
@@ -516,6 +531,7 @@ export async function getShowSubmissionPeople(showId: string) {
       full_name: String(person.full_name ?? ""),
       role_title: combinedRoleTitle,
       team_type: castRoles.length > 0 ? "cast" : "production",
+      role_category_display: roleCategoryDisplay,
       email: String(person.email ?? ""),
       submission_type: rowHasColumn(row, "submission_type")
         ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
@@ -865,7 +881,7 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
     id: string;
     full_name: string;
     role_title: string;
-    team_type: "cast" | "production";
+    team_type: "cast" | "production" | "creative";
     email: string;
     submission_type: SubmissionType;
   }> = (peopleRows ?? []).map((row) => ({
@@ -879,7 +895,7 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
 
   const mapByLookup = new Map<
     string,
-    { id: string; full_name: string; role_title: string; team_type: "cast" | "production"; email: string; submission_type: SubmissionType }
+    { id: string; full_name: string; role_title: string; team_type: "cast" | "production" | "creative"; email: string; submission_type: SubmissionType }
   >();
   for (const person of people) {
     const key = lookupField === "email" ? normalizeEmail(person.email) : normalizeName(person.full_name);
@@ -977,7 +993,7 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
 
       if (field === "team_type") {
         const lowered = rawValue.toLowerCase();
-        if (lowered !== "cast" && lowered !== "production") {
+        if (lowered !== "cast" && lowered !== "creative" && lowered !== "production") {
           invalid.push(line);
           continue;
         }
@@ -999,14 +1015,15 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
         continue;
       }
 
-      peopleUpdate[field] = nextValue;
+      const persistedPeopleValue = field === "team_type" && nextValue === "creative" ? "production" : nextValue;
+      peopleUpdate[field] = persistedPeopleValue;
       auditEntries.push({ field, beforeValue: currentValue, afterValue: nextValue });
 
       if (field === "role_title") {
         nextRoleName = nextValue;
       }
       if (field === "team_type") {
-        nextRoleCategory = nextValue === "cast" ? "cast" : "production";
+        nextRoleCategory = nextValue === "cast" ? "cast" : nextValue === "creative" ? "creative" : "production";
       }
     }
 
@@ -1223,6 +1240,130 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
       `Bulk edit complete. Updated ${updatedRows} of ${people.length} selected row(s).`
     )}`
   );
+}
+
+export async function updatePersonProfile(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const personId = String(formData.get("personId") ?? "").trim();
+  const fullName = String(formData.get("fullName") ?? "").trim();
+  const roleTitle = String(formData.get("roleTitle") ?? "").trim();
+  const teamType = String(formData.get("teamType") ?? "").trim().toLowerCase();
+  const email = normalizeEmail(String(formData.get("email") ?? "").trim());
+  const submissionType = normalizeSubmissionType(String(formData.get("submissionType") ?? "bio"));
+
+  if (!personId) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Person id is required.");
+  }
+  if (!fullName) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Full Name is required.");
+  }
+  if (!roleTitle) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Role Title is required.");
+  }
+  if (!["cast", "creative", "production"].includes(teamType)) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Category must be cast, creative, or production.");
+  }
+  if (!z.string().email().safeParse(email).success) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Email must be valid.");
+  }
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: personRow } = await client
+    .from("people")
+    .select("id, full_name, role_title, team_type, email, submission_type")
+    .eq("program_id", context.program_id)
+    .eq("id", personId)
+    .maybeSingle();
+  if (!personRow?.id) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Person not found.");
+  }
+
+  const current = {
+    id: String(personRow.id),
+    full_name: String(personRow.full_name ?? ""),
+    role_title: String(personRow.role_title ?? ""),
+    team_type: personRow.team_type === "cast" ? "cast" : "production",
+    email: normalizeEmail(String(personRow.email ?? "")),
+    submission_type: normalizeSubmissionType(String(personRow.submission_type ?? "bio"))
+  };
+
+  const nextPeopleTeamType = teamType === "cast" ? "cast" : "production";
+  const peopleUpdate: Record<string, string> = {};
+  const audits: Array<{ field: string; beforeValue: string; afterValue: string }> = [];
+
+  if (current.full_name !== fullName) {
+    peopleUpdate.full_name = fullName;
+    audits.push({ field: "full_name", beforeValue: current.full_name, afterValue: fullName });
+  }
+  if (current.role_title !== roleTitle) {
+    peopleUpdate.role_title = roleTitle;
+    audits.push({ field: "role_title", beforeValue: current.role_title, afterValue: roleTitle });
+  }
+  if (current.team_type !== nextPeopleTeamType) {
+    peopleUpdate.team_type = nextPeopleTeamType;
+    audits.push({ field: "team_type", beforeValue: current.team_type, afterValue: teamType });
+  }
+  if (current.email !== email) {
+    peopleUpdate.email = email;
+    audits.push({ field: "email", beforeValue: current.email, afterValue: email });
+  }
+  if (current.submission_type !== submissionType) {
+    peopleUpdate.submission_type = submissionType;
+    audits.push({ field: "submission_type", beforeValue: current.submission_type, afterValue: submissionType });
+  }
+
+  if (Object.keys(peopleUpdate).length > 0) {
+    const { error: updateError } = await client.from("people").update(peopleUpdate).eq("id", current.id);
+    if (updateError) {
+      withError(`/app/shows/${showId}?tab=people-roles`, updateError.message || "Could not update person.");
+    }
+  }
+
+  if (current.role_title !== roleTitle) {
+    await client.from("show_roles").update({ role_name: roleTitle }).eq("show_id", showId).eq("person_id", current.id);
+  }
+
+  const roleCategory = teamType === "cast" ? "cast" : teamType === "creative" ? "creative" : "production";
+  await client.from("show_roles").update({ category: roleCategory }).eq("show_id", showId).eq("person_id", current.id);
+
+  if (current.submission_type !== submissionType) {
+    const { data: roleRow } = await client
+      .from("show_roles")
+      .select("id")
+      .eq("show_id", showId)
+      .eq("person_id", current.id)
+      .maybeSingle();
+    if (roleRow?.id) {
+      await client
+        .from("submission_requests")
+        .update({
+          request_type: submissionType,
+          label: `${getSubmissionTypeLabel(submissionType)} Submission`
+        })
+        .eq("show_role_id", String(roleRow.id));
+    }
+  }
+
+  for (const audit of audits) {
+    await writeAuditLog({
+      entity: "people",
+      entityId: current.id,
+      field: audit.field,
+      beforeValue: audit.beforeValue,
+      afterValue: audit.afterValue,
+      reason: "single_person_edit"
+    });
+  }
+
+  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Person profile updated.")}`);
 }
 
 export async function updateSpecialNoteAssignments(showId: string, formData: FormData) {

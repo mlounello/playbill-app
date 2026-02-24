@@ -19,6 +19,7 @@ const defaults: Item[] = [
   { token: "department_info", label: "Producing Department / Company", enabled: true },
   { token: "actf_ad", label: "ACTF Ad", enabled: true },
   { token: "acknowledgements", label: "Acknowledgements", enabled: true },
+  { token: "special_thanks", label: "Special Thanks", enabled: true },
   { token: "season_calendar", label: "Season Calendar", enabled: true },
   { token: "production_photos", label: "Production Photos", enabled: true },
   { token: "custom_pages", label: "Custom Pages", enabled: true }

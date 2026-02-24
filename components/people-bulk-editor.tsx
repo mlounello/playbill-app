@@ -6,17 +6,19 @@ type PersonRow = {
   id: string;
   full_name: string;
   role_title: string;
-  team_type: "cast" | "production" | "creative";
+  team_type: "cast" | "production" | "creative" | "mixed";
   email: string;
   submission_type?: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
 };
 
 export function PeopleBulkEditor({
   people,
-  onSubmitAction
+  onSubmitAction,
+  onEditAction
 }: {
   people: PersonRow[];
   onSubmitAction: (formData: FormData) => void;
+  onEditAction: (formData: FormData) => void;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
@@ -26,6 +28,15 @@ export function PeopleBulkEditor({
   const [enableEmail, setEnableEmail] = useState(false);
   const [enableFullName, setEnableFullName] = useState(false);
   const [enableSubmissionType, setEnableSubmissionType] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editPersonId, setEditPersonId] = useState("");
+  const [editFullName, setEditFullName] = useState("");
+  const [editRoleTitle, setEditRoleTitle] = useState("");
+  const [editTeamType, setEditTeamType] = useState<"cast" | "creative" | "production">("production");
+  const [editEmail, setEditEmail] = useState("");
+  const [editSubmissionType, setEditSubmissionType] = useState<
+    "bio" | "director_note" | "dramaturgical_note" | "music_director_note"
+  >("bio");
 
   const sortedPeople = useMemo(
     () => [...people].sort((a, b) => a.full_name.localeCompare(b.full_name) || a.role_title.localeCompare(b.role_title)),
@@ -57,6 +68,15 @@ export function PeopleBulkEditor({
     setSelectedIds((current) => new Set([...current].filter((id) => !visibleIds.has(id))));
   };
   const clearAll = () => setSelectedIds(new Set());
+  const openEdit = (person: PersonRow) => {
+    setEditPersonId(person.id);
+    setEditFullName(person.full_name);
+    setEditRoleTitle(person.role_title);
+    setEditTeamType(person.team_type === "cast" ? "cast" : person.team_type === "creative" ? "creative" : "production");
+    setEditEmail(person.email);
+    setEditSubmissionType(person.submission_type ?? "bio");
+    setEditOpen(true);
+  };
 
   return (
     <section className="card people-editor">
@@ -100,6 +120,7 @@ export function PeopleBulkEditor({
                 <th>Category</th>
                 <th>Email</th>
                 <th>Submission</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -132,6 +153,18 @@ export function PeopleBulkEditor({
                     <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
                     <td>{person.email || "No email"}</td>
                     <td>{person.submission_type ?? "bio"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEdit(person);
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -233,6 +266,59 @@ export function PeopleBulkEditor({
               <div className="people-modal-actions">
                 <button type="submit">Save Enabled Fields</button>
                 <button type="button" className="ghost-button" onClick={() => setOpen(false)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {editOpen ? (
+        <div role="dialog" aria-modal="true" className="people-modal-backdrop">
+          <div className="card people-modal">
+            <div className="people-modal-header">
+              <strong>Edit Person</strong>
+              <button type="button" onClick={() => setEditOpen(false)}>Close</button>
+            </div>
+            <form action={onEditAction} className="people-modal-form">
+              <input type="hidden" name="personId" value={editPersonId} />
+              <div className="people-field-row">
+                <label className="people-field-toggle">Full Name</label>
+                <input name="fullName" value={editFullName} onChange={(event) => setEditFullName(event.target.value)} required />
+              </div>
+              <div className="people-field-row">
+                <label className="people-field-toggle">Role Title</label>
+                <input name="roleTitle" value={editRoleTitle} onChange={(event) => setEditRoleTitle(event.target.value)} required />
+              </div>
+              <div className="people-field-row">
+                <label className="people-field-toggle">Category</label>
+                <select name="teamType" value={editTeamType} onChange={(event) => setEditTeamType(event.target.value as "cast" | "creative" | "production")}>
+                  <option value="cast">cast</option>
+                  <option value="creative">creative</option>
+                  <option value="production">production</option>
+                </select>
+              </div>
+              <div className="people-field-row">
+                <label className="people-field-toggle">Email</label>
+                <input name="email" type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} required />
+              </div>
+              <div className="people-field-row">
+                <label className="people-field-toggle">Submission Requirement</label>
+                <select
+                  name="submissionType"
+                  value={editSubmissionType}
+                  onChange={(event) => setEditSubmissionType(event.target.value as "bio" | "director_note" | "dramaturgical_note" | "music_director_note")}
+                >
+                  <option value="bio">Bio</option>
+                  <option value="director_note">Director&apos;s Note</option>
+                  <option value="dramaturgical_note">Dramaturgical Note</option>
+                  <option value="music_director_note">Music Director&apos;s Note</option>
+                </select>
+              </div>
+              <div className="people-modal-actions">
+                <button type="submit">Save Person</button>
+                <button type="button" className="ghost-button" onClick={() => setEditOpen(false)}>
                   Cancel
                 </button>
               </div>

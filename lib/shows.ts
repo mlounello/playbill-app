@@ -21,6 +21,7 @@ export type ShowSummary = {
   acts_and_songs: string;
   season_calendar: string;
   acknowledgements: string;
+  special_thanks: string;
   poster_image_url: string;
   show_dates: string;
   performance_schedule: Array<{ date?: string; time?: string }>;
@@ -84,7 +85,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   production_photos: ["production_photos"],
   sponsors: ["acknowledgements"],
   acknowledgements: ["acknowledgements"],
-  special_thanks: ["acknowledgements"],
+  special_thanks: ["special_thanks"],
   back_cover: ["season_calendar"],
   custom_pages: ["custom_pages"],
   custom_text: [],
@@ -347,7 +348,7 @@ export async function getShowsForDashboard() {
 
     const { data: programs } = await client
       .from("programs")
-      .select("id, slug, acts_songs, season_calendar, acknowledgements, poster_image_url, show_dates, performance_schedule");
+      .select("*");
     const { data: people } = await client.from("people").select("program_id, submission_status");
 
     const programSlugById = new Map<string, string>();
@@ -387,6 +388,7 @@ export async function getShowsForDashboard() {
         acts_and_songs: String(program?.acts_songs ?? ""),
         season_calendar: String(program?.season_calendar ?? ""),
         acknowledgements: String(program?.acknowledgements ?? ""),
+        special_thanks: String((program as Record<string, unknown> | undefined)?.special_thanks ?? ""),
         poster_image_url: String(program?.poster_image_url ?? ""),
         show_dates: String(program?.show_dates ?? ""),
         performance_schedule: Array.isArray(program?.performance_schedule)
@@ -420,7 +422,7 @@ export async function getShowById(showId: string) {
     const programId = String(show.program_id ?? "");
     const { data: program } = await client
       .from("programs")
-      .select("slug, acts_songs, season_calendar, acknowledgements, poster_image_url, show_dates, performance_schedule")
+      .select("*")
       .eq("id", programId)
       .single();
     const { data: people } = await client.from("people").select("submission_status").eq("program_id", programId);
@@ -450,6 +452,7 @@ export async function getShowById(showId: string) {
       acts_and_songs: String(program?.acts_songs ?? ""),
       season_calendar: String(program?.season_calendar ?? ""),
       acknowledgements: String(program?.acknowledgements ?? ""),
+      special_thanks: String((program as Record<string, unknown> | undefined)?.special_thanks ?? ""),
       poster_image_url: String(program?.poster_image_url ?? ""),
       show_dates: String(program?.show_dates ?? ""),
       performance_schedule: Array.isArray(program?.performance_schedule)
@@ -845,6 +848,7 @@ export async function updateShowAcknowledgements(showId: string, formData: FormD
   }
 
   const acknowledgements = sanitizeRichText(String(formData.get("acknowledgements") ?? ""));
+  const specialThanks = sanitizeRichText(String(formData.get("specialThanks") ?? ""));
   const client = getSupabaseWriteClient();
   const { data: show, error: showError } = await client
     .from("shows")
@@ -857,9 +861,19 @@ export async function updateShowAcknowledgements(showId: string, formData: FormD
   }
 
   if (show.program_id) {
+    const { data: columnsData } = await client
+      .from("information_schema.columns")
+      .select("column_name")
+      .eq("table_schema", "public")
+      .eq("table_name", "programs");
+    const columnSet = new Set((columnsData ?? []).map((item) => String((item as { column_name?: unknown }).column_name ?? "")));
+    const updates: Record<string, string> = { acknowledgements };
+    if (columnSet.has("special_thanks")) {
+      updates.special_thanks = specialThanks;
+    }
     const { error: programUpdateError } = await client
       .from("programs")
-      .update({ acknowledgements })
+      .update(updates)
       .eq("id", show.program_id);
     if (programUpdateError) {
       withError(`/app/shows/${showId}?tab=settings`, programUpdateError.message);
@@ -867,7 +881,7 @@ export async function updateShowAcknowledgements(showId: string, formData: FormD
   }
 
   await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
-  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Acknowledgements / Special Thanks updated.")}`);
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Acknowledgements and Special Thanks updated.")}`);
 }
 
 export async function updateShowPresentation(showId: string, formData: FormData) {
