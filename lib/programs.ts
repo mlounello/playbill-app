@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { buildDepartmentInfoHtml } from "@/lib/departments";
 import { buildSeasonCalendarHtml } from "@/lib/seasons";
-import { getMissingSupabaseEnvVars, getSupabaseReadClient, getSupabaseWriteClient } from "@/lib/supabase";
+import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
 
@@ -1611,7 +1611,8 @@ export async function getProgramBySlug(
   }
 ) {
   try {
-    const client = getSupabaseReadClient();
+    // Use server write client for deterministic renderer reads across RLS policies.
+    const client = getSupabaseWriteClient();
 
     const { data: program, error } = await client.from("programs").select("*").eq("slug", slug).single();
     if (error || !program) {
@@ -1944,7 +1945,7 @@ export async function getProgramsList() {
       return [] as ProgramSummary[];
     }
 
-    const client = getSupabaseReadClient();
+    const client = getSupabaseWriteClient();
     const { data, error } = await client
       .from("programs")
       .select("id, slug, title, show_dates, created_at")
@@ -1996,7 +1997,7 @@ export async function getProgramWorkspaceList() {
       }));
     }
 
-    const client = getSupabaseReadClient();
+    const client = getSupabaseWriteClient();
     const { data: peopleRows } = await client.from("people").select("program_id, submission_status");
 
     const summaryByProgram = new Map<string, { total: number; submitted: number }>();
