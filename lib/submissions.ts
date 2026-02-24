@@ -733,19 +733,31 @@ export async function getShowSpecialNoteAssignments(showId: string) {
 
   const { data: requests } = await client
     .from("submission_requests")
-    .select("show_role_id, request_type")
+    .select("show_role_id, request_type, created_at")
     .in("show_role_id", roleIds);
+
+  const noteRequests = (requests ?? [])
+    .map((row) => ({
+      show_role_id: String(row.show_role_id ?? ""),
+      request_type: normalizeSubmissionType(String(row.request_type ?? "bio")),
+      created_at: String(row.created_at ?? "")
+    }))
+    .filter((row) => row.request_type !== "bio")
+    .sort((a, b) => {
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bTime - aTime;
+    });
 
   let directorPersonId = "";
   let dramaturgPersonId = "";
   let musicDirectorPersonId = "";
-  for (const request of requests ?? []) {
-    const personId = roleById.get(String(request.show_role_id ?? "")) ?? "";
+  for (const request of noteRequests) {
+    const personId = roleById.get(request.show_role_id) ?? "";
     if (!personId) continue;
-    const requestType = normalizeSubmissionType(String(request.request_type ?? "bio"));
-    if (requestType === "director_note") directorPersonId = personId;
-    if (requestType === "dramaturgical_note") dramaturgPersonId = personId;
-    if (requestType === "music_director_note") musicDirectorPersonId = personId;
+    if (request.request_type === "director_note" && !directorPersonId) directorPersonId = personId;
+    if (request.request_type === "dramaturgical_note" && !dramaturgPersonId) dramaturgPersonId = personId;
+    if (request.request_type === "music_director_note" && !musicDirectorPersonId) musicDirectorPersonId = personId;
   }
 
   return {
@@ -1849,17 +1861,19 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
 
   const { data: roleRows } = await client
     .from("show_roles")
-    .select("id, person_id")
+    .select("id, person_id, category")
     .eq("show_id", showId);
   const roles = (roleRows ?? []).map((row) => ({
     id: String(row.id),
-    person_id: String(row.person_id ?? "")
+    person_id: String(row.person_id ?? ""),
+    category: normalizeRoleCategoryValue(String(row.category ?? "production"))
   }));
-  const roleByPersonId = new Map<string, string>();
+  const rolesByPersonId = new Map<string, Array<{ id: string; category: RoleCategory }>>();
   for (const role of roles) {
-    if (role.person_id && !roleByPersonId.has(role.person_id)) {
-      roleByPersonId.set(role.person_id, role.id);
-    }
+    if (!role.person_id) continue;
+    const list = rolesByPersonId.get(role.person_id) ?? [];
+    list.push({ id: role.id, category: role.category });
+    rolesByPersonId.set(role.person_id, list);
   }
   const showRolesColumns = await getTableColumns(client, "show_roles");
   const castBillingValues = await client
@@ -1876,7 +1890,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
 
   // Self-heal: if a selected person has no role assignment yet, create one so special-note requests can attach.
   for (const selectedId of unique) {
-    if (roleByPersonId.has(selectedId)) continue;
+    if (rolesByPersonId.has(selectedId)) continue;
     const person = people.find((item) => item.id === selectedId);
     if (!person) continue;
     const inferredCategory = person.team_type === "cast" ? "cast" : inferRoleCategoryFromRole(person.role_title);
@@ -1894,8 +1908,11 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     );
     const { data: insertedRole } = await client.from("show_roles").insert(roleInsert).select("id").maybeSingle();
     if (insertedRole?.id) {
-      roleByPersonId.set(selectedId, String(insertedRole.id));
-      roles.push({ id: String(insertedRole.id), person_id: selectedId });
+      const insertedCategory = inferredCategory as RoleCategory;
+      roles.push({ id: String(insertedRole.id), person_id: selectedId, category: insertedCategory });
+      const list = rolesByPersonId.get(selectedId) ?? [];
+      list.push({ id: String(insertedRole.id), category: insertedCategory });
+      rolesByPersonId.set(selectedId, list);
     }
   }
 
@@ -1913,6 +1930,15 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     const list = requestsByRoleId.get(request.show_role_id) ?? [];
     list.push({ id: request.id, request_type: request.request_type });
     requestsByRoleId.set(request.show_role_id, list);
+  }
+
+  function getPreferredRoleIdForPerson(personId: string) {
+    const personRoles = rolesByPersonId.get(personId) ?? [];
+    if (personRoles.length === 0) {
+      return "";
+    }
+    const nonCast = personRoles.find((role) => role.category !== "cast");
+    return (nonCast ?? personRoles[0]).id;
   }
 
   // Bio stays default for everyone.
@@ -1937,27 +1963,20 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
   ];
 
   for (const assignment of requestedAssignments) {
-    const selectedRoleId = assignment.personId ? roleByPersonId.get(assignment.personId) ?? "" : "";
-    const existingOfType = requests.filter((item) => item.request_type === assignment.type);
-
-    for (const existing of existingOfType) {
-      if (selectedRoleId && existing.show_role_id === selectedRoleId) {
-        continue;
-      }
-      await client.from("submission_requests").delete().eq("id", existing.id);
+    const selectedRoleId = assignment.personId ? getPreferredRoleIdForPerson(assignment.personId) : "";
+    const existingOfType = requests.filter((item) => item.request_type === assignment.type).map((item) => item.id);
+    if (existingOfType.length > 0) {
+      await client.from("submission_requests").delete().in("id", existingOfType);
     }
 
     if (selectedRoleId) {
-      const alreadyLinked = existingOfType.some((item) => item.show_role_id === selectedRoleId);
-      if (!alreadyLinked) {
-        await client.from("submission_requests").insert({
-          show_role_id: selectedRoleId,
-          request_type: assignment.type,
-          label: `${getSubmissionTypeLabel(assignment.type)} Submission`,
-          constraints: getSubmissionConstraints(assignment.type),
-          status: "pending"
-        });
-      }
+      await client.from("submission_requests").insert({
+        show_role_id: selectedRoleId,
+        request_type: assignment.type,
+        label: `${getSubmissionTypeLabel(assignment.type)} Submission`,
+        constraints: getSubmissionConstraints(assignment.type),
+        status: "pending"
+      });
     }
   }
 
