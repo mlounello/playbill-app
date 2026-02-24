@@ -2,7 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
-import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, contributorSaveTask, getContributorTaskById, getSubmissionTypeLabel } from "@/lib/submissions";
+import {
+  BIO_CHAR_LIMIT_DEFAULT,
+  NO_BIO_PLACEHOLDER,
+  SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
+  contributorSaveTask,
+  countWordsFromRichText,
+  getContributorTaskById,
+  getSubmissionTypeLabel
+} from "@/lib/submissions";
 import { richTextHasContent } from "@/lib/rich-text";
 
 export default async function ContributorTaskPage({
@@ -23,6 +31,7 @@ export default async function ContributorTaskPage({
   const isReadOnly = task.person.submission_status === "approved" || task.person.submission_status === "locked";
   const submissionLabel = getSubmissionTypeLabel(task.person.submission_type);
   const isBioTask = task.person.submission_type === "bio";
+  const noteWordCount = countWordsFromRichText(task.person.bio);
   const hasNoBio =
     isBioTask &&
     (task.person.bio.trim() === NO_BIO_PLACEHOLDER ||
@@ -43,7 +52,9 @@ export default async function ContributorTaskPage({
             Status: <span className="status-pill">{task.person.submission_status}</span>
           </div>
           <div className="meta-text" style={{ marginTop: "0.35rem" }}>
-            {submissionLabel} limit: {BIO_CHAR_LIMIT_DEFAULT} chars. Current plain-text count: {task.person.bio_char_count}
+            {isBioTask
+              ? `${submissionLabel} limit: ${BIO_CHAR_LIMIT_DEFAULT} chars. Current plain-text count: ${task.person.bio_char_count}`
+              : `${submissionLabel} limit: ${SPECIAL_NOTE_WORD_LIMIT_DEFAULT} words. Current word count: ${noteWordCount}`}
           </div>
         </section>
 

@@ -31,15 +31,19 @@ import {
   updateShowModules
 } from "@/lib/shows";
 import {
+  BIO_CHAR_LIMIT_DEFAULT,
+  SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
   addRoleAssignmentToPerson,
   addPeopleToShow,
   adminQuickStatus,
   adminReturnSubmission,
   bulkEditPeopleField,
   bulkEditSelectedPeople,
+  countWordsFromRichText,
   importBiosFromCsv,
   getShowRoleAssignments,
   getShowSpecialNoteAssignments,
+  getShowSubmissionQueue,
   getShowSubmissionPeople,
   updateRoleAssignment,
   updatePersonProfile,
@@ -140,24 +144,28 @@ export default async function ShowWorkspacePage({
   const activeSubmissionSort = submissionSort || "name_asc";
   const activeSubmissionView = submissionView === "cards" ? "cards" : "table";
   const submissionViewProvided = typeof submissionView === "string";
+  const submissionQueue = activeTab === "submissions" ? await getShowSubmissionQueue(show.id) : [];
   const filteredSubmissions =
     activeTab === "submissions"
-      ? people
-          .filter((person) => {
+      ? submissionQueue
+          .filter((task) => {
+            const isOverLimit = task.submission_type === "bio"
+              ? task.bio_char_count > BIO_CHAR_LIMIT_DEFAULT
+              : countWordsFromRichText(task.bio) > SPECIAL_NOTE_WORD_LIMIT_DEFAULT;
             if (activeSubmissionFilter === "all") return true;
-            if (activeSubmissionFilter === "needs_review") return person.submission_status === "submitted";
+            if (activeSubmissionFilter === "needs_review") return task.submission_status === "submitted";
             if (activeSubmissionFilter === "bio_missing")
-              return person.submission_type === "bio" && person.bio_char_count === 0 && !person.no_bio;
+              return task.submission_type === "bio" && task.bio_char_count === 0 && !task.no_bio;
             if (activeSubmissionFilter === "headshot_missing")
-              return person.submission_type === "bio" && !person.headshot_url.trim();
-            if (activeSubmissionFilter === "over_limit") return person.bio_char_count > 375;
-            return person.submission_status === activeSubmissionFilter;
+              return task.submission_type === "bio" && !task.headshot_url.trim();
+            if (activeSubmissionFilter === "over_limit") return isOverLimit;
+            return task.submission_status === activeSubmissionFilter;
           })
-          .filter((person) => {
+          .filter((task) => {
             if (!activeSubmissionQuery) {
               return true;
             }
-            const haystack = `${person.full_name} ${person.role_title} ${person.email}`.toLowerCase();
+            const haystack = `${task.full_name} ${task.role_title} ${task.email}`.toLowerCase();
             return haystack.includes(activeSubmissionQuery);
           })
           .sort((a, b) => {
@@ -181,7 +189,11 @@ export default async function ShowWorkspacePage({
           missingBios: people.filter((person) => person.submission_type === "bio" && person.bio_char_count === 0 && !person.no_bio).length,
           missingHeadshots: people.filter((person) => person.submission_type === "bio" && !person.headshot_url.trim()).length,
           returnedForEdits: people.filter((person) => person.submission_status === "returned").length,
-          overLimit: people.filter((person) => person.bio_char_count > 375).length,
+          overLimit: people.filter((person) =>
+            person.submission_type === "bio"
+              ? person.bio_char_count > BIO_CHAR_LIMIT_DEFAULT
+              : countWordsFromRichText(person.bio) > SPECIAL_NOTE_WORD_LIMIT_DEFAULT
+          ).length,
           needsReview: people.filter((person) => person.submission_status === "submitted").length
         }
       : {
@@ -806,8 +818,8 @@ export default async function ShowWorkspacePage({
                 <strong>Submissions</strong>
                 <div className="kpi-inline">
                   <span className="kpi-badge">
-                    {people.filter((person) => person.submission_status === "submitted" || person.submission_status === "approved" || person.submission_status === "locked").length}
-                    /{people.length} complete
+                    {submissionQueue.filter((task) => task.submission_status === "submitted" || task.submission_status === "approved" || task.submission_status === "locked").length}
+                    /{submissionQueue.length} complete
                   </span>
                 </div>
               </div>
@@ -897,31 +909,35 @@ export default async function ShowWorkspacePage({
                             <th scope="col">Category</th>
                             <th scope="col">Requirement</th>
                             <th scope="col">Status</th>
-                            <th scope="col">Chars</th>
+                            <th scope="col">Count</th>
                             <th scope="col">Updated</th>
                             <th scope="col">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredSubmissions.map((person) => {
-                            const approveAction = adminQuickStatus.bind(null, show.id, person.id, "approved");
-                            const lockAction = adminQuickStatus.bind(null, show.id, person.id, "locked");
-                            const returnAction = adminReturnSubmission.bind(null, show.id, person.id);
+                          {filteredSubmissions.map((task) => {
+                            const approveAction = adminQuickStatus.bind(null, show.id, task.task_id, "approved");
+                            const lockAction = adminQuickStatus.bind(null, show.id, task.task_id, "locked");
+                            const returnAction = adminReturnSubmission.bind(null, show.id, task.task_id);
                             return (
-                              <tr key={person.id}>
+                              <tr key={task.task_id}>
                                 <td>
-                                  <strong>{person.full_name}</strong>
-                                  <div className="meta-text">{person.email}</div>
+                                  <strong>{task.full_name}</strong>
+                                  <div className="meta-text">{task.email}</div>
                                 </td>
-                                <td>{person.role_title}</td>
-                                <td style={{ textTransform: "capitalize" }}>{person.role_category_display ?? person.team_type}</td>
-                                <td>{person.submission_type.replace(/_/g, " ")}</td>
-                                <td><span className="status-pill">{person.submission_status}</span></td>
-                                <td>{person.bio_char_count}</td>
-                                <td>{person.submitted_at ? new Date(person.submitted_at).toLocaleDateString("en-US") : "No submission yet"}</td>
+                                <td>{task.role_title}</td>
+                                <td style={{ textTransform: "capitalize" }}>{task.role_category_display ?? task.team_type}</td>
+                                <td>{task.submission_type.replace(/_/g, " ")}</td>
+                                <td><span className="status-pill">{task.submission_status}</span></td>
+                                <td>
+                                  {task.submission_type === "bio"
+                                    ? `${task.bio_char_count} chars`
+                                    : `${countWordsFromRichText(task.bio)} words`}
+                                </td>
+                                <td>{task.submitted_at ? new Date(task.submitted_at).toLocaleDateString("en-US") : "No submission yet"}</td>
                                 <td>
                                   <div className="submission-actions">
-                                    <Link href={`/app/shows/${show.id}/submissions/${person.id}`}>Review</Link>
+                                    <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Review</Link>
                                     <form action={approveAction} data-pending-label="Approving submission...">
                                       <button type="submit">Approve</button>
                                     </form>
@@ -942,28 +958,30 @@ export default async function ShowWorkspacePage({
                     </div>
                   ) : (
                     <div className="submissions-grid">
-                      {filteredSubmissions.map((person) => {
-                        const approveAction = adminQuickStatus.bind(null, show.id, person.id, "approved");
-                        const lockAction = adminQuickStatus.bind(null, show.id, person.id, "locked");
-                        const returnAction = adminReturnSubmission.bind(null, show.id, person.id);
+                      {filteredSubmissions.map((task) => {
+                        const approveAction = adminQuickStatus.bind(null, show.id, task.task_id, "approved");
+                        const lockAction = adminQuickStatus.bind(null, show.id, task.task_id, "locked");
+                        const returnAction = adminReturnSubmission.bind(null, show.id, task.task_id);
                         return (
-                          <div key={person.id} className="submission-row">
+                          <div key={task.task_id} className="submission-row">
                             <div className="submission-row-top">
                               <div className="submission-identity">
-                                <strong>{person.full_name}</strong> - {person.role_title}
+                                <strong>{task.full_name}</strong> - {task.role_title}
                                 <div className="submission-meta">
-                                  {person.role_category_display ?? person.team_type} • {person.email}
+                                  {task.role_category_display ?? task.team_type} • {task.email}
                                 </div>
                               </div>
                               <div className="submission-meta">
-                                Requirement: {person.submission_type.replace(/_/g, " ")} • Status: <span className="status-pill">{person.submission_status}</span> • {person.bio_char_count} chars
+                                Requirement: {task.submission_type.replace(/_/g, " ")} • Status: <span className="status-pill">{task.submission_status}</span> • {task.submission_type === "bio"
+                                  ? `${task.bio_char_count} chars`
+                                  : `${countWordsFromRichText(task.bio)} words`}
                               </div>
                               <div className="submission-meta">
-                                Updated: {person.submitted_at ? new Date(person.submitted_at).toLocaleDateString("en-US") : "No submission yet"}
+                                Updated: {task.submitted_at ? new Date(task.submitted_at).toLocaleDateString("en-US") : "No submission yet"}
                               </div>
                             </div>
                             <div className="submission-actions">
-                              <Link href={`/app/shows/${show.id}/submissions/${person.id}`}>Open Review</Link>
+                              <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Open Review</Link>
                               <form action={approveAction} data-pending-label="Approving submission...">
                                 <button type="submit">Approve</button>
                               </form>

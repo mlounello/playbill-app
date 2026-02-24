@@ -3,7 +3,15 @@ import { notFound } from "next/navigation";
 import { FlashToast } from "@/components/flash-toast";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
-import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, adminSaveSubmission, getShowSubmissionByPerson, getSubmissionTypeLabel } from "@/lib/submissions";
+import {
+  BIO_CHAR_LIMIT_DEFAULT,
+  NO_BIO_PLACEHOLDER,
+  SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
+  adminSaveSubmission,
+  countWordsFromRichText,
+  getShowSubmissionByPerson,
+  getSubmissionTypeLabel
+} from "@/lib/submissions";
 import { richTextHasContent } from "@/lib/rich-text";
 
 function formatAuditValue(value: unknown) {
@@ -68,6 +76,7 @@ export default async function ShowSubmissionReviewPage({
   const saveAction = adminSaveSubmission.bind(null, showId, personId);
   const submissionLabel = getSubmissionTypeLabel(review.person.submission_type);
   const isBioTask = review.person.submission_type === "bio";
+  const noteWordCount = countWordsFromRichText(review.person.bio);
   const hasNoBio =
     isBioTask &&
     (review.person.bio.trim() === NO_BIO_PLACEHOLDER ||
@@ -88,7 +97,9 @@ export default async function ShowSubmissionReviewPage({
             Status: <span className="status-pill">{review.person.submission_status}</span>
           </div>
           <div className="meta-text" style={{ marginTop: "0.35rem" }}>
-            {submissionLabel} chars: {review.person.bio_char_count}/{BIO_CHAR_LIMIT_DEFAULT}
+            {isBioTask
+              ? `${submissionLabel} chars: ${review.person.bio_char_count}/${BIO_CHAR_LIMIT_DEFAULT}`
+              : `${submissionLabel} words: ${noteWordCount}/${SPECIAL_NOTE_WORD_LIMIT_DEFAULT}`}
           </div>
         </section>
 
@@ -112,7 +123,7 @@ export default async function ShowSubmissionReviewPage({
           {isBioTask ? (
             <HeadshotUploadField
               showId={showId}
-              personId={personId}
+              personId={review.person.id}
               initialUrl={review.person.headshot_url}
             />
           ) : null}

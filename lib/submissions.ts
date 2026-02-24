@@ -5,6 +5,7 @@ import { sanitizeRichText } from "@/lib/rich-text";
 import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 export const BIO_CHAR_LIMIT_DEFAULT = 375;
+export const SPECIAL_NOTE_WORD_LIMIT_DEFAULT = 400;
 export const NO_BIO_PLACEHOLDER = "<p><em>No biography provided.</em></p>";
 export type SubmissionType = "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
 export type RoleCategory = "cast" | "creative" | "production";
@@ -21,6 +22,27 @@ export function getSubmissionTypeLabel(type: SubmissionType) {
   if (type === "dramaturgical_note") return "Dramaturgical Note";
   if (type === "music_director_note") return "Music Director's Note";
   return "Bio";
+}
+
+export function countWordsFromRichText(input: string | undefined) {
+  const plain = stripRichTextToPlain(String(input ?? ""));
+  if (!plain) {
+    return 0;
+  }
+  return plain
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean).length;
+}
+
+function getSubmissionConstraints(type: SubmissionType) {
+  const constraints: Record<string, number> = {};
+  if (type === "bio") {
+    constraints.maxChars = BIO_CHAR_LIMIT_DEFAULT;
+    return constraints;
+  }
+  constraints.maxWords = SPECIAL_NOTE_WORD_LIMIT_DEFAULT;
+  return constraints;
 }
 
 function getProgramFieldForSubmissionType(type: SubmissionType): "director_notes" | "dramaturgical_note" | "music_director_note" | null {
@@ -78,6 +100,23 @@ const bioImportRowSchema = z.object({
 
 export type ShowSubmissionPerson = {
   id: string;
+  full_name: string;
+  role_title: string;
+  team_type: "cast" | "production";
+  role_category_display?: "cast" | "creative" | "production" | "mixed";
+  email: string;
+  submission_type: SubmissionType;
+  bio: string;
+  no_bio: boolean;
+  headshot_url: string;
+  submission_status: "pending" | "draft" | "submitted" | "returned" | "approved" | "locked";
+  submitted_at: string | null;
+  bio_char_count: number;
+};
+
+export type ShowSubmissionQueueItem = {
+  task_id: string;
+  person_id: string;
   full_name: string;
   role_title: string;
   team_type: "cast" | "production";
@@ -562,6 +601,111 @@ export async function getShowSubmissionPeople(showId: string) {
   });
 }
 
+export async function getShowSubmissionQueue(showId: string) {
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    return [] as ShowSubmissionQueueItem[];
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: peopleRows } = await client
+    .from("people")
+    .select("*")
+    .eq("program_id", context.program_id);
+  const peopleById = new Map(
+    (peopleRows ?? []).map((row) => [String(row.id), row as Record<string, unknown>])
+  );
+
+  const { data: roles } = await client
+    .from("show_roles")
+    .select("id, person_id, category")
+    .eq("show_id", showId);
+  const roleById = new Map((roles ?? []).map((row) => [String(row.id), String(row.person_id ?? "")]));
+  const roleIds = [...roleById.keys()];
+  if (roleIds.length === 0) {
+    return [] as ShowSubmissionQueueItem[];
+  }
+
+  const { data: requests } = await client
+    .from("submission_requests")
+    .select("id, show_role_id, request_type, status")
+    .in("show_role_id", roleIds);
+  const { data: program } = await client
+    .from("programs")
+    .select("director_notes, dramaturgical_note, music_director_note")
+    .eq("id", context.program_id)
+    .maybeSingle();
+
+  const supportedTypes = new Set<SubmissionType>(["bio", "director_note", "dramaturgical_note", "music_director_note"]);
+  const categoriesByPersonId = new Map<string, string[]>();
+  for (const role of roles ?? []) {
+    const personId = String(role.person_id ?? "");
+    if (!personId) continue;
+    const list = categoriesByPersonId.get(personId) ?? [];
+    list.push(String(role.category ?? "production"));
+    categoriesByPersonId.set(personId, list);
+  }
+
+  const programRecord = (program ?? null) as Record<string, unknown> | null;
+  const seenTaskTypes = new Set<string>();
+  const items: ShowSubmissionQueueItem[] = [];
+
+  for (const request of requests ?? []) {
+    const requestType = normalizeSubmissionType(String(request.request_type ?? "bio"));
+    if (!supportedTypes.has(requestType)) {
+      continue;
+    }
+    const personId = roleById.get(String(request.show_role_id ?? "")) ?? "";
+    if (!personId) {
+      continue;
+    }
+    const person = peopleById.get(personId);
+    if (!person) {
+      continue;
+    }
+    const dedupeKey = `${personId}|${requestType}`;
+    if (seenTaskTypes.has(dedupeKey)) {
+      continue;
+    }
+    seenTaskTypes.add(dedupeKey);
+
+    let taskBody = String(person.bio ?? "");
+    if (requestType !== "bio") {
+      const programField = getProgramFieldForSubmissionType(requestType);
+      if (programField) {
+        taskBody = String(programRecord?.[programField] ?? "");
+      }
+    }
+
+    const categories = categoriesByPersonId.get(personId) ?? [];
+    const roleCategoryDisplay = getRoleCategoryDisplay(categories);
+    const personRecord = person as Record<string, unknown>;
+
+    items.push({
+      task_id: String(request.id ?? ""),
+      person_id: personId,
+      full_name: String(person.full_name ?? ""),
+      role_title: String(person.role_title ?? ""),
+      team_type: String(person.team_type ?? "") === "cast" ? "cast" : "production",
+      role_category_display: roleCategoryDisplay,
+      email: String(person.email ?? ""),
+      submission_type: requestType,
+      bio: taskBody,
+      no_bio: requestType === "bio" && rowHasColumn(personRecord, "no_bio") ? Boolean(person.no_bio) : false,
+      headshot_url: String(person.headshot_url ?? ""),
+      submission_status: normalizeSubmissionStatus(String(request.status ?? person.submission_status ?? "pending")),
+      submitted_at: person.submitted_at ? String(person.submitted_at) : null,
+      bio_char_count: stripRichTextToPlain(taskBody).length
+    });
+  }
+
+  return items.sort((a, b) => {
+    const nameSort = a.full_name.localeCompare(b.full_name);
+    if (nameSort !== 0) return nameSort;
+    return a.submission_type.localeCompare(b.submission_type);
+  });
+}
+
 export async function getShowSpecialNoteAssignments(showId: string) {
   const context = await getShowProgramContext(showId);
   if (!context) {
@@ -925,7 +1069,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
       show_role_id: string;
       request_type: string;
       label: string;
-      constraints: { maxChars: number };
+      constraints: Record<string, number>;
       status: string;
     }> = [];
     for (const personId of personIds) {
@@ -946,7 +1090,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         show_role_id: chosenRoleId,
         request_type: "bio",
         label: `${getSubmissionTypeLabel("bio")} Submission`,
-        constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
+        constraints: getSubmissionConstraints("bio"),
         status: "pending"
       });
     }
@@ -1741,7 +1885,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
         show_role_id: role.id,
         request_type: "bio",
         label: `${getSubmissionTypeLabel("bio")} Submission`,
-        constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
+        constraints: getSubmissionConstraints("bio"),
         status: "pending"
       });
     }
@@ -1771,7 +1915,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
           show_role_id: selectedRoleId,
           request_type: assignment.type,
           label: `${getSubmissionTypeLabel(assignment.type)} Submission`,
-          constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
+          constraints: getSubmissionConstraints(assignment.type),
           status: "pending"
         });
       }
@@ -2110,12 +2254,19 @@ async function updateSubmissionCore(args: {
   const typedBio = sanitizeRichText(args.bio);
   const cleanBio = isBioType && args.skipBio ? "" : typedBio;
   const plainLength = stripRichTextToPlain(typedBio).length;
+  const wordCount = countWordsFromRichText(typedBio);
   if (isBioType && !args.skipBio && (args.status === "submitted" || args.status === "approved" || args.status === "locked") && plainLength === 0) {
     return { ok: false as const, message: `${submissionLabel} is required before submitting.` };
   }
+  if (!isBioType && (args.status === "submitted" || args.status === "approved" || args.status === "locked") && wordCount === 0) {
+    return { ok: false as const, message: `${submissionLabel} is required before submitting.` };
+  }
 
-  if (!args.skipBio && plainLength > BIO_CHAR_LIMIT_DEFAULT) {
+  if (isBioType && !args.skipBio && plainLength > BIO_CHAR_LIMIT_DEFAULT) {
     return { ok: false as const, message: `${submissionLabel} exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.` };
+  }
+  if (!isBioType && wordCount > SPECIAL_NOTE_WORD_LIMIT_DEFAULT) {
+    return { ok: false as const, message: `${submissionLabel} exceeds ${SPECIAL_NOTE_WORD_LIMIT_DEFAULT} word limit.` };
   }
 
   const nowIso = new Date().toISOString();
@@ -2258,6 +2409,51 @@ async function getBioRequestForPerson(showId: string, personId: string) {
   };
 }
 
+async function resolveSubmissionTaskForShow(showId: string, identifier: string) {
+  const client = getSupabaseWriteClient();
+  const { data: roles } = await client
+    .from("show_roles")
+    .select("id, person_id")
+    .eq("show_id", showId);
+  const roleRows = roles ?? [];
+  const roleById = new Map(roleRows.map((row) => [String(row.id), String(row.person_id ?? "")]));
+  const roleIds = [...roleById.keys()];
+  if (roleIds.length === 0) {
+    return null;
+  }
+
+  const { data: requestById } = await client
+    .from("submission_requests")
+    .select("id, show_role_id, request_type, status")
+    .eq("id", identifier)
+    .maybeSingle();
+
+  if (requestById && roleById.has(String(requestById.show_role_id ?? ""))) {
+    return {
+      task_id: String(requestById.id),
+      person_id: roleById.get(String(requestById.show_role_id ?? "")) ?? "",
+      request_type: normalizeSubmissionType(String(requestById.request_type ?? "bio")),
+      status: normalizeSubmissionStatus(String(requestById.status ?? "pending"))
+    };
+  }
+
+  const bioRequest = await getBioRequestForPerson(showId, identifier);
+  if (!bioRequest) {
+    return null;
+  }
+  const { data: requestRow } = await client
+    .from("submission_requests")
+    .select("status")
+    .eq("id", bioRequest.requestId)
+    .maybeSingle();
+  return {
+    task_id: bioRequest.requestId,
+    person_id: identifier,
+    request_type: bioRequest.requestType,
+    status: normalizeSubmissionStatus(String(requestRow?.status ?? "pending"))
+  };
+}
+
 export async function contributorSaveTask(showId: string, taskId: string, formData: FormData) {
   "use server";
 
@@ -2298,9 +2494,14 @@ export async function contributorSaveTask(showId: string, taskId: string, formDa
   redirect(`/contribute/shows/${showId}/tasks/${taskId}?saved=1`);
 }
 
-export async function getShowSubmissionByPerson(showId: string, personId: string) {
+export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId: string) {
   const context = await getShowProgramContext(showId);
   if (!context) {
+    return null;
+  }
+
+  const resolvedTask = await resolveSubmissionTaskForShow(showId, personIdOrTaskId);
+  if (!resolvedTask) {
     return null;
   }
 
@@ -2308,7 +2509,7 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
   const { data: person } = await client
     .from("people")
     .select("*")
-    .eq("id", personId)
+    .eq("id", resolvedTask.person_id)
     .eq("program_id", context.program_id)
     .single();
   if (!person) {
@@ -2319,7 +2520,7 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
     .from("audit_log")
     .select("id, field, before_value, after_value, reason, changed_at, changed_by")
     .eq("entity", "people")
-    .eq("entity_id", personId)
+    .eq("entity_id", resolvedTask.person_id)
     .order("changed_at", { ascending: false })
     .limit(15);
 
@@ -2342,16 +2543,15 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
       role_title: String(person.role_title ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
-      submission_type: rowHasColumn(row, "submission_type")
-        ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
-        : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
+      submission_type: resolvedTask.request_type,
       bio: String(person.bio ?? ""),
-      no_bio: rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false,
+      no_bio: resolvedTask.request_type === "bio" ? (rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false) : false,
       headshot_url: String(person.headshot_url ?? ""),
-      submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
+      submission_status: resolvedTask.status,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(String(person.bio ?? "")).length
     } satisfies ShowSubmissionPerson,
+    task_id: resolvedTask.task_id,
     history: (historyRows ?? []).map((row) => ({
       id: String(row.id),
       field: String(row.field ?? ""),
@@ -2383,16 +2583,16 @@ export async function adminSaveSubmission(showId: string, personId: string, form
     withError(`/app/shows/${showId}/submissions/${personId}`, "Invalid review payload.");
   }
 
-  const requestInfo = await getBioRequestForPerson(showId, personId);
-  if (!requestInfo) {
-    withError(`/app/shows/${showId}/submissions/${personId}`, "Bio request not found for this person.");
+  const current = await getShowSubmissionByPerson(showId, personId);
+  if (!current) {
+    withError(`/app/shows/${showId}/submissions/${personId}`, "Submission request not found.");
   }
 
   const result = await updateSubmissionCore({
     showId,
-    requestId: requestInfo.requestId,
-    personId,
-    submissionType: requestInfo.requestType,
+    requestId: String(current.task_id ?? ""),
+    personId: current.person.id,
+    submissionType: current.person.submission_type,
     bio: parsed.bio ?? "",
     headshotUrl: parsed.headshotUrl ?? "",
     status: parsed.status,
@@ -2431,16 +2631,11 @@ export async function adminReturnSubmission(showId: string, personId: string, fo
     withError(`/app/shows/${showId}?tab=submissions`, "Return message is required.");
   }
 
-  const requestInfo = await getBioRequestForPerson(showId, personId);
-  if (!requestInfo) {
-    withError(`/app/shows/${showId}?tab=submissions`, "Bio request not found for this person.");
-  }
-
   const result = await updateSubmissionCore({
     showId,
-    requestId: requestInfo.requestId,
-    personId,
-    submissionType: requestInfo.requestType,
+    requestId: String(current.task_id ?? ""),
+    personId: current.person.id,
+    submissionType: current.person.submission_type,
     bio: current.person.bio,
     headshotUrl: current.person.headshot_url,
     status: "returned",
@@ -2453,7 +2648,7 @@ export async function adminReturnSubmission(showId: string, personId: string, fo
 
   await writeAuditLog({
     entity: "people",
-    entityId: personId,
+    entityId: current.person.id,
     field: "return_message",
     beforeValue: null,
     afterValue: { message },
@@ -2472,16 +2667,11 @@ export async function adminQuickStatus(showId: string, personId: string, status:
     withError(`/app/shows/${showId}?tab=submissions`, "Submission was not found.");
   }
 
-  const requestInfo = await getBioRequestForPerson(showId, personId);
-  if (!requestInfo) {
-    withError(`/app/shows/${showId}?tab=submissions`, "Bio request not found for this person.");
-  }
-
   const result = await updateSubmissionCore({
     showId,
-    requestId: requestInfo.requestId,
-    personId,
-    submissionType: requestInfo.requestType,
+    requestId: String(current.task_id ?? ""),
+    personId: current.person.id,
+    submissionType: current.person.submission_type,
     bio: current.person.bio,
     headshotUrl: current.person.headshot_url,
     status,
