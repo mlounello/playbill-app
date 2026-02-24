@@ -16,22 +16,49 @@ const allowedTags = new Set([
   "span"
 ]);
 
+const allowedClassNames = new Set([
+  "playbill-title",
+  "section-title",
+  "billing-sheet",
+  "billing-section",
+  "billing-section-title",
+  "billing-list",
+  "billing-item",
+  "billing-left",
+  "billing-leader",
+  "billing-right",
+  "bio-body",
+  "bio-name",
+  "bio-role-inline",
+  "stacked-sections",
+  "stacked-section",
+  "stacked-section-title"
+]);
+
 function sanitizeAttributes(tagName: string, attrs: string) {
+  const classMatch = attrs.match(/class\s*=\s*(["'])(.*?)\1/i);
+  const rawClasses = classMatch?.[2] ?? "";
+  const classTokens = rawClasses
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => allowedClassNames.has(token));
+  const classAttr = classTokens.length > 0 ? ` class="${classTokens.join(" ")}"` : "";
+
   if (tagName !== "a") {
-    return "";
+    return classAttr;
   }
 
   const hrefMatch = attrs.match(/href\s*=\s*(["'])(.*?)\1/i);
   if (!hrefMatch) {
-    return "";
+    return classAttr;
   }
 
   const href = hrefMatch[2].trim();
   if (!/^https?:\/\//i.test(href) && !/^mailto:/i.test(href)) {
-    return "";
+    return classAttr;
   }
 
-  return ` href="${href}" target="_blank" rel="noopener noreferrer"`;
+  return `${classAttr} href="${href}" target="_blank" rel="noopener noreferrer"`;
 }
 
 export function sanitizeRichText(input: string | undefined) {
