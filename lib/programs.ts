@@ -566,9 +566,12 @@ function buildRoleListHtml(people: PersonRecord[]) {
 }
 
 function normalizeRoleCategory(value: string) {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "cast") return "cast";
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "cast" || normalized === "cast_member" || normalized === "cast_list") return "cast";
   if (normalized === "creative" || normalized === "creative_team") return "creative";
+  if (normalized === "production" || normalized === "production_team" || normalized === "crew" || normalized === "team") {
+    return "production";
+  }
   return "production";
 }
 
@@ -849,6 +852,7 @@ function renderModulePages(
     production_photo_urls: string[];
     custom_pages: CustomPageRecord[];
   },
+  rosterPeople: PersonRecord[],
   cast: PersonRecord[],
   production: PersonRecord[],
   showRoles: ShowRoleRecord[],
@@ -914,7 +918,7 @@ function renderModulePages(
   if (normalizedType === "cast_list") {
     const body = buildCategoryRoleListHtml(
       moduleTitle,
-      buildRoleListRowsByCategory([...cast, ...production], showRoles, "cast"),
+      buildRoleListRowsByCategory(rosterPeople, showRoles, "cast"),
       showHeader
     );
     if (!richTextHasContent(body)) {
@@ -929,7 +933,7 @@ function renderModulePages(
   if (normalizedType === "creative_team") {
     const body = buildCategoryRoleListHtml(
       moduleTitle,
-      buildRoleListRowsByCategory([...cast, ...production], showRoles, "creative"),
+      buildRoleListRowsByCategory(rosterPeople, showRoles, "creative"),
       showHeader
     );
     if (!richTextHasContent(body)) {
@@ -944,7 +948,7 @@ function renderModulePages(
   if (normalizedType === "production_team") {
     const body = buildCategoryRoleListHtml(
       moduleTitle,
-      buildRoleListRowsByCategory([...cast, ...production], showRoles, "production"),
+      buildRoleListRowsByCategory(rosterPeople, showRoles, "production"),
       showHeader
     );
     if (!richTextHasContent(body)) {
@@ -1131,6 +1135,7 @@ function buildRenderablePagesFromModules(
     production_photo_urls: string[];
     custom_pages: CustomPageRecord[];
   },
+  rosterPeople: PersonRecord[],
   cast: PersonRecord[],
   production: PersonRecord[],
   showRoles: ShowRoleRecord[],
@@ -1171,7 +1176,7 @@ function buildRenderablePagesFromModules(
 
   for (let index = 0; index < visibleModules.length; index += 1) {
     const module = visibleModules[index];
-    const renderedPages = renderModulePages(module, index, program, cast, production, showRoles, densityMode);
+    const renderedPages = renderModulePages(module, index, program, rosterPeople, cast, production, showRoles, densityMode);
     if (renderedPages.length === 0) {
       continue;
     }
@@ -1798,6 +1803,7 @@ export async function getProgramBySlug(
             { ...previewTarget, visible: true },
             0,
             safeProgram,
+            normalizedPeople,
             castPeople,
             productionPeople,
             showRoleAssignments,
@@ -1809,6 +1815,7 @@ export async function getProgramBySlug(
 
       pageSequence = buildRenderablePagesFromModules(
         safeProgram,
+        normalizedPeople,
         castPeople,
         productionPeople,
         showRoleAssignments,
@@ -1827,6 +1834,7 @@ export async function getProgramBySlug(
     if (currentPaddingNeeded > 0 && appliedDensityMode !== "compact" && normalizedModules.length > 0) {
       const compactPages = buildRenderablePagesFromModules(
         safeProgram,
+        normalizedPeople,
         castPeople,
         productionPeople,
         showRoleAssignments,
@@ -1858,6 +1866,7 @@ export async function getProgramBySlug(
             module,
             normalizedModules.length + index,
             safeProgram,
+            normalizedPeople,
             castPeople,
             productionPeople,
             showRoleAssignments,
