@@ -8,17 +8,21 @@ type PersonRow = {
   role_title: string;
   team_type: "cast" | "production" | "creative" | "mixed";
   email: string;
+  role_count?: number;
+  role_summary?: string;
   submission_type?: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
 };
 
 export function PeopleBulkEditor({
   people,
   onSubmitAction,
-  onEditAction
+  onEditAction,
+  getRoleManageHref
 }: {
   people: PersonRow[];
   onSubmitAction: (formData: FormData) => void;
   onEditAction: (formData: FormData) => void;
+  getRoleManageHref?: (personId: string) => string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
@@ -145,21 +149,32 @@ export function PeopleBulkEditor({
                       />
                     </td>
                     <td>{person.full_name}</td>
-                    <td>{person.role_title}</td>
+                    <td>
+                      {person.role_title}
+                      {person.role_count && person.role_count > 1 ? (
+                        <div className="meta-text">
+                          {person.role_count} roles • {person.role_summary || "multi-role"}
+                        </div>
+                      ) : null}
+                    </td>
                     <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
                     <td>{person.email || "No email"}</td>
                     <td>{person.submission_type ?? "bio"}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openEdit(person);
-                        }}
-                      >
-                        Edit
-                      </button>
+                      <div className="row-wrap" onClick={(event) => event.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={() => openEdit(person)}
+                        >
+                          Edit
+                        </button>
+                        {getRoleManageHref ? (
+                          <a className="ghost-button" href={getRoleManageHref(person.id)}>
+                            Manage Roles
+                          </a>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );

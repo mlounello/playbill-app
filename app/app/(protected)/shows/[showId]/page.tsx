@@ -78,6 +78,7 @@ export default async function ShowWorkspacePage({
     tab?: string;
     error?: string;
     success?: string;
+    personForRole?: string;
     submissionFilter?: string;
     submissionQuery?: string;
     submissionSort?: string;
@@ -87,7 +88,7 @@ export default async function ShowWorkspacePage({
   }>;
 }) {
   const { showId } = await params;
-  const { tab, error, success, submissionFilter, submissionQuery, submissionSort, submissionView, paddingSim, modulePreviewId } = await searchParams;
+  const { tab, error, success, personForRole, submissionFilter, submissionQuery, submissionSort, submissionView, paddingSim, modulePreviewId } = await searchParams;
   const show = await getShowById(showId);
   const validTabIds = new Set(tabs.map((item) => item.id));
   const normalizedTab = String(tab ?? "overview").split("?")[0];
@@ -287,6 +288,21 @@ export default async function ShowWorkspacePage({
       ? await getRoleLibraryData(show.id)
       : { roles: [], shows: [], selectedShowId: "" };
   const availableRoleTemplates = roleLibrary.roles.filter((role) => !role.is_hidden);
+  const roleAssignmentSummaryByPersonId = new Map<string, { count: number; summary: string }>();
+  if (activeTab === "people-roles") {
+    const grouped = new Map<string, string[]>();
+    for (const assignment of roleAssignments) {
+      const list = grouped.get(assignment.person_id) ?? [];
+      list.push(assignment.role_name);
+      grouped.set(assignment.person_id, list);
+    }
+    for (const [personId, roles] of grouped.entries()) {
+      roleAssignmentSummaryByPersonId.set(personId, {
+        count: roles.length,
+        summary: roles.slice(0, 3).join(", ")
+      });
+    }
+  }
 
   return (
     <main>
@@ -732,21 +748,27 @@ export default async function ShowWorkspacePage({
                   role_title: person.role_title,
                   team_type: person.role_category_display ?? person.team_type,
                   email: person.email,
+                  role_count: roleAssignmentSummaryByPersonId.get(person.id)?.count ?? 1,
+                  role_summary: roleAssignmentSummaryByPersonId.get(person.id)?.summary ?? person.role_title,
                   submission_type: person.submission_type
                 }))}
                 onSubmitAction={bulkEditSelectedPeopleAction}
                 onEditAction={updatePersonProfileAction}
+                getRoleManageHref={(personId) => `/app/shows/${show.id}?tab=people-roles&personForRole=${personId}#role-assignments`}
               />
+              <p className="section-note">
+                Tip: if someone has more than one role, click <strong>Manage Roles</strong> in their row. Role/category edits are handled in Role Assignments.
+              </p>
 
-              <article className="card stack-sm">
+              <article className="card stack-sm" id="role-assignments">
                 <strong>Role Assignments</strong>
                 <p className="section-note">
-                  Manage roles and categories per assignment. For multi-role people, edit each assignment row below.
+                  Use this section for role/category changes and multi-role setup. Use "Current People" above for person identity fields (name/email/submission type).
                 </p>
                 <form action={addRoleAssignmentAction} className="form-row-2" data-pending-label="Adding role assignment...">
                   <label>
                     Person
-                    <select name="personId" required defaultValue="">
+                    <select name="personId" required defaultValue={personForRole || ""}>
                       <option value="" disabled>
                         Select person
                       </option>
