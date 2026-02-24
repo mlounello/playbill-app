@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FlashToast } from "@/components/flash-toast";
+import { RichTextField } from "@/components/rich-text-field";
 import {
   createProducingProfile,
   deleteProducingProfile,
@@ -35,10 +36,12 @@ export default async function ProducingProfilesPage({
               Producing department / company name
               <input name="name" required placeholder="Siena University Creative Arts Department" />
             </label>
-            <label>
-              Overview / leadership / mission
-              <textarea name="description" placeholder="Chair, faculty, mission statement, and program details..." />
-            </label>
+            <RichTextField
+              name="description"
+              label="Overview / leadership / mission"
+              placeholder="Chair, faculty, mission statement, and program details..."
+              draftNamespace="producing-profiles:create"
+            />
             <div className="form-row-2">
               <label>
                 Website
@@ -71,10 +74,12 @@ export default async function ProducingProfilesPage({
                       Name
                       <input name="name" defaultValue={profile.name} required />
                     </label>
-                    <label>
-                      Description
-                      <textarea name="description" defaultValue={profile.description} />
-                    </label>
+                    <RichTextField
+                      name="description"
+                      label="Description"
+                      initialValue={profile.description}
+                      draftNamespace={`producing-profiles:${profile.id}`}
+                    />
                     <div className="form-row-2">
                       <label>
                         Website
