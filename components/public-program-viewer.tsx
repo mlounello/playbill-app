@@ -57,9 +57,11 @@ function PublicRenderPage({ page }: { page: ProgramPage }) {
             <section key={person.id} className="bio-row">
               {person.headshot_url ? <img src={person.headshot_url} alt={person.full_name} className="headshot" /> : null}
               <div>
-                <div className="bio-name">{person.full_name}</div>
-                <div className="bio-role">{person.role_title}</div>
-                <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(person.bio) }} />
+                <div className="bio-name">
+                  {person.full_name}
+                  {person.role_title?.trim() ? <span className="bio-role-inline"> ({person.role_title})</span> : null}
+                </div>
+                <div className="page-body rich-render bio-body" dangerouslySetInnerHTML={{ __html: sanitizeRichText(person.bio) }} />
               </div>
             </section>
           ))}

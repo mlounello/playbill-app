@@ -690,7 +690,7 @@ function buildRoleListRowsByCategory(
     grouped.set(role.person_id, existing);
   }
 
-  return [...grouped.values()]
+  const rowsFromRoles = [...grouped.values()]
     .sort((a, b) => {
       if (category === "cast") {
         const aOrder = a.billingOrder ?? Number.MAX_SAFE_INTEGER;
@@ -702,6 +702,31 @@ function buildRoleListRowsByCategory(
     .map((row) => ({
       role: joinRoles(row.roles),
       name: row.name
+    }));
+
+  if (rowsFromRoles.length > 0) {
+    return rowsFromRoles;
+  }
+
+  const creativeRolePattern =
+    /director|assistant director|dramaturg|music director|choreographer|fight director|intimacy|designer|composer|lyricist|playwright|book by/i;
+
+  // Legacy fallback: derive list rows from people if show_roles are unavailable.
+  return people
+    .filter((person) => {
+      if (category === "cast") {
+        return person.team_type === "cast";
+      }
+      if (person.team_type !== "production") {
+        return false;
+      }
+      const isCreative = creativeRolePattern.test(person.role_title);
+      return category === "creative" ? isCreative : !isCreative;
+    })
+    .sort((a, b) => a.full_name.localeCompare(b.full_name))
+    .map((person) => ({
+      role: person.role_title,
+      name: person.full_name
     }));
 }
 
@@ -849,7 +874,7 @@ function renderModulePages(
     if (!richTextHasContent(body)) {
       return emptyPlaceholder(
         title,
-        "Creative Team module is enabled, but no production records were found. Add people in People and Roles with category: production."
+        "Creative Team module is enabled, but no creative team records were found. Add people in People and Roles with category: creative."
       );
     }
     return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];

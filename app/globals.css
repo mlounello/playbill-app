@@ -296,6 +296,7 @@ button:disabled,
   font-family: var(--font-body);
   font-weight: 700;
   font-size: 11pt;
+  margin-bottom: 0.3rem;
 }
 
 .bio-role {
@@ -303,6 +304,13 @@ button:disabled,
   font-family: var(--font-body);
   font-size: 10pt;
   margin-bottom: 0.3rem;
+}
+
+.bio-role-inline {
+  color: inherit;
+  font-family: inherit;
+  font-weight: inherit;
+  font-size: inherit;
 }
 
 .bio-body {
