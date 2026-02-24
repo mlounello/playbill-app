@@ -195,17 +195,56 @@ a:focus-visible,
 
 .rich-toolbar {
   display: flex;
-  gap: 0.35rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.45rem;
+  align-items: center;
 }
 
-.rich-toolbar button {
-  background: #155c4b;
-  color: #fff;
+.rich-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.2rem;
+  border: 1px solid #d4c7b0;
+  border-radius: 0.45rem;
+  background: #f7f1e5;
+}
+
+.rich-toolbar-select-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.rich-toolbar-select {
+  width: auto;
+  min-width: 130px;
   border-radius: 0.35rem;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.85rem;
+  padding: 0.35rem 0.45rem;
+  background: #ffffff;
+  border: 1px solid #c7baa5;
+}
+
+.rich-tool-button {
+  border: 1px solid #c7baa5;
+  border-radius: 0.35rem;
+  background: #ffffff;
+  color: #16392f;
+  font-size: 0.83rem;
+  font-weight: 700;
+  padding: 0.32rem 0.52rem;
+  min-height: 32px;
+}
+
+.rich-tool-button:hover {
+  background: #eaf4f1;
+  border-color: #9eb9b0;
+}
+
+.rich-tool-button.is-active {
+  background: #0f5c49;
+  color: #ffffff;
+  border-color: #0f5c49;
 }
 
 .rich-textarea {
@@ -1079,6 +1118,11 @@ body.density-compact .admin-surface textarea {
 .ghost-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.draggable-module.drop-target {
+  border-color: #0f5c49;
+  box-shadow: 0 0 0 2px rgba(15, 92, 73, 0.2);
 }
 
 .people-editor {

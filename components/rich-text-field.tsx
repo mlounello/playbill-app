@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { RichTextEditor } from "@/components/rich-text-editor";
 
 type Props = {
   name: string;
@@ -12,7 +13,6 @@ type Props = {
 };
 
 export function RichTextField({ name, label, placeholder, required = false, initialValue = "", draftNamespace }: Props) {
-  const editorRef = useRef<HTMLDivElement | null>(null);
   const [value, setValue] = useState(() => {
     if (!draftNamespace || typeof window === "undefined") {
       return initialValue;
@@ -26,13 +26,6 @@ export function RichTextField({ name, label, placeholder, required = false, init
   });
 
   useEffect(() => {
-    if (!editorRef.current) return;
-    if (editorRef.current.innerHTML !== value) {
-      editorRef.current.innerHTML = value;
-    }
-  }, [value]);
-
-  useEffect(() => {
     if (!draftNamespace || typeof window === "undefined") {
       return;
     }
@@ -43,54 +36,14 @@ export function RichTextField({ name, label, placeholder, required = false, init
     }
   }, [draftNamespace, name, value]);
 
-  const run = (command: string, arg?: string) => {
-    if (!editorRef.current) return;
-    editorRef.current.focus();
-    document.execCommand(command, false, arg);
-    setValue(editorRef.current.innerHTML);
-  };
-
-  const onInput = () => {
-    if (!editorRef.current) return;
-    setValue(editorRef.current.innerHTML);
-  };
-
   return (
     <label>
       {label}
-      <div className="rich-toolbar" role="toolbar" aria-label={`${label} formatting`}>
-        <button type="button" onClick={() => run("bold")}>
-          Bold
-        </button>
-        <button type="button" onClick={() => run("italic")}>
-          Italic
-        </button>
-        <button type="button" onClick={() => run("underline")}>
-          Underline
-        </button>
-        <button type="button" onClick={() => run("insertUnorderedList")}>
-          Bullets
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            const url = window.prompt("Link URL (https://...)");
-            if (url) run("createLink", url);
-          }}
-        >
-          Link
-        </button>
-        <button type="button" className="ghost-button" onClick={() => run("removeFormat")}>
-          Clear format
-        </button>
-      </div>
-      <div
-        ref={editorRef}
-        className="rich-editor rich-editor-live"
-        contentEditable
-        suppressContentEditableWarning
-        data-placeholder={placeholder ?? "Type here..."}
-        onInput={onInput}
+      <RichTextEditor
+        label={label}
+        value={value}
+        onChange={setValue}
+        placeholder={placeholder}
       />
       <textarea name={name} value={value} onChange={() => {}} required={required} className="sr-only" />
     </label>

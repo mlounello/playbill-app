@@ -791,11 +791,28 @@ function isStackablePage(page: ProgramPage) {
   return page.type === "text" || (page.type === "filler" && richTextHasContent(page.body));
 }
 
+function countTag(html: string, tag: string) {
+  const re = new RegExp(`<${tag}(\\s|>)`, "gi");
+  return (html.match(re) ?? []).length;
+}
+
+function estimateRichTextLines(html: string) {
+  const plain = richTextToPlain(html);
+  const charLines = Math.ceil(Math.max(1, plain.length) / 72);
+  const paragraphBlocks = countTag(html, "p") + countTag(html, "li") + countTag(html, "blockquote");
+  const headingBlocks = countTag(html, "h3") + countTag(html, "h4");
+  const listBlocks = countTag(html, "ul") + countTag(html, "ol");
+  const hardBreaks = (html.match(/<br\s*\/?>/gi) ?? []).length;
+
+  return charLines + paragraphBlocks * 2 + headingBlocks * 2 + listBlocks * 3 + hardBreaks;
+}
+
 function estimateStackUnits(page: ProgramPage) {
   if (page.type === "text" || page.type === "filler") {
-    const textBody = page.type === "text" ? page.body : page.body;
-    const textLength = richTextToPlain(textBody).length + (page.title?.trim().length ?? 0);
-    return 120 + Math.min(820, Math.round(textLength * 0.42));
+    const textBody = page.body;
+    const lineEstimate = estimateRichTextLines(textBody);
+    const titleUnits = page.title?.trim() ? 44 : 0;
+    return titleUnits + Math.round(lineEstimate * 11.5);
   }
   return Number.MAX_SAFE_INTEGER;
 }
@@ -1065,8 +1082,12 @@ function renderModulePages(
 
   if (normalizedType === "custom_pages") {
     const pages: ProgramPage[] = [];
+    const allowMultiplePages = Boolean(module.settings.allow_multiple_pages ?? true);
     for (let i = 0; i < program.custom_pages.length; i += 1) {
       pages.push(mapCustomPageToRenderable(program.custom_pages[i], i));
+      if (!allowMultiplePages) {
+        break;
+      }
     }
     return pages;
   }
@@ -1156,7 +1177,8 @@ function buildRenderablePagesFromModules(
     }
 
     const separatePage = Boolean(module.settings.separate_page ?? true);
-    const canStackModule = !separatePage && renderedPages.length === 1 && isStackablePage(renderedPages[0]);
+    const keepTogether = Boolean(module.settings.keep_together ?? false);
+    const canStackModule = !separatePage && !keepTogether && renderedPages.length === 1 && isStackablePage(renderedPages[0]);
     if (!canStackModule) {
       flushStackBuffer();
       pages.push(...renderedPages);
@@ -1580,6 +1602,7 @@ export async function getProgramBySlug(
   slug: string,
   options?: {
     forceVisibleModuleIds?: string[];
+    previewModuleId?: string;
   }
 ) {
   try {
@@ -1642,6 +1665,7 @@ export async function getProgramBySlug(
     let fillerModulesUsed: string[] = [];
     let normalizedModules: ProgramModuleRecord[] = [];
     let showRoleAssignments: ShowRoleRecord[] = [];
+    let modulePreviewPage: ProgramPage | null = null;
     const { data: show } = await client
       .from("shows")
       .select("id, season_id, start_date, end_date")
@@ -1766,6 +1790,23 @@ export async function getProgramBySlug(
         );
       }
 
+      const previewModuleId = String(options?.previewModuleId ?? "").trim();
+      if (previewModuleId) {
+        const previewTarget = normalizedModules.find((module) => module.id === previewModuleId);
+        if (previewTarget) {
+          const previewRendered = renderModulePages(
+            { ...previewTarget, visible: true },
+            0,
+            safeProgram,
+            castPeople,
+            productionPeople,
+            showRoleAssignments,
+            appliedDensityMode
+          );
+          modulePreviewPage = previewRendered[0] ?? null;
+        }
+      }
+
       pageSequence = buildRenderablePagesFromModules(
         safeProgram,
         castPeople,
@@ -1856,6 +1897,14 @@ export async function getProgramBySlug(
     }
 
     const bookletSpreads = buildBookletSpreads(paddedPages);
+    const flattenedSpreadOrder = bookletSpreads.flatMap((spread) => [spread.left.content.id, spread.right.content.id]);
+    const paddedOrder = paddedPages.map((page) => page.id);
+    const parityMatches =
+      flattenedSpreadOrder.length === paddedOrder.length &&
+      flattenedSpreadOrder.every((id, index) => id === paddedOrder[index]);
+    if (!parityMatches) {
+      optimizationSteps.push("Warning: preview/export parity check flagged a page ordering mismatch.");
+    }
 
     return {
       id: String(program.id),
@@ -1870,6 +1919,8 @@ export async function getProgramBySlug(
       appliedDensityMode,
       fillerModulesUsed,
       optimizationSteps,
+      modulePreviewPage,
+      previewExportParityOk: parityMatches,
       bookletSpreads
     };
   } catch {

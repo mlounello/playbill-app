@@ -26,6 +26,7 @@ export function PreviewModuleReorder({
   const [items, setItems] = useState<PreviewModule[]>(modules);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
   const payload = useMemo(() => JSON.stringify(items.map((item) => item.id)), [items]);
 
   return (
@@ -34,7 +35,7 @@ export function PreviewModuleReorder({
       {items.map((module, index) => (
         <article
           key={module.id}
-          className="card card-soft row-between draggable-module"
+          className={`card card-soft row-between draggable-module${dropIndex === index ? " drop-target" : ""}`}
           style={{ gap: "0.5rem", opacity: draggingId === module.id ? 0.6 : 1 }}
           draggable
           onDragStart={(event) => {
@@ -51,16 +52,24 @@ export function PreviewModuleReorder({
             requestAnimationFrame(() => document.body.removeChild(ghost));
           }}
           onDragOver={(event) => event.preventDefault()}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            if (dragIndex !== null && dragIndex !== index) {
+              setDropIndex(index);
+            }
+          }}
           onDrop={(event) => {
             event.preventDefault();
             if (dragIndex === null || dragIndex === index) return;
             setItems((current) => moveItem(current, dragIndex, index));
             setDragIndex(null);
             setDraggingId(null);
+            setDropIndex(null);
           }}
           onDragEnd={() => {
             setDragIndex(null);
             setDraggingId(null);
+            setDropIndex(null);
           }}
         >
           <div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import type { ShowModule } from "@/lib/shows";
 
 type ModuleItem = {
@@ -204,11 +205,12 @@ function ModuleSettings({
       <div className="module-settings-grid">
         <label>
           Section body
-          <textarea
-            className="rich-textarea"
+          <RichTextEditor
+            label={`${item.display_title || "Custom Text"} body`}
             value={String(item.settings.body ?? "")}
-            onChange={(event) => setSetting("body", event.target.value)}
+            onChange={(next) => setSetting("body", next)}
             placeholder="Add rich text content for this custom section."
+            minHeightPx={220}
           />
         </label>
       </div>
@@ -411,6 +413,15 @@ export function ProgramPlanEditor({
                 }
               />
               Allow module to span multiple pages
+            </label>
+
+            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={Boolean(item.settings.keep_together ?? false)}
+                onChange={(event) => update(index, "settings", { ...item.settings, keep_together: event.target.checked })}
+              />
+              Keep module together (avoid sharing page)
             </label>
           </div>
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { FlashToast } from "@/components/flash-toast";
 import { PeopleBulkEditor } from "@/components/people-bulk-editor";
 import { PerformanceInputs } from "@/components/performance-inputs";
+import { ProgramPagePreviewCard } from "@/components/program-page-preview-card";
 import { PreviewModuleReorder } from "@/components/preview-module-reorder";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import { ProgramImageUpload } from "@/components/program-image-upload";
@@ -77,10 +78,11 @@ export default async function ShowWorkspacePage({
     submissionSort?: string;
     submissionView?: string;
     paddingSim?: string;
+    modulePreviewId?: string;
   }>;
 }) {
   const { showId } = await params;
-  const { tab, error, success, submissionFilter, submissionQuery, submissionSort, submissionView, paddingSim } = await searchParams;
+  const { tab, error, success, submissionFilter, submissionQuery, submissionSort, submissionView, paddingSim, modulePreviewId } = await searchParams;
   const show = await getShowById(showId);
   const validTabIds = new Set(tabs.map((item) => item.id));
   const normalizedTab = String(tab ?? "overview").split("?")[0];
@@ -199,7 +201,10 @@ export default async function ShowWorkspacePage({
       : [];
   const paddingPlanProgram =
     activeTab === "program-plan" && show.program_slug
-      ? await getProgramBySlug(show.program_slug, { forceVisibleModuleIds: paddingSimIds })
+      ? await getProgramBySlug(show.program_slug, {
+          forceVisibleModuleIds: paddingSimIds,
+          previewModuleId: modulePreviewId
+        })
       : null;
   const fillerCandidates =
     activeTab === "program-plan"
@@ -213,8 +218,20 @@ export default async function ShowWorkspacePage({
   const makePaddingSimHref = (ids: string[]) => {
     const params = new URLSearchParams();
     params.set("tab", "program-plan");
+    if (modulePreviewId) {
+      params.set("modulePreviewId", modulePreviewId);
+    }
     if (ids.length > 0) {
       params.set("paddingSim", ids.join(","));
+    }
+    return `/app/shows/${show.id}?${params.toString()}`;
+  };
+  const makeModulePreviewHref = (moduleId: string) => {
+    const params = new URLSearchParams();
+    params.set("tab", "program-plan");
+    params.set("modulePreviewId", moduleId);
+    if (paddingSimIds.length > 0) {
+      params.set("paddingSim", paddingSimIds.join(","));
     }
     return `/app/shows/${show.id}?${params.toString()}`;
   };
@@ -409,6 +426,12 @@ export default async function ShowWorkspacePage({
                           : "No optimization needed."}
                       </strong>
                     </div>
+                    <div>
+                      Preview/export parity:{" "}
+                      <strong style={{ color: paddingPlanProgram.previewExportParityOk ? undefined : "#8f1f1f" }}>
+                        {paddingPlanProgram.previewExportParityOk ? "OK" : "Check needed"}
+                      </strong>
+                    </div>
                     {fillerCandidates.length > 0 ? (
                       <div className="stack-sm">
                         <div className="meta-text">Simulate enabling hidden filler modules (without saving):</div>
@@ -455,6 +478,22 @@ export default async function ShowWorkspacePage({
                     Padding plan appears once this show is linked to a program.
                   </div>
                 )}
+              </article>
+              <article className="card stack-sm">
+                <strong>Live Module First-Page Preview</strong>
+                <div className="chip-row">
+                  {show.modules.map((module) => (
+                    <Link
+                      key={`preview-${module.id}`}
+                      href={makeModulePreviewHref(module.id)}
+                      className="tab-chip"
+                      style={module.id === modulePreviewId ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
+                    >
+                      {module.display_title || module.module_type}
+                    </Link>
+                  ))}
+                </div>
+                <ProgramPagePreviewCard page={paddingPlanProgram?.modulePreviewPage ?? null} />
               </article>
               <ProgramPlanEditor modules={show.modules} onSubmitAction={savePlanAction} />
             </section>
