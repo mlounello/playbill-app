@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/print-button";
 import { getProgramBySlug } from "@/lib/programs";
 import { sanitizeRichText } from "@/lib/rich-text";
+import { getSupabaseReadClient } from "@/lib/supabase";
 import type { ProgramPage } from "@/lib/programs";
 
 function RenderPageContent({ page }: { page: ProgramPage }) {
@@ -101,6 +102,9 @@ export default async function ProgramPage({
   const submittedRoster = [...program.castPeople, ...program.productionPeople].filter(
     (person) => person.submission_status === "submitted"
   ).length;
+  const client = getSupabaseReadClient();
+  const { data: showRow } = await client.from("shows").select("id").eq("program_id", program.id).maybeSingle();
+  const workspaceHref = showRow?.id ? `/app/shows/${showRow.id}` : null;
 
   return (
     <main className={isBookletView ? "print-booklet" : "print-proof"}>
@@ -109,7 +113,8 @@ export default async function ProgramPage({
           <>
             <div className="hide-print top-actions" style={{ marginBottom: "1rem" }}>
               <Link href="/programs">All Programs</Link>
-              <Link href={`/programs/${program.slug}/edit`}>Edit Program</Link>
+              {workspaceHref ? <Link href={`${workspaceHref}?tab=settings`}>Show Settings</Link> : null}
+              {workspaceHref ? <Link href={`${workspaceHref}?tab=program-plan`}>Program Plan</Link> : null}
               <Link href={`/programs/${program.slug}/submit`}>Share Bio Submission Form</Link>
               <Link href={`/programs/${program.slug}`}>Program order view</Link>
               <Link href={`/programs/${program.slug}?view=booklet`}>Booklet imposition view</Link>

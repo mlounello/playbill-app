@@ -6,6 +6,42 @@ import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabas
 
 export const BIO_CHAR_LIMIT_DEFAULT = 375;
 export const NO_BIO_PLACEHOLDER = "<p><em>No biography provided.</em></p>";
+export type SubmissionType = "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
+
+export function normalizeSubmissionType(value: string): SubmissionType {
+  if (value === "director_note" || value === "dramaturgical_note" || value === "music_director_note") {
+    return value;
+  }
+  return "bio";
+}
+
+export function getSubmissionTypeLabel(type: SubmissionType) {
+  if (type === "director_note") return "Director's Note";
+  if (type === "dramaturgical_note") return "Dramaturgical Note";
+  if (type === "music_director_note") return "Music Director's Note";
+  return "Bio";
+}
+
+function getProgramFieldForSubmissionType(type: SubmissionType): "director_notes" | "dramaturgical_note" | "music_director_note" | null {
+  if (type === "director_note") return "director_notes";
+  if (type === "dramaturgical_note") return "dramaturgical_note";
+  if (type === "music_director_note") return "music_director_note";
+  return null;
+}
+
+function inferSubmissionTypeFromRole(roleTitle: string): SubmissionType {
+  const normalized = roleTitle.trim().toLowerCase();
+  if (normalized.includes("music director")) {
+    return "music_director_note";
+  }
+  if (normalized.includes("dramaturg")) {
+    return "dramaturgical_note";
+  }
+  if (normalized === "director" || normalized.includes("director")) {
+    return "director_note";
+  }
+  return "bio";
+}
 
 const manualPersonSchema = z.object({
   fullName: z.string().min(1),
@@ -16,6 +52,8 @@ const manualPersonSchema = z.object({
   lastName: z.string().optional(),
   preferredName: z.string().optional(),
   pronouns: z.string().optional()
+  ,
+  submissionType: z.enum(["bio", "director_note", "dramaturgical_note", "music_director_note"]).optional()
 });
 
 const reviewSchema = z.object({
@@ -43,6 +81,7 @@ export type ShowSubmissionPerson = {
   role_title: string;
   team_type: "cast" | "production";
   email: string;
+  submission_type: SubmissionType;
   bio: string;
   no_bio: boolean;
   headshot_url: string;
@@ -59,6 +98,7 @@ export type ContributorTaskSummary = {
   person_id: string;
   person_name: string;
   role_title: string;
+  submission_type: SubmissionType;
   submission_status: ShowSubmissionPerson["submission_status"];
   due_date: string | null;
   submitted_at: string | null;
@@ -226,7 +266,8 @@ function parseBulkPeople(text: string) {
         firstName: first,
         lastName: last,
         preferredName: preferred,
-        pronouns
+        pronouns,
+        submissionType: inferSubmissionTypeFromRole(role)
       });
     });
   }
@@ -237,7 +278,8 @@ function parseBulkPeople(text: string) {
       fullName,
       roleTitle,
       teamType: teamTypeRaw.toLowerCase() === "cast" ? "cast" : "production",
-      email
+      email,
+      submissionType: inferSubmissionTypeFromRole(roleTitle)
     });
   });
 }
@@ -318,7 +360,8 @@ function parseCsvPeople(text: string) {
       firstName: first,
       lastName: last,
       preferredName: preferred,
-      pronouns
+      pronouns,
+      submissionType: inferSubmissionTypeFromRole(role)
     });
   });
 }
@@ -402,6 +445,9 @@ export async function getShowSubmissionPeople(showId: string) {
       role_title: String(person.role_title ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
+      submission_type: peopleColumns.has("submission_type")
+        ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
+        : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
       bio: cleanBio,
       no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: String(person.headshot_url ?? ""),
@@ -442,7 +488,8 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
           fullName: formData.get("fullName"),
           roleTitle: formData.get("roleTitle"),
           teamType: formData.get("teamType"),
-          email: formData.get("email")
+          email: formData.get("email"),
+          submissionType: formData.get("submissionType")
         })
       ];
     }
@@ -474,6 +521,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         role_title: record.roleTitle.trim(),
         team_type: record.teamType,
         email: normalizeEmail(record.email),
+        submission_type: record.submissionType ?? inferSubmissionTypeFromRole(record.roleTitle),
         bio: "",
         headshot_url: "",
         submission_status: "pending",
@@ -490,7 +538,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
   const { data: insertedPeople, error: insertError } = await client
     .from("people")
     .insert(insertRows)
-    .select("id, full_name, role_title, team_type");
+    .select("id, full_name, role_title, team_type, submission_type");
 
   if (insertError || !insertedPeople) {
     withError(`/app/shows/${showId}?tab=people-roles`, insertError?.message ?? "Could not add people.");
@@ -519,8 +567,16 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     await client.from("submission_requests").insert(
       (showRoles ?? []).map((role) => ({
         show_role_id: String(role.id),
-        request_type: "bio",
-        label: "Bio Submission",
+        request_type: String(
+          insertedPeople.find((person) => String(person.id) === String(role.person_id))?.submission_type ?? "bio"
+        ),
+        label: `${getSubmissionTypeLabel(
+          normalizeSubmissionType(
+            String(
+              insertedPeople.find((person) => String(person.id) === String(role.person_id))?.submission_type ?? "bio"
+            )
+          )
+        )} Submission`,
         constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
         status: "pending"
       }))
@@ -537,7 +593,8 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         id: person.id,
         full_name: person.full_name,
         role_title: person.role_title,
-        team_type: person.team_type
+        team_type: person.team_type,
+        submission_type: person.submission_type
       }))
     },
     reason: mode === "bulk" ? "bulk import" : "manual add"
@@ -556,8 +613,8 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
   const selectedTargetFields = formData
     .getAll("targetFields")
     .map((value) => String(value))
-    .filter((value) => ["full_name", "role_title", "team_type", "email"].includes(value)) as Array<
-    "full_name" | "role_title" | "team_type" | "email"
+    .filter((value) => ["full_name", "role_title", "team_type", "email", "submission_type"].includes(value)) as Array<
+    "full_name" | "role_title" | "team_type" | "email" | "submission_type"
   >;
 
   if (!["email", "name"].includes(lookupFieldRaw) || !editsText.trim() || selectedTargetFields.length === 0) {
@@ -573,7 +630,7 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
   const client = getSupabaseWriteClient();
   const { data: peopleRows } = await client
     .from("people")
-    .select("id, full_name, role_title, team_type, email")
+    .select("id, full_name, role_title, team_type, email, submission_type")
     .eq("program_id", context.program_id);
 
   const people: Array<{
@@ -582,15 +639,20 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
     role_title: string;
     team_type: "cast" | "production";
     email: string;
+    submission_type: SubmissionType;
   }> = (peopleRows ?? []).map((row) => ({
     id: String(row.id),
     full_name: String(row.full_name ?? ""),
     role_title: String(row.role_title ?? ""),
     team_type: row.team_type === "cast" ? "cast" : "production",
-    email: String(row.email ?? "")
+    email: String(row.email ?? ""),
+    submission_type: normalizeSubmissionType(String(row.submission_type ?? "bio"))
   }));
 
-  const mapByLookup = new Map<string, { id: string; full_name: string; role_title: string; team_type: "cast" | "production"; email: string }>();
+  const mapByLookup = new Map<
+    string,
+    { id: string; full_name: string; role_title: string; team_type: "cast" | "production"; email: string; submission_type: SubmissionType }
+  >();
   for (const person of people) {
     const key = lookupField === "email" ? normalizeEmail(person.email) : normalizeName(person.full_name);
     if (!key) {
@@ -629,7 +691,7 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
       continue;
     }
 
-    const updates = new Map<"full_name" | "role_title" | "team_type" | "email", string>();
+    const updates = new Map<"full_name" | "role_title" | "team_type" | "email" | "submission_type", string>();
 
     // Single-field convenience: `lookup | new value`
     if (selectedSet.size === 1 && parts.length === 2 && !parts[1].includes("=")) {
@@ -652,6 +714,8 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
                 ? "team_type"
                 : keyRaw === "email"
                   ? "email"
+                  : keyRaw === "submission" || keyRaw === "submission_type" || keyRaw === "requirement"
+                    ? "submission_type"
                   : null;
         if (!fieldKey || !selectedSet.has(fieldKey) || !valueRaw) {
           continue;
@@ -677,9 +741,11 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
           ? person.full_name
           : field === "role_title"
             ? person.role_title
-            : field === "team_type"
-              ? person.team_type
-              : person.email;
+              : field === "team_type"
+                ? person.team_type
+                : field === "submission_type"
+                  ? person.submission_type
+                  : person.email;
 
       if (field === "team_type") {
         const lowered = rawValue.toLowerCase();
@@ -696,6 +762,9 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
           continue;
         }
         nextValue = normalizeEmail(rawValue);
+      }
+      if (field === "submission_type") {
+        nextValue = normalizeSubmissionType(rawValue);
       }
 
       if (currentValue === nextValue) {
@@ -732,6 +801,24 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
         .update({ category: nextRoleCategory })
         .eq("show_id", showId)
         .eq("person_id", person.id);
+    }
+    if (updates.has("submission_type")) {
+      const nextType = normalizeSubmissionType(String(updates.get("submission_type") ?? "bio"));
+      const { data: roleRow } = await client
+        .from("show_roles")
+        .select("id")
+        .eq("show_id", showId)
+        .eq("person_id", person.id)
+        .maybeSingle();
+      if (roleRow?.id) {
+        await client
+          .from("submission_requests")
+          .update({
+            request_type: nextType,
+            label: `${getSubmissionTypeLabel(nextType)} Submission`
+          })
+          .eq("show_role_id", String(roleRow.id));
+      }
     }
 
     for (const audit of auditEntries) {
@@ -776,7 +863,8 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
   const enableRoleTitle = String(formData.get("enableRoleTitle") ?? "") === "on";
   const enableTeamType = String(formData.get("enableTeamType") ?? "") === "on";
   const enableEmail = String(formData.get("enableEmail") ?? "") === "on";
-  const enabledCount = [enableFullName, enableRoleTitle, enableTeamType, enableEmail].filter(Boolean).length;
+  const enableSubmissionType = String(formData.get("enableSubmissionType") ?? "") === "on";
+  const enabledCount = [enableFullName, enableRoleTitle, enableTeamType, enableEmail, enableSubmissionType].filter(Boolean).length;
   if (enabledCount === 0) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Enable at least one field to update.");
   }
@@ -785,6 +873,7 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
   const roleTitle = String(formData.get("roleTitle") ?? "").trim();
   const teamType = String(formData.get("teamType") ?? "").trim().toLowerCase();
   const email = String(formData.get("email") ?? "").trim();
+  const submissionType = normalizeSubmissionType(String(formData.get("submissionType") ?? "bio"));
 
   if (enableFullName && !fullName) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Full Name is required when enabled.");
@@ -807,7 +896,7 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
   const client = getSupabaseWriteClient();
   const { data: peopleRows } = await client
     .from("people")
-    .select("id, full_name, role_title, team_type, email")
+    .select("id, full_name, role_title, team_type, email, submission_type")
     .eq("program_id", context.program_id)
     .in("id", selectedIds);
 
@@ -816,7 +905,8 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
     full_name: String(row.full_name ?? ""),
     role_title: String(row.role_title ?? ""),
     team_type: row.team_type === "cast" ? "cast" : "production",
-    email: String(row.email ?? "")
+    email: String(row.email ?? ""),
+    submission_type: normalizeSubmissionType(String(row.submission_type ?? "bio"))
   }));
   if (people.length === 0) {
     withError(`/app/shows/${showId}?tab=people-roles`, "No selected people were found.");
@@ -844,6 +934,10 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
       peopleUpdate.email = normalizedEmail;
       audits.push({ field: "email", beforeValue: person.email, afterValue: normalizedEmail });
     }
+    if (enableSubmissionType && person.submission_type !== submissionType) {
+      peopleUpdate.submission_type = submissionType;
+      audits.push({ field: "submission_type", beforeValue: person.submission_type, afterValue: submissionType });
+    }
 
     if (Object.keys(peopleUpdate).length === 0) {
       continue;
@@ -863,6 +957,23 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
         .update({ category: teamType === "cast" ? "cast" : "production" })
         .eq("show_id", showId)
         .eq("person_id", person.id);
+    }
+    if (enableSubmissionType) {
+      const { data: roleRow } = await client
+        .from("show_roles")
+        .select("id")
+        .eq("show_id", showId)
+        .eq("person_id", person.id)
+        .maybeSingle();
+      if (roleRow?.id) {
+        await client
+          .from("submission_requests")
+          .update({
+            request_type: submissionType,
+            label: `${getSubmissionTypeLabel(submissionType)} Submission`
+          })
+          .eq("show_role_id", String(roleRow.id));
+      }
     }
 
     for (const audit of audits) {
@@ -886,6 +997,159 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
   );
 }
 
+export async function updateSpecialNoteAssignments(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const directorPersonId = String(formData.get("directorPersonId") ?? "").trim();
+  const dramaturgPersonId = String(formData.get("dramaturgPersonId") ?? "").trim();
+  const musicDirectorPersonId = String(formData.get("musicDirectorPersonId") ?? "").trim();
+
+  const selected = [directorPersonId, dramaturgPersonId, musicDirectorPersonId].filter(Boolean);
+  const unique = new Set(selected);
+  if (unique.size !== selected.length) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Each special note assignment must be a different person.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: peopleRows } = await client
+    .from("people")
+    .select("id, full_name, submission_type")
+    .eq("program_id", context.program_id);
+  const people = (peopleRows ?? []).map((row) => ({
+    id: String(row.id),
+    full_name: String(row.full_name ?? ""),
+    submission_type: normalizeSubmissionType(String(row.submission_type ?? "bio"))
+  }));
+
+  const peopleIdSet = new Set(people.map((person) => person.id));
+  for (const selectedId of unique) {
+    if (!peopleIdSet.has(selectedId)) {
+      withError(`/app/shows/${showId}?tab=people-roles`, "One or more selected people are no longer available.");
+    }
+  }
+
+  const noteTypes = new Set<SubmissionType>(["director_note", "dramaturgical_note", "music_director_note"]);
+  const assignmentByPersonId = new Map<string, SubmissionType>();
+  if (directorPersonId) {
+    assignmentByPersonId.set(directorPersonId, "director_note");
+  }
+  if (dramaturgPersonId) {
+    assignmentByPersonId.set(dramaturgPersonId, "dramaturgical_note");
+  }
+  if (musicDirectorPersonId) {
+    assignmentByPersonId.set(musicDirectorPersonId, "music_director_note");
+  }
+
+  const changedPersonIds: string[] = [];
+  for (const person of people) {
+    const isCurrentSpecial = noteTypes.has(person.submission_type);
+    const isSelectedSpecial = assignmentByPersonId.has(person.id);
+    if (!isCurrentSpecial && !isSelectedSpecial) {
+      continue;
+    }
+
+    const nextType = assignmentByPersonId.get(person.id) ?? "bio";
+    if (nextType === person.submission_type) {
+      continue;
+    }
+
+    const { error: peopleUpdateError } = await client
+      .from("people")
+      .update({ submission_type: nextType })
+      .eq("id", person.id);
+    if (peopleUpdateError) {
+      withError(`/app/shows/${showId}?tab=people-roles`, peopleUpdateError.message);
+    }
+
+    await writeAuditLog({
+      entity: "people",
+      entityId: person.id,
+      field: "submission_type",
+      beforeValue: person.submission_type,
+      afterValue: nextType,
+      reason: "special_note_assignment"
+    });
+    changedPersonIds.push(person.id);
+  }
+
+  if (changedPersonIds.length > 0) {
+    const { data: roleRows } = await client
+      .from("show_roles")
+      .select("id, person_id")
+      .eq("show_id", showId)
+      .in("person_id", changedPersonIds);
+
+    for (const role of roleRows ?? []) {
+      const personId = String(role.person_id ?? "");
+      if (!personId) {
+        continue;
+      }
+      const nextType = assignmentByPersonId.get(personId) ?? "bio";
+      const { data: existingRequest } = await client
+        .from("submission_requests")
+        .select("id")
+        .eq("show_role_id", String(role.id))
+        .maybeSingle();
+
+      if (existingRequest?.id) {
+        await client
+          .from("submission_requests")
+          .update({
+            request_type: nextType,
+            label: `${getSubmissionTypeLabel(nextType)} Submission`
+          })
+          .eq("id", String(existingRequest.id));
+      } else {
+        await client.from("submission_requests").insert({
+          show_role_id: String(role.id),
+          request_type: nextType,
+          label: `${getSubmissionTypeLabel(nextType)} Submission`,
+          constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
+          status: "pending"
+        });
+      }
+    }
+  }
+
+  const assignmentLabel = [
+    directorPersonId
+      ? `Director: ${people.find((person) => person.id === directorPersonId)?.full_name ?? "Assigned"}`
+      : "Director: Unassigned",
+    dramaturgPersonId
+      ? `Dramaturgical: ${people.find((person) => person.id === dramaturgPersonId)?.full_name ?? "Assigned"}`
+      : "Dramaturgical: Unassigned",
+    musicDirectorPersonId
+      ? `Music Director: ${people.find((person) => person.id === musicDirectorPersonId)?.full_name ?? "Assigned"}`
+      : "Music Director: Unassigned"
+  ].join(" | ");
+
+  await writeAuditLog({
+    entity: "show",
+    entityId: showId,
+    field: "special_note_assignments",
+    beforeValue: null,
+    afterValue: {
+      directorPersonId: directorPersonId || null,
+      dramaturgPersonId: dramaturgPersonId || null,
+      musicDirectorPersonId: musicDirectorPersonId || null
+    },
+    reason: assignmentLabel
+  });
+
+  redirect(
+    `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
+      `Special note assignments updated. ${changedPersonIds.length} submission type assignment(s) changed.`
+    )}`
+  );
+}
+
 export async function getContributorTasksForCurrentUser() {
   const current = await getCurrentUserWithProfile();
   if (!current?.user?.email) {
@@ -895,7 +1159,7 @@ export async function getContributorTasksForCurrentUser() {
   const client = getSupabaseWriteClient();
   const { data: peopleRows } = await client
     .from("people")
-    .select("id, full_name, role_title, program_id, submission_status, submitted_at, email")
+    .select("id, full_name, role_title, program_id, submission_status, submitted_at, email, submission_type")
     .ilike("email", current.user.email);
 
   if (!peopleRows || peopleRows.length === 0) {
@@ -953,6 +1217,7 @@ export async function getContributorTasksForCurrentUser() {
         person_id: String(row.id),
         person_name: String(row.full_name ?? ""),
         role_title: String(row.role_title ?? ""),
+        submission_type: normalizeSubmissionType(String(row.submission_type ?? "bio")),
         submission_status: normalizeSubmissionStatus(String(row.submission_status ?? "pending")),
         due_date: dueDateByPersonId.get(String(row.id)) ?? null,
         submitted_at: row.submitted_at ? String(row.submitted_at) : null
@@ -1010,6 +1275,9 @@ export async function getContributorTaskById(showId: string, personId: string) {
       role_title: String(person.role_title ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
+      submission_type: peopleColumns.has("submission_type")
+        ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
+        : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
       bio: String(person.bio ?? ""),
       no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: String(person.headshot_url ?? ""),
@@ -1057,15 +1325,21 @@ async function updateSubmissionCore(args: {
     return { ok: false as const, message: "Submission task was not found." };
   }
 
+  const submissionType = peopleColumns.has("submission_type")
+    ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
+    : inferSubmissionTypeFromRole(String(person.role_title ?? ""));
+  const submissionLabel = getSubmissionTypeLabel(submissionType);
+  const isBioType = submissionType === "bio";
+  const resolvedHeadshotUrl = isBioType ? args.headshotUrl : String(person.headshot_url ?? "");
   const typedBio = sanitizeRichText(args.bio);
-  const cleanBio = args.skipBio ? "" : typedBio;
+  const cleanBio = isBioType && args.skipBio ? "" : typedBio;
   const plainLength = stripRichTextToPlain(typedBio).length;
-  if (!args.skipBio && (args.status === "submitted" || args.status === "approved" || args.status === "locked") && plainLength === 0) {
-    return { ok: false as const, message: "Bio is required before submitting." };
+  if (isBioType && !args.skipBio && (args.status === "submitted" || args.status === "approved" || args.status === "locked") && plainLength === 0) {
+    return { ok: false as const, message: `${submissionLabel} is required before submitting.` };
   }
 
   if (!args.skipBio && plainLength > BIO_CHAR_LIMIT_DEFAULT) {
-    return { ok: false as const, message: `Bio exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.` };
+    return { ok: false as const, message: `${submissionLabel} exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.` };
   }
 
   const submittedAt =
@@ -1079,10 +1353,10 @@ async function updateSubmissionCore(args: {
       filterToColumns(
         {
           bio: cleanBio,
-          headshot_url: args.headshotUrl,
+          headshot_url: resolvedHeadshotUrl,
           submission_status: args.status,
           submitted_at: submittedAt,
-          no_bio: Boolean(args.skipBio)
+          no_bio: isBioType ? Boolean(args.skipBio) : false
         },
         peopleColumns
       )
@@ -1097,14 +1371,33 @@ async function updateSubmissionCore(args: {
   if (String(person.bio ?? "") !== cleanBio) {
     updates.push({ field: "bio", before: person.bio, after: cleanBio });
   }
-  if (String(person.headshot_url ?? "") !== args.headshotUrl) {
-    updates.push({ field: "headshot_url", before: person.headshot_url, after: args.headshotUrl });
+  if (String(person.headshot_url ?? "") !== resolvedHeadshotUrl) {
+    updates.push({ field: "headshot_url", before: person.headshot_url, after: resolvedHeadshotUrl });
   }
   if (String(person.submission_status ?? "pending") !== args.status) {
     updates.push({ field: "submission_status", before: person.submission_status, after: args.status });
   }
-  if (peopleColumns.has("no_bio") && Boolean(person.no_bio) !== Boolean(args.skipBio)) {
+  if (isBioType && peopleColumns.has("no_bio") && Boolean(person.no_bio) !== Boolean(args.skipBio)) {
     updates.push({ field: "no_bio", before: Boolean(person.no_bio), after: Boolean(args.skipBio) });
+  }
+
+  const programField = getProgramFieldForSubmissionType(submissionType);
+  if (programField) {
+    const { error: programUpdateError } = await client
+      .from("programs")
+      .update({ [programField]: cleanBio })
+      .eq("id", context.program_id);
+    if (programUpdateError) {
+      return { ok: false as const, message: programUpdateError.message };
+    }
+    await writeAuditLog({
+      entity: "programs",
+      entityId: context.program_id,
+      field: programField,
+      beforeValue: null,
+      afterValue: cleanBio,
+      reason: `${submissionLabel} sync from contributor/admin submission`
+    });
   }
 
   for (const entry of updates) {
@@ -1203,6 +1496,9 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
       role_title: String(person.role_title ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
+      submission_type: peopleColumns.has("submission_type")
+        ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
+        : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
       bio: String(person.bio ?? ""),
       no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: String(person.headshot_url ?? ""),

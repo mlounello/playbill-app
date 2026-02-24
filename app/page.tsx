@@ -10,8 +10,8 @@ export default function Home() {
             Build polished theatre programs from cast bios, director&apos;s notes, photos, and credits. Publish online and print beautifully.
           </p>
           <div className="top-actions">
-            <Link className="button-link" href="/programs/new">
-              Create a New Program
+            <Link className="button-link" href="/app/shows/new">
+              Create a New Show
             </Link>
             <Link className="tab-chip" href="/app/shows">
               Open Admin Workspace

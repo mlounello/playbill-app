@@ -52,10 +52,11 @@ export default async function AdminShowsPage({
                 </div>
                 <div className="link-row">
                   <Link href={`/app/shows/${show.id}`}>Open Workspace</Link>
+                  <Link href={`/app/shows/${show.id}?tab=settings`}>Show Settings</Link>
+                  <Link href={`/app/shows/${show.id}?tab=program-plan`}>Program Plan</Link>
                   <Link href={`/app/shows/${show.id}?tab=publish`}>Publish Settings</Link>
                   <Link href={`/p/${show.slug}`}>Public Page</Link>
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Program</Link> : null}
-                  {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
                 </div>
               </article>
             ))}

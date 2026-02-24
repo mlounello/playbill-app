@@ -43,6 +43,7 @@ export default async function NewProgramPage({
 
           <RichTextField name="directorNotes" label="Director's Note (full page)" />
           <RichTextField name="dramaturgicalNote" label="Dramaturgical Note (full page)" />
+          <RichTextField name="musicDirectorNote" label="Music Director's Note (optional)" />
           <RichTextField
             name="billingPage"
             label="Billing Page"
@@ -92,7 +93,7 @@ export default async function NewProgramPage({
             <br />
             Custom page format: <code>Title | text|image|photos | Content</code>
             <br />
-            Valid layout tokens: <code>poster</code>, <code>director_note</code>, <code>dramaturgical_note</code>, <code>billing</code>, <code>acts_songs</code>, <code>cast_bios</code>, <code>team_bios</code>, <code>department_info</code>, <code>actf_ad</code>, <code>acknowledgements</code>, <code>season_calendar</code>, <code>production_photos</code>, <code>custom_pages</code>
+            Valid layout tokens: <code>poster</code>, <code>director_note</code>, <code>dramaturgical_note</code>, <code>music_director_note</code>, <code>billing</code>, <code>acts_songs</code>, <code>cast_bios</code>, <code>team_bios</code>, <code>department_info</code>, <code>actf_ad</code>, <code>acknowledgements</code>, <code>season_calendar</code>, <code>production_photos</code>, <code>custom_pages</code>
           </div>
 
           <button type="submit">Create Program</button>

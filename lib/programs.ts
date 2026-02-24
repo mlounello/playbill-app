@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { buildDepartmentInfoHtml } from "@/lib/departments";
 import { getMissingSupabaseEnvVars, getSupabaseReadClient, getSupabaseWriteClient } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
@@ -8,6 +9,7 @@ const layoutTokenValues = [
   "poster",
   "director_note",
   "dramaturgical_note",
+  "music_director_note",
   "billing",
   "acts_songs",
   "cast_bios",
@@ -109,6 +111,7 @@ const payloadSchema = z.object({
   posterImageUrl: z.string().optional().or(z.literal("")),
   directorNotes: z.string().optional().or(z.literal("")),
   dramaturgicalNote: z.string().optional().or(z.literal("")),
+  musicDirectorNote: z.string().optional().or(z.literal("")),
   billingPage: z.string().optional().or(z.literal("")),
   actsAndSongs: z.string().optional().or(z.literal("")),
   departmentInfo: z.string().optional().or(z.literal("")),
@@ -384,24 +387,59 @@ function generateAutoBilling(people: RosterPerson[]) {
     return "";
   }
 
-  const cast = people
-    .filter((person) => person.teamType === "cast")
-    .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
-  const production = people
-    .filter((person) => person.teamType === "production")
-    .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
+  const cast = people.filter((person) => person.teamType === "cast");
+  const production = people.filter((person) => person.teamType === "production");
+  const creativeRolePattern =
+    /director|assistant director|dramaturg|music director|choreographer|fight director|intimacy|designer|composer|lyricist|playwright|book by/i;
+  const creativeTeam = production.filter((person) => creativeRolePattern.test(person.role));
+  const productionTeam = production.filter((person) => !creativeRolePattern.test(person.role));
 
-  const section = (title: string, rows: RosterPerson[]) => {
+  const section = (title: string, rows: RosterPerson[], sortByRole = false) => {
     if (!rows.length) {
       return "";
     }
-    const listItems = rows
-      .map((row) => `<li><strong>${escapeHtml(row.role)}</strong>: ${escapeHtml(row.name)}</li>`)
+    const sorted = [...rows].sort((a, b) =>
+      sortByRole ? a.role.localeCompare(b.role) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)
+    );
+    const listItems = sorted
+      .map(
+        (row) =>
+          `<li class="billing-item"><span class="billing-left">${escapeHtml(row.role)}</span><span class="billing-leader" aria-hidden="true"></span><span class="billing-right">${escapeHtml(row.name)}</span></li>`
+      )
       .join("");
-    return `<h3>${escapeHtml(title)}</h3><ul>${listItems}</ul>`;
+    return `<section class="billing-section"><h3 class="billing-section-title">${escapeHtml(title)}</h3><ul class="billing-list">${listItems}</ul></section>`;
   };
 
-  return section("Cast", cast) + section("Production Team", production);
+  return (
+    `<div class="billing-sheet">` +
+    section("Cast", cast, false) +
+    section("Creative Team", creativeTeam, true) +
+    section("Production Team", productionTeam, true) +
+    `</div>`
+  );
+}
+
+function getResolvedBillingPage(
+  manualBillingHtml: string,
+  cast: Array<{ full_name: string; role_title: string }>,
+  production: Array<{ full_name: string; role_title: string }>
+) {
+  if (richTextHasContent(manualBillingHtml)) {
+    return manualBillingHtml;
+  }
+  const roster: RosterPerson[] = [
+    ...cast.map((person) => ({
+      name: person.full_name,
+      role: person.role_title,
+      teamType: "cast" as const
+    })),
+    ...production.map((person) => ({
+      name: person.full_name,
+      role: person.role_title,
+      teamType: "production" as const
+    }))
+  ];
+  return generateAutoBilling(roster);
 }
 
 function parseLayoutOrder(text: string): LayoutToken[] {
@@ -568,6 +606,7 @@ function renderModulePages(
     poster_image_url: string;
     director_notes: string;
     dramaturgical_note: string;
+    music_director_note: string;
     billing_page: string;
     acts_songs: string;
     department_info: string;
@@ -587,7 +626,9 @@ function renderModulePages(
   const hasPoster = Boolean(program.poster_image_url.trim());
   const hasDirectorNote = richTextHasContent(program.director_notes);
   const hasDramaturgicalNote = richTextHasContent(program.dramaturgical_note);
-  const hasBilling = richTextHasContent(program.billing_page);
+  const hasMusicDirectorNote = richTextHasContent(program.music_director_note);
+  const resolvedBillingPage = getResolvedBillingPage(program.billing_page, cast, production);
+  const hasBilling = richTextHasContent(resolvedBillingPage);
   const hasActsSongs = richTextHasContent(program.acts_songs);
   const hasDepartmentInfo = richTextHasContent(program.department_info);
   const hasAcknowledgements = richTextHasContent(program.acknowledgements);
@@ -684,6 +725,13 @@ function renderModulePages(
     return [{ id: idBase, type: "text", title, body: program.dramaturgical_note }] satisfies ProgramPage[];
   }
 
+  if (module.module_type === "music_director_note") {
+    if (!hasMusicDirectorNote) {
+      return [] as ProgramPage[];
+    }
+    return [{ id: idBase, type: "text", title, body: program.music_director_note }] satisfies ProgramPage[];
+  }
+
   if (module.module_type === "acts_scenes" || module.module_type === "songs") {
     if (!hasActsSongs) {
       return [] as ProgramPage[];
@@ -757,7 +805,7 @@ function renderModulePages(
   }
 
   if (module.module_type === "billing" && hasBilling) {
-    return [{ id: idBase, type: "text", title, body: program.billing_page }] satisfies ProgramPage[];
+    return [{ id: idBase, type: "text", title, body: resolvedBillingPage }] satisfies ProgramPage[];
   }
 
   if (module.module_type === "department_info" && hasDepartmentInfo) {
@@ -800,6 +848,7 @@ function buildRenderablePagesFromModules(
     poster_image_url: string;
     director_notes: string;
     dramaturgical_note: string;
+    music_director_note: string;
     billing_page: string;
     acts_songs: string;
     department_info: string;
@@ -886,27 +935,29 @@ function formatPerformanceLabel(performance: PerformanceRecord) {
 export async function createProgram(formData: FormData) {
   "use server";
 
+  const readText = (key: string) => formData.get(key)?.toString() ?? "";
   const parseResult = payloadSchema.safeParse({
-    title: formData.get("title"),
-    theatreName: formData.get("theatreName"),
-    showDates: formData.get("showDates"),
-    showDatesOverride: formData.get("showDatesOverride"),
-    performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
-    posterImageUrl: formData.get("posterImageUrl"),
-    directorNotes: formData.get("directorNotes"),
-    dramaturgicalNote: formData.get("dramaturgicalNote"),
-    billingPage: formData.get("billingPage"),
-    actsAndSongs: formData.get("actsAndSongs"),
-    departmentInfo: formData.get("departmentInfo"),
-    seasonCalendar: formData.get("seasonCalendar"),
-    acknowledgements: formData.get("acknowledgements"),
-    actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
-    rosterLines: formData.get("rosterLines"),
-    castLines: formData.get("castLines"),
-    productionTeamLines: formData.get("productionTeamLines"),
+    title: readText("title"),
+    theatreName: readText("theatreName"),
+    showDates: readText("showDates"),
+    showDatesOverride: readText("showDatesOverride"),
+    performanceSchedule: readText("performanceSchedule") || "[]",
+    posterImageUrl: readText("posterImageUrl"),
+    directorNotes: readText("directorNotes"),
+      dramaturgicalNote: readText("dramaturgicalNote"),
+      musicDirectorNote: readText("musicDirectorNote"),
+    billingPage: readText("billingPage"),
+    actsAndSongs: readText("actsAndSongs"),
+    departmentInfo: readText("departmentInfo"),
+    seasonCalendar: readText("seasonCalendar"),
+    acknowledgements: readText("acknowledgements"),
+    actfAdImageUrl: readText("actfAdImageUrl"),
+    rosterLines: readText("rosterLines"),
+    castLines: readText("castLines"),
+    productionTeamLines: readText("productionTeamLines"),
     productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
     customPages: formData.get("customPages")?.toString(),
-    layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
+    layoutOrder: readText("layoutOrder")
   });
   if (!parseResult.success) {
     const issue = parseResult.error.issues[0];
@@ -980,6 +1031,7 @@ export async function createProgram(formData: FormData) {
     poster_image_url: posterImageUrl,
     director_notes: sanitizeRichText(parsed.directorNotes),
     dramaturgical_note: sanitizeRichText(parsed.dramaturgicalNote),
+    music_director_note: sanitizeRichText(parsed.musicDirectorNote),
     billing_page: resolvedBilling,
     acts_songs: sanitizeRichText(parsed.actsAndSongs),
     department_info: sanitizeRichText(parsed.departmentInfo),
@@ -1036,6 +1088,7 @@ function buildRenderablePages(
     poster_image_url: string;
     director_notes: string;
     dramaturgical_note: string;
+    music_director_note: string;
     billing_page: string;
     acts_songs: string;
     department_info: string;
@@ -1053,6 +1106,7 @@ function buildRenderablePages(
   const hasText = (value: string) => Boolean(value && value.trim().length > 0);
   const castWithBios = peopleWithBios(cast);
   const productionWithBios = peopleWithBios(production);
+  const resolvedBillingPage = getResolvedBillingPage(program.billing_page, cast, production);
   const pageByToken: Record<Exclude<LayoutToken, "custom_pages" | "production_photos">, ProgramPage> = {
     poster: {
       id: "poster",
@@ -1068,7 +1122,13 @@ function buildRenderablePages(
       title: "Dramaturgical Note",
       body: program.dramaturgical_note
     },
-    billing: { id: "billing", type: "text", title: "Billing", body: program.billing_page },
+    music_director_note: {
+      id: "music-director-note",
+      type: "text",
+      title: "Music Director's Note",
+      body: program.music_director_note
+    },
+    billing: { id: "billing", type: "text", title: "Billing", body: resolvedBillingPage },
     acts_songs: { id: "acts-songs", type: "text", title: "Acts & Songs", body: program.acts_songs },
     cast_bios: { id: "cast-bios", type: "filler", title: "cast-bios", body: "" },
     team_bios: { id: "team-bios", type: "filler", title: "team-bios", body: "" },
@@ -1133,7 +1193,10 @@ function buildRenderablePages(
     if (token === "dramaturgical_note" && !richTextHasContent(program.dramaturgical_note)) {
       continue;
     }
-    if (token === "billing" && !richTextHasContent(program.billing_page)) {
+    if (token === "music_director_note" && !richTextHasContent(program.music_director_note)) {
+      continue;
+    }
+    if (token === "billing" && !richTextHasContent(resolvedBillingPage)) {
       continue;
     }
     if (token === "acts_songs" && !richTextHasContent(program.acts_songs)) {
@@ -1227,6 +1290,7 @@ export async function getProgramBySlug(
       poster_image_url: String(program.poster_image_url ?? ""),
       director_notes: String(program.director_notes ?? ""),
       dramaturgical_note: String(program.dramaturgical_note ?? ""),
+      music_director_note: String(program.music_director_note ?? ""),
       billing_page: String(program.billing_page ?? ""),
       acts_songs: String(program.acts_songs ?? ""),
       department_info: String(program.department_info ?? ""),
@@ -1250,6 +1314,37 @@ export async function getProgramBySlug(
       .maybeSingle();
 
     if (show?.id) {
+      try {
+        const { data: bindings } = await client
+          .from("show_departments")
+          .select("department_id, sort_order")
+          .eq("show_id", String(show.id))
+          .order("sort_order", { ascending: true });
+        const departmentIds = (bindings ?? []).map((row) => String(row.department_id ?? "")).filter(Boolean);
+        if (departmentIds.length > 0) {
+          const { data: departments } = await client
+            .from("departments")
+            .select("id, name, description, website, contact_email, contact_phone")
+            .in("id", departmentIds);
+          const order = new Map(departmentIds.map((id, index) => [id, index]));
+          const orderedDepartments = (departments ?? [])
+            .map((row) => ({
+              id: String(row.id ?? ""),
+              name: String(row.name ?? ""),
+              description: String(row.description ?? ""),
+              website: String(row.website ?? ""),
+              contact_email: String(row.contact_email ?? ""),
+              contact_phone: String(row.contact_phone ?? "")
+            }))
+            .sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+          safeProgram.department_info = buildDepartmentInfoHtml(orderedDepartments);
+        } else {
+          safeProgram.department_info = "";
+        }
+      } catch {
+        // Keep existing program.department_info if department tables are not available yet.
+      }
+
       const { data: styleRow } = await client
         .from("show_style_settings")
         .select("density_mode")
@@ -1482,27 +1577,29 @@ export async function getProgramWorkspaceList() {
 export async function updateProgram(slug: string, formData: FormData) {
   "use server";
 
+  const readText = (key: string) => formData.get(key)?.toString() ?? "";
   const parseResult = payloadSchema.safeParse({
-    title: formData.get("title"),
-    theatreName: formData.get("theatreName"),
-    showDates: formData.get("showDates"),
-    showDatesOverride: formData.get("showDatesOverride"),
-    performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
-    posterImageUrl: formData.get("posterImageUrl"),
-    directorNotes: formData.get("directorNotes"),
-    dramaturgicalNote: formData.get("dramaturgicalNote"),
-    billingPage: formData.get("billingPage"),
-    actsAndSongs: formData.get("actsAndSongs"),
-    departmentInfo: formData.get("departmentInfo"),
-    seasonCalendar: formData.get("seasonCalendar"),
-    acknowledgements: formData.get("acknowledgements"),
-    actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
-    rosterLines: formData.get("rosterLines"),
-    castLines: formData.get("castLines"),
-    productionTeamLines: formData.get("productionTeamLines"),
+    title: readText("title"),
+    theatreName: readText("theatreName"),
+    showDates: readText("showDates"),
+    showDatesOverride: readText("showDatesOverride"),
+    performanceSchedule: readText("performanceSchedule") || "[]",
+    posterImageUrl: readText("posterImageUrl"),
+    directorNotes: readText("directorNotes"),
+      dramaturgicalNote: readText("dramaturgicalNote"),
+      musicDirectorNote: readText("musicDirectorNote"),
+    billingPage: readText("billingPage"),
+    actsAndSongs: readText("actsAndSongs"),
+    departmentInfo: readText("departmentInfo"),
+    seasonCalendar: readText("seasonCalendar"),
+    acknowledgements: readText("acknowledgements"),
+    actfAdImageUrl: readText("actfAdImageUrl"),
+    rosterLines: readText("rosterLines"),
+    castLines: readText("castLines"),
+    productionTeamLines: readText("productionTeamLines"),
     productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
     customPages: formData.get("customPages")?.toString(),
-    layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
+    layoutOrder: readText("layoutOrder")
   });
   if (!parseResult.success) {
     const issue = parseResult.error.issues[0];
@@ -1519,12 +1616,18 @@ export async function updateProgram(slug: string, formData: FormData) {
 
   const { data: existingProgram, error: existingProgramError } = await client
     .from("programs")
-    .select("id, slug")
+    .select("id, slug, acts_songs, department_info, season_calendar, poster_image_url, show_dates, performance_schedule")
     .eq("slug", slug)
     .single();
   if (existingProgramError || !existingProgram) {
     redirectWithError("/programs", "Program not found.");
   }
+
+  const { data: linkedShow } = await client
+    .from("shows")
+    .select("id")
+    .eq("program_id", existingProgram.id)
+    .maybeSingle();
 
   const { data: existingPeopleRows } = await client.from("people").select("*").eq("program_id", existingProgram.id);
   const existingPeople = normalizeExistingPeopleRows((existingPeopleRows ?? []) as Record<string, unknown>[]);
@@ -1538,10 +1641,16 @@ export async function updateProgram(slug: string, formData: FormData) {
       return redirectWithError(`/programs/${slug}/edit`, "Layout order contains invalid section tokens.");
     }
   }
-  const performanceSchedule = parsePerformanceSchedule(parsed.performanceSchedule);
-  const autoShowDates = performanceSchedule.map((item) => formatPerformanceLabel(item)).filter(Boolean).join(" | ");
-  const resolvedShowDates = (parsed.showDatesOverride && parsed.showDatesOverride.trim()) || parsed.showDates || autoShowDates;
-  if (!resolvedShowDates) {
+  const parsedPerformanceSchedule = parsePerformanceSchedule(parsed.performanceSchedule);
+  const parsedAutoShowDates = parsedPerformanceSchedule.map((item) => formatPerformanceLabel(item)).filter(Boolean).join(" | ");
+  const parsedShowDatesOverride = parsed.showDatesOverride && parsed.showDatesOverride.trim();
+  const parsedResolvedShowDates = parsedShowDatesOverride || parsed.showDates || parsedAutoShowDates;
+  const existingPerformanceSchedule = Array.isArray(existingProgram.performance_schedule)
+    ? (existingProgram.performance_schedule as PerformanceRecord[])
+    : [];
+  const performanceSchedule = linkedShow ? existingPerformanceSchedule : parsedPerformanceSchedule;
+  const resolvedShowDates = linkedShow ? String(existingProgram.show_dates ?? "") : parsedResolvedShowDates;
+  if (!resolvedShowDates && !linkedShow) {
     redirectWithError(`/programs/${slug}/edit`, "At least one performance date is required.");
   }
 
@@ -1566,6 +1675,9 @@ export async function updateProgram(slug: string, formData: FormData) {
 
   const mergedPeople = mergeRosterWithExisting(rosterPeople, existingPeople);
   const posterImageUrl = (() => {
+    if (linkedShow) {
+      return String(existingProgram.poster_image_url ?? "");
+    }
     try {
       return normalizeOptionalHttpUrl(parsed.posterImageUrl, "Poster image URL");
     } catch (error) {
@@ -1588,6 +1700,9 @@ export async function updateProgram(slug: string, formData: FormData) {
   }
   const billingHtml = sanitizeRichText(parsed.billingPage);
   const resolvedBilling = richTextHasContent(billingHtml) ? billingHtml : generateAutoBilling(rosterPeople);
+  const resolvedActsAndSongs = linkedShow ? String(existingProgram.acts_songs ?? "") : sanitizeRichText(parsed.actsAndSongs);
+  const resolvedDepartmentInfo = linkedShow ? String(existingProgram.department_info ?? "") : sanitizeRichText(parsed.departmentInfo);
+  const resolvedSeasonCalendar = linkedShow ? String(existingProgram.season_calendar ?? "") : sanitizeRichText(parsed.seasonCalendar);
 
   const programsColumns = await getTableColumns(client, "programs");
   const programUpdate = filterToColumns(
@@ -1599,12 +1714,13 @@ export async function updateProgram(slug: string, formData: FormData) {
       poster_image_url: posterImageUrl,
       director_notes: sanitizeRichText(parsed.directorNotes),
       dramaturgical_note: sanitizeRichText(parsed.dramaturgicalNote),
+      music_director_note: sanitizeRichText(parsed.musicDirectorNote),
       billing_page: resolvedBilling,
-      acts_songs: sanitizeRichText(parsed.actsAndSongs),
-      department_info: sanitizeRichText(parsed.departmentInfo),
+      acts_songs: resolvedActsAndSongs,
+      department_info: resolvedDepartmentInfo,
       actf_ad_image_url: actfAdImageUrl,
       acknowledgements: sanitizeRichText(parsed.acknowledgements),
-      season_calendar: sanitizeRichText(parsed.seasonCalendar),
+      season_calendar: resolvedSeasonCalendar,
       production_photo_urls: productionPhotoUrls,
       custom_pages: customPages,
       ...(layoutOrder ? { layout_order: layoutOrder } : {})

@@ -8,6 +8,7 @@ type PersonRow = {
   role_title: string;
   team_type: "cast" | "production";
   email: string;
+  submission_type?: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
 };
 
 export function PeopleBulkEditor({
@@ -24,6 +25,7 @@ export function PeopleBulkEditor({
   const [enableTeamType, setEnableTeamType] = useState(false);
   const [enableEmail, setEnableEmail] = useState(false);
   const [enableFullName, setEnableFullName] = useState(false);
+  const [enableSubmissionType, setEnableSubmissionType] = useState(false);
 
   const sortedPeople = useMemo(
     () => [...people].sort((a, b) => a.full_name.localeCompare(b.full_name) || a.role_title.localeCompare(b.role_title)),
@@ -33,7 +35,7 @@ export function PeopleBulkEditor({
     const needle = query.trim().toLowerCase();
     if (!needle) return sortedPeople;
     return sortedPeople.filter((person) => {
-      const haystack = `${person.full_name} ${person.role_title} ${person.team_type} ${person.email}`.toLowerCase();
+      const haystack = `${person.full_name} ${person.role_title} ${person.team_type} ${person.email} ${person.submission_type ?? "bio"}`.toLowerCase();
       return haystack.includes(needle);
     });
   }, [query, sortedPeople]);
@@ -97,6 +99,7 @@ export function PeopleBulkEditor({
                 <th>Role</th>
                 <th>Category</th>
                 <th>Email</th>
+                <th>Submission</th>
               </tr>
             </thead>
             <tbody>
@@ -128,6 +131,7 @@ export function PeopleBulkEditor({
                     <td>{person.role_title}</td>
                     <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
                     <td>{person.email || "No email"}</td>
+                    <td>{person.submission_type ?? "bio"}</td>
                   </tr>
                 );
               })}
@@ -205,6 +209,24 @@ export function PeopleBulkEditor({
                   Enable Full Name
                 </label>
                 <input name="fullName" placeholder="New Full Name" disabled={!enableFullName} />
+              </div>
+
+              <div className="people-field-row">
+                <label className="people-field-toggle">
+                  <input
+                    type="checkbox"
+                    name="enableSubmissionType"
+                    checked={enableSubmissionType}
+                    onChange={(event) => setEnableSubmissionType(event.target.checked)}
+                  />
+                  Enable Submission Requirement
+                </label>
+                <select name="submissionType" defaultValue="bio" disabled={!enableSubmissionType}>
+                  <option value="bio">Bio</option>
+                  <option value="director_note">Director's Note</option>
+                  <option value="dramaturgical_note">Dramaturgical Note</option>
+                  <option value="music_director_note">Music Director's Note</option>
+                </select>
               </div>
 
               <div className="people-modal-actions">

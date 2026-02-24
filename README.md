@@ -139,8 +139,10 @@ In Supabase Dashboard:
 - `RESEND_API_KEY`
 - `REMINDER_FROM_EMAIL` (e.g. `Siena Theatre <noreply@yourdomain.com>`)
 - `CRON_SECRET` (used by `/api/cron/reminders`)
+- `DISABLE_OUTBOUND_EMAIL` (`true`/`1` to disable all invite/reminder sends for testing)
 
 If these are missing, reminder/invite actions still run but are recorded as non-delivered in audit logs.
+If `DISABLE_OUTBOUND_EMAIL=true`, reminder/invite actions still run and audit, but no outbound email is sent.
 
 ## Milestone 9 QA
 

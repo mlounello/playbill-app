@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
-import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, contributorSaveTask, getContributorTaskById } from "@/lib/submissions";
+import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, contributorSaveTask, getContributorTaskById, getSubmissionTypeLabel } from "@/lib/submissions";
 import { richTextHasContent } from "@/lib/rich-text";
 
 export default async function ContributorTaskPage({
@@ -21,9 +21,12 @@ export default async function ContributorTaskPage({
 
   const saveAction = contributorSaveTask.bind(null, showId, personId);
   const isReadOnly = task.person.submission_status === "approved" || task.person.submission_status === "locked";
+  const submissionLabel = getSubmissionTypeLabel(task.person.submission_type);
+  const isBioTask = task.person.submission_type === "bio";
   const hasNoBio =
-    task.person.bio.trim() === NO_BIO_PLACEHOLDER ||
-    (!richTextHasContent(task.person.bio) && ["submitted", "approved", "locked"].includes(task.person.submission_status));
+    isBioTask &&
+    (task.person.bio.trim() === NO_BIO_PLACEHOLDER ||
+      (!richTextHasContent(task.person.bio) && ["submitted", "approved", "locked"].includes(task.person.submission_status)));
 
   return (
     <main>
@@ -40,7 +43,7 @@ export default async function ContributorTaskPage({
             Status: <span className="status-pill">{task.person.submission_status}</span>
           </div>
           <div className="meta-text" style={{ marginTop: "0.35rem" }}>
-            Bio limit: {BIO_CHAR_LIMIT_DEFAULT} chars. Current plain-text count: {task.person.bio_char_count}
+            {submissionLabel} limit: {BIO_CHAR_LIMIT_DEFAULT} chars. Current plain-text count: {task.person.bio_char_count}
           </div>
         </section>
 
@@ -64,22 +67,26 @@ export default async function ContributorTaskPage({
         <form action={saveAction} className="card stack-md">
           <RichTextField
             name="bio"
-            label="Bio"
+            label={submissionLabel}
             required={false}
             initialValue={hasNoBio ? "" : task.person.bio}
-            placeholder="Share your short bio."
+            placeholder={isBioTask ? "Share your short bio." : `Share your ${submissionLabel.toLowerCase()}.`}
           />
-          <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-            <input type="checkbox" name="skipBio" defaultChecked={hasNoBio} disabled={isReadOnly} />
-            I prefer not to include a bio.
-          </label>
+          {isBioTask ? (
+            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input type="checkbox" name="skipBio" defaultChecked={hasNoBio} disabled={isReadOnly} />
+              I prefer not to include a bio.
+            </label>
+          ) : null}
 
-          <HeadshotUploadField
-            showId={showId}
-            personId={personId}
-            initialUrl={task.person.headshot_url}
-            disabled={isReadOnly}
-          />
+          {isBioTask ? (
+            <HeadshotUploadField
+              showId={showId}
+              personId={personId}
+              initialUrl={task.person.headshot_url}
+              disabled={isReadOnly}
+            />
+          ) : null}
 
           {isReadOnly ? (
             <p className="section-note">This task is read-only because it has been {task.person.submission_status}.</p>

@@ -47,6 +47,14 @@ export default async function AdminCreateShowPage({
           </label>
 
           <label>
+            Acts & Songs (optional)
+            <textarea
+              name="actsAndSongs"
+              placeholder={"ACT I\n1. Opening Number\n2. ...\n\nACT II\n1. ..."}
+            />
+          </label>
+
+          <label>
             Slug (optional)
             <input name="slug" placeholder="rumors" />
           </label>

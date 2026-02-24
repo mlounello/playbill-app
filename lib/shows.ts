@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
+import { sanitizeRichText } from "@/lib/rich-text";
 import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 export type ShowSummary = {
@@ -16,6 +17,12 @@ export type ShowSummary = {
   program_slug: string | null;
   is_published: boolean;
   published_at: string | null;
+  reminders_paused: boolean;
+  acts_and_songs: string;
+  season_calendar: string;
+  poster_image_url: string;
+  show_dates: string;
+  performance_schedule: Array<{ date?: string; time?: string }>;
 };
 
 export type ShowModule = {
@@ -47,7 +54,8 @@ const createShowSchema = z.object({
   endDate: z.string().optional().or(z.literal("")),
   venue: z.string().optional().or(z.literal("")),
   seasonTag: z.string().optional().or(z.literal("")),
-  slug: z.string().optional().or(z.literal(""))
+  slug: z.string().optional().or(z.literal("")),
+  actsAndSongs: z.string().optional().or(z.literal(""))
 });
 
 const modulePayloadSchema = z.object({
@@ -67,6 +75,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   bios: ["cast_bios", "team_bios"],
   director_note: ["director_note"],
   dramaturgical_note: ["dramaturgical_note"],
+  music_director_note: ["music_director_note"],
   acts_scenes: ["acts_songs"],
   songs: ["acts_songs"],
   headshots_grid: ["production_photos"],
@@ -97,6 +106,80 @@ function formatShowDates(startDate?: string, endDate?: string) {
     return `${start} - ${end}`;
   }
   return start || end || "TBD";
+}
+
+function isValidHttpUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeOptionalHttpUrl(value: string | undefined, fieldLabel: string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (!isValidHttpUrl(trimmed)) {
+    throw new Error(`${fieldLabel} must be a valid http(s) URL.`);
+  }
+  return trimmed;
+}
+
+function parsePerformanceSchedule(text: string | undefined) {
+  if (!text) {
+    return [] as Array<{ date?: string; time?: string }>;
+  }
+
+  try {
+    const parsed = JSON.parse(text) as Array<{ date?: string; time?: string }>;
+    if (!Array.isArray(parsed)) {
+      return [] as Array<{ date?: string; time?: string }>;
+    }
+    return parsed
+      .filter((item) => item && typeof item.date === "string" && item.date.trim().length > 0)
+      .map((item) => ({
+        date: String(item.date ?? "").trim(),
+        time: typeof item.time === "string" && item.time.trim().length > 0 ? item.time.trim() : undefined
+      }));
+  } catch {
+    return [] as Array<{ date?: string; time?: string }>;
+  }
+}
+
+function formatPerformanceLabel(performance: { date?: string; time?: string }) {
+  const dateText = String(performance.date ?? "");
+  const [yearRaw, monthRaw, dayRaw] = dateText.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!year || !month || !day) {
+    return "";
+  }
+
+  const timeText = String(performance.time ?? "");
+  const [hourRaw, minuteRaw] = (timeText || "00:00").split(":");
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  const dateObj = new Date(year, month - 1, day, Number.isFinite(hour) ? hour : 0, Number.isFinite(minute) ? minute : 0);
+
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(dateObj);
+
+  if (!timeText) {
+    return datePart;
+  }
+
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(dateObj);
+  return `${datePart} ${timePart}`;
 }
 
 function withError(path: string, message: string): never {
@@ -151,7 +234,8 @@ export async function createShow(formData: FormData) {
       endDate: formData.get("endDate"),
       venue: formData.get("venue"),
       seasonTag: formData.get("seasonTag"),
-      slug: formData.get("slug")
+      slug: formData.get("slug"),
+      actsAndSongs: formData.get("actsAndSongs")
     });
   } catch {
     withError("/app/shows/new", "Please fill in the required fields.");
@@ -162,6 +246,7 @@ export async function createShow(formData: FormData) {
   const slug = `${slugBase}-${Date.now().toString().slice(-4)}`;
 
   const showDates = formatShowDates(parsed.startDate, parsed.endDate);
+  const sanitizedActsAndSongs = sanitizeRichText(parsed.actsAndSongs ?? "");
 
   const { data: program, error: programError } = await client
     .from("programs")
@@ -169,7 +254,8 @@ export async function createShow(formData: FormData) {
       title: parsed.title,
       slug,
       theatre_name: parsed.venue ?? "",
-      show_dates: showDates
+      show_dates: showDates,
+      acts_songs: sanitizedActsAndSongs
     })
     .select("id, slug")
     .single();
@@ -219,6 +305,8 @@ export async function createShow(formData: FormData) {
     "production_team",
     "bios",
     "director_note",
+    "dramaturgical_note",
+    "music_director_note",
     "acts_scenes",
     "songs",
     "headshots_grid",
@@ -251,10 +339,12 @@ export async function getShowsForDashboard() {
     const client = getSupabaseWriteClient();
     const { data: shows } = await client
       .from("shows")
-      .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at")
+      .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at, reminders_paused")
       .order("created_at", { ascending: false });
 
-    const { data: programs } = await client.from("programs").select("id, slug");
+    const { data: programs } = await client
+      .from("programs")
+      .select("id, slug, acts_songs, season_calendar, poster_image_url, show_dates, performance_schedule");
     const { data: people } = await client.from("people").select("program_id, submission_status");
 
     const programSlugById = new Map<string, string>();
@@ -276,6 +366,7 @@ export async function getShowsForDashboard() {
     return (shows ?? []).map((show) => {
       const programId = String(show.program_id ?? "");
       const sub = submissionByProgram.get(programId) ?? { total: 0, submitted: 0 };
+      const program = programs?.find((row) => String(row.id ?? "") === programId);
       return {
         id: String(show.id),
         title: String(show.title),
@@ -288,7 +379,15 @@ export async function getShowsForDashboard() {
         submission_submitted: sub.submitted,
         program_slug: programSlugById.get(programId) ?? String(show.slug),
         is_published: Boolean(show.is_published),
-        published_at: show.published_at ? String(show.published_at) : null
+        published_at: show.published_at ? String(show.published_at) : null,
+        reminders_paused: Boolean(show.reminders_paused),
+        acts_and_songs: String(program?.acts_songs ?? ""),
+        season_calendar: String(program?.season_calendar ?? ""),
+        poster_image_url: String(program?.poster_image_url ?? ""),
+        show_dates: String(program?.show_dates ?? ""),
+        performance_schedule: Array.isArray(program?.performance_schedule)
+          ? (program?.performance_schedule as Array<{ date?: string; time?: string }>)
+          : []
       };
     }) as ShowSummary[];
   } catch {
@@ -306,7 +405,7 @@ export async function getShowById(showId: string) {
     const client = getSupabaseWriteClient();
     const { data: show, error } = await client
       .from("shows")
-      .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at")
+      .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at, reminders_paused")
       .eq("id", showId)
       .single();
 
@@ -315,7 +414,11 @@ export async function getShowById(showId: string) {
     }
 
     const programId = String(show.program_id ?? "");
-    const { data: program } = await client.from("programs").select("slug").eq("id", programId).single();
+    const { data: program } = await client
+      .from("programs")
+      .select("slug, acts_songs, season_calendar, poster_image_url, show_dates, performance_schedule")
+      .eq("id", programId)
+      .single();
     const { data: people } = await client.from("people").select("submission_status").eq("program_id", programId);
     const { data: modules } = await client
       .from("program_modules")
@@ -339,6 +442,14 @@ export async function getShowById(showId: string) {
       program_slug: program?.slug ? String(program.slug) : String(show.slug),
       is_published: Boolean(show.is_published),
       published_at: show.published_at ? String(show.published_at) : null,
+      reminders_paused: Boolean(show.reminders_paused),
+      acts_and_songs: String(program?.acts_songs ?? ""),
+      season_calendar: String(program?.season_calendar ?? ""),
+      poster_image_url: String(program?.poster_image_url ?? ""),
+      show_dates: String(program?.show_dates ?? ""),
+      performance_schedule: Array.isArray(program?.performance_schedule)
+        ? (program?.performance_schedule as Array<{ date?: string; time?: string }>)
+        : [],
       modules: (modules ?? []).map((mod) => ({
         id: String(mod.id),
         module_type: String(mod.module_type),
@@ -671,4 +782,136 @@ export async function setShowPublished(showId: string, formData: FormData) {
       shouldPublish ? "Show published." : "Show unpublished."
     )}`
   );
+}
+
+export async function updateShowActsAndSongs(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const actsAndSongs = sanitizeRichText(String(formData.get("actsAndSongs") ?? ""));
+  const client = getSupabaseWriteClient();
+
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id, program_id")
+    .eq("id", showId)
+    .single();
+
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  const { error: showUpdateError } = await client
+    .from("shows")
+    .update({
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", showId);
+
+  if (showUpdateError) {
+    withError(`/app/shows/${showId}?tab=settings`, showUpdateError.message);
+  }
+
+  if (show.program_id) {
+    const { error: programUpdateError } = await client
+      .from("programs")
+      .update({ acts_songs: actsAndSongs })
+      .eq("id", show.program_id);
+    if (programUpdateError) {
+      withError(`/app/shows/${showId}?tab=settings`, programUpdateError.message);
+    }
+  }
+
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Acts & Songs updated from show setup.")}`);
+}
+
+export async function updateShowPresentation(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id, program_id")
+    .eq("id", showId)
+    .single();
+
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  const performanceSchedule = parsePerformanceSchedule(String(formData.get("performanceSchedule") ?? "[]"));
+  const autoShowDates = performanceSchedule.map((item) => formatPerformanceLabel(item)).filter(Boolean).join(" | ");
+  const showDatesOverride = String(formData.get("showDatesOverride") ?? "").trim();
+  const resolvedShowDates = showDatesOverride || autoShowDates || "TBD";
+
+  const posterImageUrl = (() => {
+    try {
+      return normalizeOptionalHttpUrl(String(formData.get("posterImageUrl") ?? ""), "Poster image URL");
+    } catch (error) {
+      withError(`/app/shows/${showId}?tab=settings`, error instanceof Error ? error.message : "Invalid poster image URL.");
+    }
+  })();
+
+  if (show.program_id) {
+    const { error: programError } = await client
+      .from("programs")
+      .update({
+        poster_image_url: posterImageUrl,
+        performance_schedule: performanceSchedule,
+        show_dates: resolvedShowDates
+      })
+      .eq("id", show.program_id);
+    if (programError) {
+      withError(`/app/shows/${showId}?tab=settings`, programError.message);
+    }
+  }
+
+  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Poster and performance schedule updated.")}`);
+}
+
+export async function updateShowSeasonCalendar(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const seasonCalendar = sanitizeRichText(String(formData.get("seasonCalendar") ?? ""));
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id, program_id")
+    .eq("id", showId)
+    .single();
+
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  if (show.program_id) {
+    const { error: programUpdateError } = await client
+      .from("programs")
+      .update({ season_calendar: seasonCalendar })
+      .eq("id", show.program_id);
+    if (programUpdateError) {
+      withError(`/app/shows/${showId}?tab=settings`, programUpdateError.message);
+    }
+  }
+
+  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Season Calendar updated from show setup.")}`);
 }

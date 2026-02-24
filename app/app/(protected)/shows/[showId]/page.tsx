@@ -2,10 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FlashToast } from "@/components/flash-toast";
 import { PeopleBulkEditor } from "@/components/people-bulk-editor";
+import { PerformanceInputs } from "@/components/performance-inputs";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
+import { ProgramImageUpload } from "@/components/program-image-upload";
+import { RichTextField } from "@/components/rich-text-field";
 import { SubmissionFilterPresets } from "@/components/submission-filter-presets";
 import { SubmissionViewToggle } from "@/components/submission-view-toggle";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
+import { createDepartment, getDepartmentRepository, getShowDepartmentSelection, updateShowDepartments } from "@/lib/departments";
 import { getProgramBySlug } from "@/lib/programs";
 import {
   archiveShow,
@@ -16,6 +20,9 @@ import {
   requestShowExport,
   restoreArchivedShow,
   setShowPublished,
+  updateShowActsAndSongs,
+  updateShowPresentation,
+  updateShowSeasonCalendar,
   updateShowModules
 } from "@/lib/shows";
 import {
@@ -25,10 +32,12 @@ import {
   bulkEditPeopleField,
   bulkEditSelectedPeople,
   importBiosFromCsv,
-  getShowSubmissionPeople
+  getShowSubmissionPeople,
+  updateSpecialNoteAssignments
 } from "@/lib/submissions";
 import {
   getShowReminderSummary,
+  setShowRemindersPaused,
   sendShowInvites,
   sendShowRemindersNow,
   setShowDueDate
@@ -79,16 +88,26 @@ export default async function ShowWorkspacePage({
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
+  const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
   const importBiosAction = importBiosFromCsv.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
   const requestExportAction = requestShowExport.bind(null, show.id);
   const setPublishAction = setShowPublished.bind(null, show.id);
+  const updateActsAndSongsAction = updateShowActsAndSongs.bind(null, show.id);
+  const updateShowPresentationAction = updateShowPresentation.bind(null, show.id);
+  const updateShowSeasonCalendarAction = updateShowSeasonCalendar.bind(null, show.id);
+  const updateShowDepartmentsAction = updateShowDepartments.bind(null, show.id);
+  const setReminderPausedAction = setShowRemindersPaused.bind(null, show.id);
   const setDueDateAction = setShowDueDate.bind(null, show.id);
   const sendInvitesAction = sendShowInvites.bind(null, show.id);
   const sendRemindersAction = sendShowRemindersNow.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
+  const departmentRepository = activeTab === "settings" ? await getDepartmentRepository() : [];
+  const selectedDepartmentIds =
+    activeTab === "settings" ? await getShowDepartmentSelection(show.id) : [];
+  const createDepartmentAction = createDepartment;
   const exportRows = activeTab === "export" ? await getShowExports(show.id) : [];
   const publicUrl = show.slug ? `/p/${show.slug}` : "";
   const activeSubmissionFilter = submissionFilter || "all";
@@ -102,8 +121,10 @@ export default async function ShowWorkspacePage({
           .filter((person) => {
             if (activeSubmissionFilter === "all") return true;
             if (activeSubmissionFilter === "needs_review") return person.submission_status === "submitted";
-            if (activeSubmissionFilter === "bio_missing") return person.bio_char_count === 0 && !person.no_bio;
-            if (activeSubmissionFilter === "headshot_missing") return !person.headshot_url.trim();
+            if (activeSubmissionFilter === "bio_missing")
+              return person.submission_type === "bio" && person.bio_char_count === 0 && !person.no_bio;
+            if (activeSubmissionFilter === "headshot_missing")
+              return person.submission_type === "bio" && !person.headshot_url.trim();
             if (activeSubmissionFilter === "over_limit") return person.bio_char_count > 375;
             return person.submission_status === activeSubmissionFilter;
           })
@@ -132,8 +153,8 @@ export default async function ShowWorkspacePage({
   const blockers =
     activeTab === "overview"
       ? {
-          missingBios: people.filter((person) => person.bio_char_count === 0 && !person.no_bio).length,
-          missingHeadshots: people.filter((person) => !person.headshot_url.trim()).length,
+          missingBios: people.filter((person) => person.submission_type === "bio" && person.bio_char_count === 0 && !person.no_bio).length,
+          missingHeadshots: people.filter((person) => person.submission_type === "bio" && !person.headshot_url.trim()).length,
           returnedForEdits: people.filter((person) => person.submission_status === "returned").length,
           overLimit: people.filter((person) => person.bio_char_count > 375).length,
           needsReview: people.filter((person) => person.submission_status === "submitted").length
@@ -202,6 +223,13 @@ export default async function ShowWorkspacePage({
     }
   ];
   const activeBlockers = blockerItems.filter((item) => item.count > 0);
+  const specialNotePeople = people.filter((person) => person.team_type === "production");
+  const currentDirectorNotePersonId =
+    specialNotePeople.find((person) => person.submission_type === "director_note")?.id ?? "";
+  const currentDramaturgNotePersonId =
+    specialNotePeople.find((person) => person.submission_type === "dramaturgical_note")?.id ?? "";
+  const currentMusicDirectorNotePersonId =
+    specialNotePeople.find((person) => person.submission_type === "music_director_note")?.id ?? "";
 
   return (
     <main>
@@ -222,6 +250,7 @@ export default async function ShowWorkspacePage({
                 <div className="kpi-inline">
                   <span className="kpi-badge">{show.submission_submitted}/{show.submission_total} submitted</span>
                   <span className="kpi-badge">{reminderSummary.missing} outstanding</span>
+                  <span className="kpi-badge">{show.reminders_paused ? "Reminders Paused" : "Reminders Active"}</span>
                 </div>
               </div>
               <article className="card stack-sm submissions-filter">
@@ -248,7 +277,8 @@ export default async function ShowWorkspacePage({
                   </div>
                 </div>
                 <div className="link-row">
-                  {show.program_slug ? <Link href={`/programs/${show.program_slug}/edit`}>Edit Program Data</Link> : null}
+                  <Link href={`/app/shows/${show.id}?tab=settings`}>Show Settings</Link>
+                  <Link href={`/app/shows/${show.id}?tab=program-plan`}>Program Plan</Link>
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Preview</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition View</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
@@ -266,7 +296,15 @@ export default async function ShowWorkspacePage({
                       <button type="submit">Send Invites</button>
                     </form>
                     <form action={sendRemindersAction}>
-                      <button type="submit">Send Reminders Now</button>
+                      <button type="submit" disabled={show.reminders_paused}>
+                        {show.reminders_paused ? "Reminders Paused" : "Send Reminders Now"}
+                      </button>
+                    </form>
+                    <form action={setReminderPausedAction}>
+                      <input type="hidden" name="intent" value={show.reminders_paused ? "resume" : "pause"} />
+                      <button type="submit">
+                        {show.reminders_paused ? "Resume Reminders" : "Pause Reminders"}
+                      </button>
                     </form>
                   </div>
                 </div>
@@ -430,6 +468,49 @@ export default async function ShowWorkspacePage({
 
           {activeTab === "people-roles" ? (
             <section className="panel-grid">
+              <article className="card stack-sm">
+                <strong>Special Note Assignments</strong>
+                <p className="section-note">
+                  Assign who should submit Director, Dramaturgical, and Music Director notes. This updates submission requirements automatically.
+                </p>
+                <form action={updateSpecialNotesAction} className="form-row-3">
+                  <label>
+                    Director&apos;s Note
+                    <select name="directorPersonId" defaultValue={currentDirectorNotePersonId}>
+                      <option value="">Unassigned</option>
+                      {specialNotePeople.map((person) => (
+                        <option key={`director-${person.id}`} value={person.id}>
+                          {person.full_name} - {person.role_title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Dramaturgical Note
+                    <select name="dramaturgPersonId" defaultValue={currentDramaturgNotePersonId}>
+                      <option value="">Unassigned</option>
+                      {specialNotePeople.map((person) => (
+                        <option key={`dramaturg-${person.id}`} value={person.id}>
+                          {person.full_name} - {person.role_title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Music Director&apos;s Note
+                    <select name="musicDirectorPersonId" defaultValue={currentMusicDirectorNotePersonId}>
+                      <option value="">Unassigned</option>
+                      {specialNotePeople.map((person) => (
+                        <option key={`music-${person.id}`} value={person.id}>
+                          {person.full_name} - {person.role_title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="submit">Save Special Note Assignments</button>
+                </form>
+              </article>
+
               <div className="people-forms-grid">
                 <article className="card stack-sm">
                   <strong>Add Person</strong>
@@ -453,6 +534,15 @@ export default async function ShowWorkspacePage({
                     <label>
                       Email
                       <input name="email" type="email" required placeholder="name@example.com" />
+                    </label>
+                    <label>
+                      Submission requirement
+                      <select name="submissionType" defaultValue="bio">
+                        <option value="bio">Bio</option>
+                        <option value="director_note">Director's Note</option>
+                        <option value="dramaturgical_note">Dramaturgical Note</option>
+                        <option value="music_director_note">Music Director's Note</option>
+                      </select>
                     </label>
                     <button type="submit">Add Person</button>
                   </form>
@@ -510,6 +600,10 @@ export default async function ShowWorkspacePage({
                         <input type="checkbox" name="targetFields" value="full_name" />
                         Full Name
                       </label>
+                      <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                        <input type="checkbox" name="targetFields" value="submission_type" />
+                        Submission Requirement
+                      </label>
                     </div>
                     <label>
                       Lookup by
@@ -524,7 +618,7 @@ export default async function ShowWorkspacePage({
                         name="editsText"
                         className="rich-textarea"
                         placeholder={
-                          "lookup@example.com | role=Assistant Director | team_type=production\nanother@example.com | email=new@example.com\n\n(single selected field shortcut)\nlookup@example.com | New Value"
+                          "lookup@example.com | role=Assistant Director | team_type=production | submission_type=director_note\nanother@example.com | email=new@example.com\n\n(single selected field shortcut)\nlookup@example.com | New Value"
                         }
                         required
                       />
@@ -642,6 +736,7 @@ export default async function ShowWorkspacePage({
                             <th scope="col">Name</th>
                             <th scope="col">Role</th>
                             <th scope="col">Category</th>
+                            <th scope="col">Requirement</th>
                             <th scope="col">Status</th>
                             <th scope="col">Chars</th>
                             <th scope="col">Updated</th>
@@ -661,6 +756,7 @@ export default async function ShowWorkspacePage({
                                 </td>
                                 <td>{person.role_title}</td>
                                 <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
+                                <td>{person.submission_type.replace(/_/g, " ")}</td>
                                 <td><span className="status-pill">{person.submission_status}</span></td>
                                 <td>{person.bio_char_count}</td>
                                 <td>{person.submitted_at ? new Date(person.submitted_at).toLocaleDateString("en-US") : "No submission yet"}</td>
@@ -701,7 +797,7 @@ export default async function ShowWorkspacePage({
                                 </div>
                               </div>
                               <div className="submission-meta">
-                                Status: <span className="status-pill">{person.submission_status}</span> • {person.bio_char_count} chars
+                                Requirement: {person.submission_type.replace(/_/g, " ")} • Status: <span className="status-pill">{person.submission_status}</span> • {person.bio_char_count} chars
                               </div>
                               <div className="submission-meta">
                                 Updated: {person.submitted_at ? new Date(person.submitted_at).toLocaleDateString("en-US") : "No submission yet"}
@@ -824,6 +920,126 @@ export default async function ShowWorkspacePage({
               <div className="pane-header">
                 <strong>Settings</strong>
               </div>
+              <article className="card stack-sm">
+                <strong>Show Setup: Poster + Performance Schedule</strong>
+                <div className="meta-text">
+                  This is the source for cover poster and program performance date/time text.
+                </div>
+                <form action={updateShowPresentationAction} className="stack-sm">
+                  <PerformanceInputs
+                    initialPerformances={show.performance_schedule}
+                    initialShowDatesOverride={show.show_dates}
+                    draftNamespace={`show-presentation:${show.id}`}
+                  />
+                  <label>
+                    Poster Image URL
+                    <input id="showPosterImageUrlInput" name="posterImageUrl" defaultValue={show.poster_image_url} />
+                  </label>
+                  {show.program_slug ? (
+                    <ProgramImageUpload
+                      programSlug={show.program_slug}
+                      assetType="poster"
+                      targetInputId="showPosterImageUrlInput"
+                      label="Upload Poster Image (optional)"
+                    />
+                  ) : null}
+                  <button type="submit">Save Poster + Schedule</button>
+                </form>
+              </article>
+
+              <article className="card stack-sm">
+                <strong>Show Setup: Acts & Songs</strong>
+                <div className="meta-text">
+                  This is the source for the Acts & Songs section in previews and exports.
+                </div>
+                <form action={updateActsAndSongsAction} className="stack-sm">
+                  <RichTextField
+                    name="actsAndSongs"
+                    label="Acts & Songs"
+                    initialValue={show.acts_and_songs}
+                    draftNamespace={`show-settings:${show.id}`}
+                  />
+                  <button type="submit">Save Acts & Songs</button>
+                </form>
+              </article>
+              <article className="card stack-sm">
+                <strong>Show Setup: Season Calendar</strong>
+                <div className="meta-text">
+                  This show&apos;s Season Calendar appears in the back-cover/season module for this program.
+                </div>
+                <form action={updateShowSeasonCalendarAction} className="stack-sm">
+                  <RichTextField
+                    name="seasonCalendar"
+                    label="Season Calendar"
+                    initialValue={show.season_calendar}
+                    draftNamespace={`show-season-calendar:${show.id}`}
+                  />
+                  <button type="submit">Save Season Calendar</button>
+                </form>
+              </article>
+              <article className="card stack-sm">
+                <strong>Department Repository</strong>
+                <div className="meta-text">
+                  Create reusable departments once, then bind them to shows.
+                </div>
+                <form action={createDepartmentAction} className="stack-sm">
+                  <input type="hidden" name="showId" value={show.id} />
+                  <label>
+                    Department name
+                    <input name="name" required placeholder="Costume Shop" />
+                  </label>
+                  <label>
+                    Description
+                    <textarea name="description" placeholder="What this department supports..." />
+                  </label>
+                  <div className="form-row-2">
+                    <label>
+                      Website
+                      <input name="website" placeholder="https://..." />
+                    </label>
+                    <label>
+                      Contact Email
+                      <input name="contactEmail" type="email" placeholder="department@siena.edu" />
+                    </label>
+                  </div>
+                  <label>
+                    Contact Phone
+                    <input name="contactPhone" placeholder="(518) 555-1234" />
+                  </label>
+                  <button type="submit">Create Department</button>
+                </form>
+              </article>
+
+              <article className="card stack-sm">
+                <strong>Bind Departments to This Show</strong>
+                <div className="meta-text">
+                  Selected departments auto-generate the Program&apos;s Department Information section.
+                </div>
+                {departmentRepository.length === 0 ? (
+                  <div className="meta-text">No departments yet. Create one above.</div>
+                ) : (
+                  <form action={updateShowDepartmentsAction} className="stack-sm">
+                    <div className="stack-sm">
+                      {departmentRepository.map((department) => (
+                        <label key={department.id} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                          <input
+                            type="checkbox"
+                            name="departmentIds"
+                            value={department.id}
+                            defaultChecked={selectedDepartmentIds.includes(department.id)}
+                          />
+                          <span>
+                            <strong>{department.name}</strong>
+                            {department.description ? <span className="meta-text"> - {department.description.replace(/<[^>]+>/g, " ").trim()}</span> : null}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <button type="submit">Save Show Departments</button>
+                  </form>
+                )}
+              </article>
+
               <article className="card stack-sm">
                 <strong>Lifecycle Controls</strong>
                 <div>

@@ -10,6 +10,7 @@ create table if not exists public.programs (
   poster_image_url text not null default '',
   director_notes text not null default '',
   dramaturgical_note text not null default '',
+  music_director_note text not null default '',
   billing_page text not null default '',
   acts_songs text not null default '',
   department_info text not null default '',
@@ -19,11 +20,12 @@ create table if not exists public.programs (
   performance_schedule jsonb not null default '[]'::jsonb,
   production_photo_urls text[] not null default '{}',
   custom_pages jsonb not null default '[]'::jsonb,
-  layout_order text[] not null default '{poster,director_note,dramaturgical_note,billing,acts_songs,cast_bios,team_bios,department_info,actf_ad,acknowledgements,season_calendar,production_photos,custom_pages}'
+  layout_order text[] not null default '{poster,director_note,dramaturgical_note,music_director_note,billing,acts_songs,cast_bios,team_bios,department_info,actf_ad,acknowledgements,season_calendar,production_photos,custom_pages}'
 );
 
 alter table public.programs add column if not exists poster_image_url text not null default '';
 alter table public.programs add column if not exists dramaturgical_note text not null default '';
+alter table public.programs add column if not exists music_director_note text not null default '';
 alter table public.programs add column if not exists billing_page text not null default '';
 alter table public.programs add column if not exists acts_songs text not null default '';
 alter table public.programs add column if not exists department_info text not null default '';
@@ -32,7 +34,7 @@ alter table public.programs add column if not exists season_calendar text not nu
 alter table public.programs add column if not exists performance_schedule jsonb not null default '[]'::jsonb;
 alter table public.programs add column if not exists production_photo_urls text[] not null default '{}';
 alter table public.programs add column if not exists custom_pages jsonb not null default '[]'::jsonb;
-alter table public.programs add column if not exists layout_order text[] not null default '{poster,director_note,dramaturgical_note,billing,acts_songs,cast_bios,team_bios,department_info,actf_ad,acknowledgements,season_calendar,production_photos,custom_pages}';
+alter table public.programs add column if not exists layout_order text[] not null default '{poster,director_note,dramaturgical_note,music_director_note,billing,acts_songs,cast_bios,team_bios,department_info,actf_ad,acknowledgements,season_calendar,production_photos,custom_pages}';
 
 create table if not exists public.people (
   id uuid primary key default gen_random_uuid(),
@@ -44,6 +46,7 @@ create table if not exists public.people (
   team_type text not null default 'cast',
   headshot_url text not null default '',
   email text not null default '',
+  submission_type text not null default 'bio',
   submission_status text not null default 'pending',
   submitted_at timestamptz,
   no_bio boolean not null default false
@@ -52,6 +55,7 @@ create table if not exists public.people (
 alter table public.people add column if not exists team_type text not null default 'cast';
 alter table public.people add column if not exists headshot_url text not null default '';
 alter table public.people add column if not exists email text not null default '';
+alter table public.people add column if not exists submission_type text not null default 'bio';
 alter table public.people add column if not exists submission_status text not null default 'pending';
 alter table public.people add column if not exists submitted_at timestamptz;
 alter table public.people add column if not exists first_name text not null default '';
@@ -78,12 +82,14 @@ create table if not exists public.shows (
   end_date date,
   venue text not null default '',
   season_tag text not null default '',
+  reminders_paused boolean not null default false,
   status text not null default 'draft',
   is_published boolean not null default false,
   published_at timestamptz
 );
 
 alter table public.shows add column if not exists program_id uuid references public.programs (id) on delete set null;
+alter table public.shows add column if not exists reminders_paused boolean not null default false;
 
 create table if not exists public.show_style_settings (
   id uuid primary key default gen_random_uuid(),
@@ -113,6 +119,26 @@ create table if not exists public.program_modules (
   settings jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create table if not exists public.departments (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  name text not null,
+  description text not null default '',
+  website text not null default '',
+  contact_email text not null default '',
+  contact_phone text not null default ''
+);
+
+create table if not exists public.show_departments (
+  id uuid primary key default gen_random_uuid(),
+  show_id uuid not null references public.shows (id) on delete cascade,
+  department_id uuid not null references public.departments (id) on delete cascade,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  unique(show_id, department_id)
 );
 
 create table if not exists public.show_roles (
@@ -194,6 +220,8 @@ alter table public.user_profiles enable row level security;
 alter table public.shows enable row level security;
 alter table public.show_style_settings enable row level security;
 alter table public.program_modules enable row level security;
+alter table public.departments enable row level security;
+alter table public.show_departments enable row level security;
 alter table public.show_roles enable row level security;
 alter table public.submission_requests enable row level security;
 alter table public.submissions enable row level security;
@@ -252,6 +280,20 @@ create policy "authenticated manage program_modules" on public.program_modules
 
 drop policy if exists "authenticated manage show_roles" on public.show_roles;
 create policy "authenticated manage show_roles" on public.show_roles
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage departments" on public.departments;
+create policy "authenticated manage departments" on public.departments
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage show_departments" on public.show_departments;
+create policy "authenticated manage show_departments" on public.show_departments
   for all
   to authenticated
   using (true)

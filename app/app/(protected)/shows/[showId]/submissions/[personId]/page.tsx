@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FlashToast } from "@/components/flash-toast";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
-import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, adminSaveSubmission, getShowSubmissionByPerson } from "@/lib/submissions";
+import { BIO_CHAR_LIMIT_DEFAULT, NO_BIO_PLACEHOLDER, adminSaveSubmission, getShowSubmissionByPerson, getSubmissionTypeLabel } from "@/lib/submissions";
 import { richTextHasContent } from "@/lib/rich-text";
 
 function formatAuditValue(value: unknown) {
@@ -66,9 +66,12 @@ export default async function ShowSubmissionReviewPage({
   }
 
   const saveAction = adminSaveSubmission.bind(null, showId, personId);
+  const submissionLabel = getSubmissionTypeLabel(review.person.submission_type);
+  const isBioTask = review.person.submission_type === "bio";
   const hasNoBio =
-    review.person.bio.trim() === NO_BIO_PLACEHOLDER ||
-    (!richTextHasContent(review.person.bio) && ["submitted", "approved", "locked"].includes(review.person.submission_status));
+    isBioTask &&
+    (review.person.bio.trim() === NO_BIO_PLACEHOLDER ||
+      (!richTextHasContent(review.person.bio) && ["submitted", "approved", "locked"].includes(review.person.submission_status)));
 
   return (
     <main>
@@ -85,7 +88,7 @@ export default async function ShowSubmissionReviewPage({
             Status: <span className="status-pill">{review.person.submission_status}</span>
           </div>
           <div className="meta-text" style={{ marginTop: "0.35rem" }}>
-            Bio chars: {review.person.bio_char_count}/{BIO_CHAR_LIMIT_DEFAULT}
+            {submissionLabel} chars: {review.person.bio_char_count}/{BIO_CHAR_LIMIT_DEFAULT}
           </div>
         </section>
 
@@ -93,17 +96,26 @@ export default async function ShowSubmissionReviewPage({
         <FlashToast message={saved ? "Review update saved." : undefined} tone="success" />
 
         <form action={saveAction} className="card stack-md">
-          <RichTextField name="bio" label="Bio (admin editable)" required={false} initialValue={hasNoBio ? "" : review.person.bio} />
-          <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-            <input type="checkbox" name="skipBio" defaultChecked={hasNoBio} />
-            Mark as no bio requested.
-          </label>
-
-          <HeadshotUploadField
-            showId={showId}
-            personId={personId}
-            initialUrl={review.person.headshot_url}
+          <RichTextField
+            name="bio"
+            label={`${submissionLabel} (admin editable)`}
+            required={false}
+            initialValue={hasNoBio ? "" : review.person.bio}
           />
+          {isBioTask ? (
+            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input type="checkbox" name="skipBio" defaultChecked={hasNoBio} />
+              Mark as no bio requested.
+            </label>
+          ) : null}
+
+          {isBioTask ? (
+            <HeadshotUploadField
+              showId={showId}
+              personId={personId}
+              initialUrl={review.person.headshot_url}
+            />
+          ) : null}
 
           <label>
             Status

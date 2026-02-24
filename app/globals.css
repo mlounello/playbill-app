@@ -311,6 +311,56 @@ button:disabled,
   hyphens: auto;
 }
 
+.billing-sheet {
+  display: grid;
+  gap: 0.28in;
+}
+
+.billing-section {
+  display: grid;
+  gap: 0.12in;
+}
+
+.billing-section-title {
+  margin: 0;
+  color: var(--accent);
+  font-family: var(--font-title);
+  font-size: 14pt;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.billing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.02in;
+}
+
+.billing-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.1rem;
+  font-size: 10pt;
+}
+
+.billing-left {
+  white-space: nowrap;
+}
+
+.billing-leader {
+  flex: 1 1 auto;
+  border-bottom: 2px dotted #1f3f38;
+  transform: translateY(-0.12em);
+}
+
+.billing-right {
+  white-space: nowrap;
+  text-align: right;
+}
+
 .sequence-view,
 .booklet-sheets {
   display: grid;

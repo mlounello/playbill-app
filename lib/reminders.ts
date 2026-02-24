@@ -8,6 +8,7 @@ type ReminderRecipient = {
   name: string;
   roleTitle: string;
   requestId: string;
+  requestType: string;
   dueDate: string | null;
   status: string;
 };
@@ -23,6 +24,11 @@ function withSuccess(path: string, message: string): never {
 }
 
 async function sendEmail(params: { to: string; subject: string; text: string; html: string }) {
+  const disableOutboundEmail = /^(1|true|yes|on)$/i.test(String(process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim());
+  if (disableOutboundEmail) {
+    return { sent: false, reason: "email_disabled_test_mode" as const };
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.REMINDER_FROM_EMAIL;
 
@@ -54,7 +60,11 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
 
 async function getShowContext(showId: string) {
   const client = getSupabaseWriteClient();
-  const { data: show } = await client.from("shows").select("id, title, slug").eq("id", showId).maybeSingle();
+  const { data: show } = await client
+    .from("shows")
+    .select("id, title, slug, reminders_paused")
+    .eq("id", showId)
+    .maybeSingle();
   if (!show) {
     return null;
   }
@@ -63,7 +73,8 @@ async function getShowContext(showId: string) {
     id: String(show.id),
     title: String(show.title ?? "Show"),
     slug: String(show.slug ?? ""),
-    programSlug: String(program?.slug ?? show.slug ?? "")
+    programSlug: String(program?.slug ?? show.slug ?? ""),
+    remindersPaused: Boolean(show.reminders_paused)
   };
 }
 
@@ -79,7 +90,9 @@ async function getReminderRecipients(showId: string) {
     .from("submission_requests")
     .select("id, show_role_id, due_date, status, request_type")
     .in("show_role_id", roleIds);
-  const requestRows = (requests ?? []).filter((row) => String(row.request_type ?? "") === "bio");
+  const requestRows = (requests ?? []).filter((row) =>
+    ["bio", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio"))
+  );
   if (requestRows.length === 0) {
     return [] as ReminderRecipient[];
   }
@@ -114,6 +127,7 @@ async function getReminderRecipients(showId: string) {
         name: person.name,
         roleTitle: person.roleTitle,
         requestId: String(request.id),
+        requestType: String(request.request_type ?? "bio"),
         dueDate: request.due_date ? String(request.due_date) : null,
         status: person.status
       } satisfies ReminderRecipient;
@@ -128,6 +142,13 @@ function shouldRemind(status: string) {
 function formatDate(value: string | null) {
   if (!value) return "TBD";
   return new Date(value).toLocaleDateString("en-US");
+}
+
+function getRequestLabel(value: string) {
+  if (value === "director_note") return "director's note";
+  if (value === "dramaturgical_note") return "dramaturgical note";
+  if (value === "music_director_note") return "music director's note";
+  return "bio";
 }
 
 async function writeReminderAudit(params: {
@@ -209,9 +230,10 @@ export async function sendShowInvites(showId: string) {
   let sent = 0;
   for (const item of recipients) {
     const link = `${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/contribute`;
-    const subject = `${context.title}: Bio submission invite`;
-    const text = `Hi ${item.name},\n\nPlease submit your bio for ${context.title}.\nRole: ${item.roleTitle}\nDue: ${formatDate(item.dueDate)}\nLink: ${link}\n`;
-    const html = `<p>Hi ${item.name},</p><p>Please submit your bio for <strong>${context.title}</strong>.</p><p>Role: ${item.roleTitle}<br/>Due: ${formatDate(item.dueDate)}</p><p><a href="${link}">Open contributor portal</a></p>`;
+    const requestLabel = getRequestLabel(item.requestType);
+    const subject = `${context.title}: ${requestLabel} submission invite`;
+    const text = `Hi ${item.name},\n\nPlease submit your ${requestLabel} for ${context.title}.\nRole: ${item.roleTitle}\nDue: ${formatDate(item.dueDate)}\nLink: ${link}\n`;
+    const html = `<p>Hi ${item.name},</p><p>Please submit your ${requestLabel} for <strong>${context.title}</strong>.</p><p>Role: ${item.roleTitle}<br/>Due: ${formatDate(item.dueDate)}</p><p><a href="${link}">Open contributor portal</a></p>`;
 
     const result = await sendEmail({ to: item.email, subject, text, html });
     await writeReminderAudit({
@@ -229,10 +251,41 @@ export async function sendShowInvites(showId: string) {
 export async function sendShowRemindersNow(showId: string) {
   "use server";
   await requireRole(["owner", "admin", "editor"]);
+  const context = await getShowContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show not found.");
+  }
+  if (context.remindersPaused) {
+    withSuccess(`/app/shows/${showId}?tab=overview`, "Reminders are currently paused for this show.");
+  }
   const summary = await runReminderDispatchForShow(showId, "manual");
   withSuccess(
     `/app/shows/${showId}?tab=overview`,
     `Reminders processed: ${summary.sent}/${summary.total}.`
+  );
+}
+
+export async function setShowRemindersPaused(showId: string, formData: FormData) {
+  "use server";
+  await requireRole(["owner", "admin", "editor"]);
+
+  const intent = String(formData.get("intent") ?? "pause");
+  const shouldPause = intent === "pause";
+  const client = getSupabaseWriteClient();
+  const { error } = await client
+    .from("shows")
+    .update({
+      reminders_paused: shouldPause,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", showId);
+  if (error) {
+    withError(`/app/shows/${showId}?tab=overview`, error.message);
+  }
+
+  withSuccess(
+    `/app/shows/${showId}?tab=overview`,
+    shouldPause ? "Reminders paused for this show." : "Reminders resumed for this show."
   );
 }
 
@@ -255,6 +308,9 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
   if (!context) {
     return { sent: 0, total: 0 };
   }
+  if (context.remindersPaused) {
+    return { sent: 0, total: 0 };
+  }
   const recipients = (await getReminderRecipients(showId)).filter((item) => shouldRemind(item.status));
   let sent = 0;
 
@@ -269,9 +325,10 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
     }
 
     const link = `${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/contribute`;
-    const subject = `${context.title}: Bio reminder`;
-    const text = `Reminder for ${context.title}\nRole: ${item.roleTitle}\nDue: ${formatDate(item.dueDate)}\nLink: ${link}\n`;
-    const html = `<p>This is a reminder for <strong>${context.title}</strong>.</p><p>Role: ${item.roleTitle}<br/>Due: ${formatDate(item.dueDate)}</p><p><a href="${link}">Open contributor portal</a></p>`;
+    const requestLabel = getRequestLabel(item.requestType);
+    const subject = `${context.title}: ${requestLabel} reminder`;
+    const text = `Reminder for ${context.title}\nPlease submit your ${requestLabel}.\nRole: ${item.roleTitle}\nDue: ${formatDate(item.dueDate)}\nLink: ${link}\n`;
+    const html = `<p>This is a reminder for <strong>${context.title}</strong>.</p><p>Please submit your ${requestLabel}.<br/>Role: ${item.roleTitle}<br/>Due: ${formatDate(item.dueDate)}</p><p><a href="${link}">Open contributor portal</a></p>`;
     const result = await sendEmail({ to: item.email, subject, text, html });
 
     await writeReminderAudit({
@@ -288,7 +345,7 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
 
 export async function runReminderCron() {
   const client = getSupabaseWriteClient();
-  const { data: shows } = await client.from("shows").select("id");
+  const { data: shows } = await client.from("shows").select("id").eq("reminders_paused", false);
   let sent = 0;
   let total = 0;
   for (const show of shows ?? []) {

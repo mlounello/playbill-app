@@ -11,8 +11,8 @@ export default async function ProgramsIndexPage() {
       <div className="container page-shell">
         <div className="title-row">
           <h1>Programs</h1>
-          <Link className="button-link" href="/programs/new">
-            Create New Program
+          <Link className="button-link" href="/app/shows/new">
+            Create New Show
           </Link>
         </div>
 

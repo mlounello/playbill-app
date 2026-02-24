@@ -13,6 +13,7 @@ export async function GET() {
       NEXT_PUBLIC_SITE_URL: Boolean(process.env.NEXT_PUBLIC_SITE_URL),
       RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
       REMINDER_FROM_EMAIL: Boolean(process.env.REMINDER_FROM_EMAIL),
+      DISABLE_OUTBOUND_EMAIL: /^(1|true|yes|on)$/i.test(String(process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim()),
       CRON_SECRET: Boolean(process.env.CRON_SECRET)
     }
   };
