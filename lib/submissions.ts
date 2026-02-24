@@ -2729,6 +2729,21 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
     emailByUserId.set(String(profile.user_id), String(profile.email));
   }
 
+  let taskBody = String(person.bio ?? "");
+  if (resolvedTask.request_type !== "bio") {
+    const programField = getProgramFieldForSubmissionType(resolvedTask.request_type);
+    if (programField) {
+      const { data: program } = await client
+        .from("programs")
+        .select(programField)
+        .eq("id", context.program_id)
+        .maybeSingle();
+      taskBody = String((program as Record<string, unknown> | null)?.[programField] ?? "");
+    } else {
+      taskBody = "";
+    }
+  }
+
   const row = person as Record<string, unknown>;
   return {
     show: context,
@@ -2739,12 +2754,12 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
       submission_type: resolvedTask.request_type,
-      bio: String(person.bio ?? ""),
+      bio: taskBody,
       no_bio: resolvedTask.request_type === "bio" ? (rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false) : false,
       headshot_url: String(person.headshot_url ?? ""),
       submission_status: resolvedTask.status,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
-      bio_char_count: stripRichTextToPlain(String(person.bio ?? "")).length
+      bio_char_count: stripRichTextToPlain(taskBody).length
     } satisfies ShowSubmissionPerson,
     task_id: resolvedTask.task_id,
     history: (historyRows ?? []).map((row) => ({
