@@ -54,7 +54,7 @@ export default async function NewProgramPage({
             label="Acts & Songs (optional)"
             placeholder="Act I, song list, Act II, reprises..."
           />
-          <RichTextField name="departmentInfo" label="Department Information" />
+          <RichTextField name="departmentInfo" label="Producing Department / Company" />
           <RichTextField name="acknowledgements" label="Acknowledgements" />
           <RichTextField name="seasonCalendar" label="Season Calendar" placeholder="Show title, dates, location..." />
 

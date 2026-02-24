@@ -4,12 +4,13 @@ import { type ChangeEvent, useState } from "react";
 
 type Props = {
   programSlug: string;
+  showId?: string;
   assetType: "poster" | "actf" | "photo" | "custom";
   targetInputId?: string;
   label: string;
 };
 
-export function ProgramImageUpload({ programSlug, assetType, targetInputId, label }: Props) {
+export function ProgramImageUpload({ programSlug, showId, assetType, targetInputId, label }: Props) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState("");
   const [error, setError] = useState("");
@@ -25,6 +26,9 @@ export function ProgramImageUpload({ programSlug, assetType, targetInputId, labe
       const formData = new FormData();
       formData.set("file", file);
       formData.set("programSlug", programSlug);
+      if (showId) {
+        formData.set("showId", showId);
+      }
       formData.set("assetType", assetType);
       const response = await fetch("/api/assets/upload-program", {
         method: "POST",

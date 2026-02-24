@@ -108,12 +108,12 @@ export async function createDepartment(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) {
-    withError(`/app/shows/${showId}?tab=settings`, "Department name is required.");
+    withError(`/app/shows/${showId}?tab=settings`, "Producing department / company name is required.");
   }
 
   const website = String(formData.get("website") ?? "").trim();
   if (website && !/^https?:\/\//i.test(website)) {
-    withError(`/app/shows/${showId}?tab=settings`, "Department website must begin with http:// or https://");
+    withError(`/app/shows/${showId}?tab=settings`, "Website must begin with http:// or https://");
   }
 
   const client = getSupabaseWriteClient();
@@ -129,7 +129,7 @@ export async function createDepartment(formData: FormData) {
     withError(`/app/shows/${showId}?tab=settings`, error.message);
   }
 
-  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Department created.")}`);
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Producing department / company profile created.")}`);
 }
 
 export async function updateShowDepartments(showId: string, formData: FormData) {
@@ -210,8 +210,8 @@ export async function updateShowDepartments(showId: string, formData: FormData) 
   redirect(
     `/app/shows/${showId}?tab=settings&success=${encodeURIComponent(
       selectedDepartmentIds.length > 0
-        ? "Show departments updated."
-        : "No departments selected. Department Information is now empty for this show."
+        ? "Producing department / company binding updated."
+        : "No producing profile selected. Program section is now empty for this show."
     )}`
   );
 }

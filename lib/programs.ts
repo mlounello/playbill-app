@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { buildDepartmentInfoHtml } from "@/lib/departments";
+import { buildSeasonCalendarHtml } from "@/lib/seasons";
 import { getMissingSupabaseEnvVars, getSupabaseReadClient, getSupabaseWriteClient } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
@@ -1135,7 +1136,7 @@ function buildRenderablePages(
     department_info: {
       id: "department-info",
       type: "text",
-      title: "Department Information",
+      title: "Producing Department / Company",
       body: program.department_info
     },
     actf_ad: {
@@ -1309,11 +1310,46 @@ export async function getProgramBySlug(
     let normalizedModules: ProgramModuleRecord[] = [];
     const { data: show } = await client
       .from("shows")
-      .select("id")
+      .select("id, season_id, start_date, end_date")
       .eq("program_id", String(program.id))
       .maybeSingle();
 
     if (show?.id) {
+      try {
+        if (show.season_id) {
+          const { data: events } = await client
+            .from("season_events")
+            .select("id, season_id, title, location, event_start_date, event_end_date, time_text, sort_order")
+            .eq("season_id", String(show.season_id))
+            .order("event_start_date", { ascending: true })
+            .order("sort_order", { ascending: true });
+
+          const cutoffSource = String(show.end_date ?? show.start_date ?? "").trim();
+          const cutoff = cutoffSource ? new Date(`${cutoffSource}T00:00:00`) : null;
+          const upcoming = (events ?? []).filter((event) => {
+            if (!cutoff || Number.isNaN(cutoff.getTime())) return true;
+            const start = new Date(`${String(event.event_start_date ?? "")}T00:00:00`);
+            return !Number.isNaN(start.getTime()) && start.getTime() > cutoff.getTime();
+          });
+          safeProgram.season_calendar = buildSeasonCalendarHtml(
+            upcoming.map((event) => ({
+              id: String(event.id ?? ""),
+              season_id: String(event.season_id ?? ""),
+              title: String(event.title ?? ""),
+              location: String(event.location ?? ""),
+              event_start_date: String(event.event_start_date ?? ""),
+              event_end_date: event.event_end_date ? String(event.event_end_date) : null,
+              time_text: String(event.time_text ?? ""),
+              sort_order: Number(event.sort_order ?? 0)
+            }))
+          );
+        } else {
+          safeProgram.season_calendar = "";
+        }
+      } catch {
+        // Keep existing season calendar if season tables are not available yet.
+      }
+
       try {
         const { data: bindings } = await client
           .from("show_departments")

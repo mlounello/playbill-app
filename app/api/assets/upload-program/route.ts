@@ -33,12 +33,13 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get("file");
     const programSlug = String(formData.get("programSlug") ?? "");
+    const showId = String(formData.get("showId") ?? "");
     const assetType = String(formData.get("assetType") ?? "program-image");
 
     if (!(file instanceof File)) {
       return NextResponse.json({ ok: false, error: "No file provided." }, { status: 400 });
     }
-    if (!programSlug) {
+    if (!programSlug && !showId) {
       return NextResponse.json({ ok: false, error: "Missing program context." }, { status: 400 });
     }
     if (!file.type.startsWith("image/")) {
@@ -59,9 +60,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const { data: program } = await admin.from("programs").select("id, slug").eq("slug", programSlug).maybeSingle();
-    if (!program) {
-      return NextResponse.json({ ok: false, error: "Program not found." }, { status: 404 });
+    let programId = "";
+    let resolvedProgramSlug = "";
+    if (programSlug) {
+      const { data: programBySlug } = await admin
+        .from("programs")
+        .select("id, slug")
+        .eq("slug", programSlug)
+        .maybeSingle();
+      if (programBySlug) {
+        programId = String(programBySlug.id);
+        resolvedProgramSlug = String(programBySlug.slug ?? "");
+      }
+    }
+
+    if (!programId && showId) {
+      const { data: show } = await admin
+        .from("shows")
+        .select("program_id")
+        .eq("id", showId)
+        .maybeSingle();
+      if (show?.program_id) {
+        const { data: programById } = await admin
+          .from("programs")
+          .select("id, slug")
+          .eq("id", String(show.program_id))
+          .maybeSingle();
+        if (programById) {
+          programId = String(programById.id);
+          resolvedProgramSlug = String(programById.slug ?? "");
+        }
+      }
+    }
+
+    if (!programId) {
+      return NextResponse.json({ ok: false, error: "Program not found for provided slug/show." }, { status: 404 });
     }
 
     const bucket = "program-assets";
@@ -69,7 +102,7 @@ export async function POST(request: Request) {
 
     const ext = file.name.includes(".") ? file.name.split(".").pop() ?? "jpg" : "jpg";
     const fileName = sanitizeFilename(file.name || `upload.${ext}`);
-    const path = `programs/${program.id}/${assetType}/${Date.now()}-${fileName}`;
+    const path = `programs/${programId}/${assetType}/${Date.now()}-${fileName}`;
 
     const bytes = Buffer.from(await file.arrayBuffer());
     const { error: uploadError } = await admin.storage.from(bucket).upload(path, bytes, {
@@ -83,7 +116,7 @@ export async function POST(request: Request) {
     const { data: publicUrlData } = admin.storage.from(bucket).getPublicUrl(path);
     const publicUrl = String(publicUrlData.publicUrl ?? "");
 
-    return NextResponse.json({ ok: true, url: publicUrl, path });
+    return NextResponse.json({ ok: true, url: publicUrl, path, programSlug: resolvedProgramSlug || programSlug });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Unexpected upload failure." },
@@ -91,4 +124,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

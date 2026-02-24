@@ -16,7 +16,7 @@ const defaults: Item[] = [
   { token: "acts_songs", label: "Acts & Songs", enabled: true },
   { token: "cast_bios", label: "Cast Bios", enabled: true },
   { token: "team_bios", label: "Production Team Bios", enabled: true },
-  { token: "department_info", label: "Department Information", enabled: true },
+  { token: "department_info", label: "Producing Department / Company", enabled: true },
   { token: "actf_ad", label: "ACTF Ad", enabled: true },
   { token: "acknowledgements", label: "Acknowledgements", enabled: true },
   { token: "season_calendar", label: "Season Calendar", enabled: true },

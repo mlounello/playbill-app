@@ -78,6 +78,7 @@ create table if not exists public.shows (
   title text not null,
   slug text not null unique,
   program_id uuid references public.programs (id) on delete set null,
+  season_id uuid,
   start_date date,
   end_date date,
   venue text not null default '',
@@ -89,6 +90,7 @@ create table if not exists public.shows (
 );
 
 alter table public.shows add column if not exists program_id uuid references public.programs (id) on delete set null;
+alter table public.shows add column if not exists season_id uuid;
 alter table public.shows add column if not exists reminders_paused boolean not null default false;
 
 create table if not exists public.show_style_settings (
@@ -120,6 +122,40 @@ create table if not exists public.program_modules (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists public.seasons (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  name text not null unique
+);
+
+create table if not exists public.season_events (
+  id uuid primary key default gen_random_uuid(),
+  season_id uuid not null references public.seasons (id) on delete cascade,
+  title text not null,
+  location text not null default '',
+  event_start_date date not null,
+  event_end_date date,
+  time_text text not null default '',
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'shows_season_id_fkey'
+      and conrelid = 'public.shows'::regclass
+  ) then
+    alter table public.shows
+      add constraint shows_season_id_fkey
+      foreign key (season_id) references public.seasons (id) on delete set null;
+  end if;
+end $$;
 
 create table if not exists public.departments (
   id uuid primary key default gen_random_uuid(),
@@ -220,6 +256,8 @@ alter table public.user_profiles enable row level security;
 alter table public.shows enable row level security;
 alter table public.show_style_settings enable row level security;
 alter table public.program_modules enable row level security;
+alter table public.seasons enable row level security;
+alter table public.season_events enable row level security;
 alter table public.departments enable row level security;
 alter table public.show_departments enable row level security;
 alter table public.show_roles enable row level security;
@@ -280,6 +318,20 @@ create policy "authenticated manage program_modules" on public.program_modules
 
 drop policy if exists "authenticated manage show_roles" on public.show_roles;
 create policy "authenticated manage show_roles" on public.show_roles
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage seasons" on public.seasons;
+create policy "authenticated manage seasons" on public.seasons
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage season_events" on public.season_events;
+create policy "authenticated manage season_events" on public.season_events
   for all
   to authenticated
   using (true)

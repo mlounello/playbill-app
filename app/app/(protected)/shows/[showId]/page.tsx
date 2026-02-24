@@ -12,6 +12,13 @@ import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { createDepartment, getDepartmentRepository, getShowDepartmentSelection, updateShowDepartments } from "@/lib/departments";
 import { getProgramBySlug } from "@/lib/programs";
 import {
+  assignSeasonToShow,
+  createSeason,
+  deleteSeasonEvent,
+  getSeasonModuleData,
+  upsertSeasonEvent
+} from "@/lib/seasons";
+import {
   archiveShow,
   deleteArchivedShow,
   getShowExports,
@@ -22,7 +29,6 @@ import {
   setShowPublished,
   updateShowActsAndSongs,
   updateShowPresentation,
-  updateShowSeasonCalendar,
   updateShowModules
 } from "@/lib/shows";
 import {
@@ -97,7 +103,10 @@ export default async function ShowWorkspacePage({
   const setPublishAction = setShowPublished.bind(null, show.id);
   const updateActsAndSongsAction = updateShowActsAndSongs.bind(null, show.id);
   const updateShowPresentationAction = updateShowPresentation.bind(null, show.id);
-  const updateShowSeasonCalendarAction = updateShowSeasonCalendar.bind(null, show.id);
+  const createSeasonAction = createSeason.bind(null, show.id);
+  const assignSeasonToShowAction = assignSeasonToShow.bind(null, show.id);
+  const upsertSeasonEventAction = upsertSeasonEvent.bind(null, show.id);
+  const deleteSeasonEventAction = deleteSeasonEvent.bind(null, show.id);
   const updateShowDepartmentsAction = updateShowDepartments.bind(null, show.id);
   const setReminderPausedAction = setShowRemindersPaused.bind(null, show.id);
   const setDueDateAction = setShowDueDate.bind(null, show.id);
@@ -108,6 +117,9 @@ export default async function ShowWorkspacePage({
   const selectedDepartmentIds =
     activeTab === "settings" ? await getShowDepartmentSelection(show.id) : [];
   const createDepartmentAction = createDepartment;
+  const seasonModuleData = activeTab === "settings"
+    ? await getSeasonModuleData(show.id)
+    : { seasons: [], selectedSeasonId: "", selectedSeasonName: "", events: [] };
   const exportRows = activeTab === "export" ? await getShowExports(show.id) : [];
   const publicUrl = show.slug ? `/p/${show.slug}` : "";
   const activeSubmissionFilter = submissionFilter || "all";
@@ -938,6 +950,7 @@ export default async function ShowWorkspacePage({
                   {show.program_slug ? (
                     <ProgramImageUpload
                       programSlug={show.program_slug}
+                      showId={show.id}
                       assetType="poster"
                       targetInputId="showPosterImageUrlInput"
                       label="Upload Poster Image (optional)"
@@ -963,34 +976,144 @@ export default async function ShowWorkspacePage({
                 </form>
               </article>
               <article className="card stack-sm">
-                <strong>Show Setup: Season Calendar</strong>
+                <strong>Season Calendar Module</strong>
                 <div className="meta-text">
-                  This show&apos;s Season Calendar appears in the back-cover/season module for this program.
+                  Choose/create a season, then add events. Program season calendar is generated automatically from events after this show&apos;s end date.
                 </div>
-                <form action={updateShowSeasonCalendarAction} className="stack-sm">
-                  <RichTextField
-                    name="seasonCalendar"
-                    label="Season Calendar"
-                    initialValue={show.season_calendar}
-                    draftNamespace={`show-season-calendar:${show.id}`}
-                  />
-                  <button type="submit">Save Season Calendar</button>
+                <form action={assignSeasonToShowAction} className="top-actions">
+                  <label>
+                    Applied season
+                    <select name="seasonId" defaultValue={seasonModuleData.selectedSeasonId}>
+                      <option value="">None</option>
+                      {seasonModuleData.seasons.map((season) => (
+                        <option key={season.id} value={season.id}>
+                          {season.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="submit">Apply Season</button>
+                </form>
+                <form action={createSeasonAction} className="top-actions">
+                  <label>
+                    New season name
+                    <input name="name" placeholder="AY 2025-2026" required />
+                  </label>
+                  <button type="submit">Create + Apply</button>
                 </form>
               </article>
+
               <article className="card stack-sm">
-                <strong>Department Repository</strong>
+                <strong>Season Events</strong>
+                {seasonModuleData.selectedSeasonId ? (
+                  <>
+                    <div className="meta-text">
+                      Editing season: <strong>{seasonModuleData.selectedSeasonName || "Selected season"}</strong>
+                    </div>
+                    <form action={upsertSeasonEventAction} className="stack-sm">
+                      <input type="hidden" name="seasonId" value={seasonModuleData.selectedSeasonId} />
+                      <div className="form-row-2">
+                        <label>
+                          Event title
+                          <input name="title" required placeholder="Spring Cabaret" />
+                        </label>
+                        <label>
+                          Location
+                          <input name="location" placeholder="Beaudoin Theatre" />
+                        </label>
+                      </div>
+                      <div className="form-row-2">
+                        <label>
+                          Start date
+                          <input type="date" name="eventStartDate" required />
+                        </label>
+                        <label>
+                          End date (optional)
+                          <input type="date" name="eventEndDate" />
+                        </label>
+                      </div>
+                      <div className="form-row-2">
+                        <label>
+                          Time text
+                          <input name="timeText" placeholder="8:00pm (3:00pm Sunday matinee)" />
+                        </label>
+                        <label>
+                          Sort order
+                          <input type="number" name="sortOrder" defaultValue={0} />
+                        </label>
+                      </div>
+                      <button type="submit">Add Event</button>
+                    </form>
+                    {seasonModuleData.events.length > 0 ? (
+                      <div className="stack-sm">
+                        {seasonModuleData.events.map((event) => (
+                          <div key={event.id} className="card card-soft stack-sm">
+                            <form action={upsertSeasonEventAction} className="stack-sm">
+                              <input type="hidden" name="eventId" value={event.id} />
+                              <input type="hidden" name="seasonId" value={seasonModuleData.selectedSeasonId} />
+                              <div className="form-row-2">
+                                <label>
+                                  Event title
+                                  <input name="title" defaultValue={event.title} required />
+                                </label>
+                                <label>
+                                  Location
+                                  <input name="location" defaultValue={event.location} />
+                                </label>
+                              </div>
+                              <div className="form-row-2">
+                                <label>
+                                  Start date
+                                  <input type="date" name="eventStartDate" defaultValue={event.event_start_date} required />
+                                </label>
+                                <label>
+                                  End date
+                                  <input type="date" name="eventEndDate" defaultValue={event.event_end_date ?? ""} />
+                                </label>
+                              </div>
+                              <div className="form-row-2">
+                                <label>
+                                  Time text
+                                  <input name="timeText" defaultValue={event.time_text} />
+                                </label>
+                                <label>
+                                  Sort order
+                                  <input type="number" name="sortOrder" defaultValue={event.sort_order} />
+                                </label>
+                              </div>
+                              <div className="top-actions">
+                                <button type="submit">Save Event</button>
+                              </div>
+                            </form>
+                            <form action={deleteSeasonEventAction}>
+                              <input type="hidden" name="eventId" value={event.id} />
+                              <button type="submit">Delete Event</button>
+                            </form>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="meta-text">No events in this season yet.</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="meta-text">Apply a season first, then add events.</div>
+                )}
+              </article>
+              <article className="card stack-sm">
+                <strong>Producing Department / Company Repository</strong>
                 <div className="meta-text">
-                  Create reusable departments once, then bind them to shows.
+                  Create reusable producing department/company profiles, then bind them to shows.
                 </div>
                 <form action={createDepartmentAction} className="stack-sm">
                   <input type="hidden" name="showId" value={show.id} />
                   <label>
-                    Department name
-                    <input name="name" required placeholder="Costume Shop" />
+                    Producing department / company name
+                    <input name="name" required placeholder="Siena University Creative Arts Department" />
                   </label>
                   <label>
-                    Description
-                    <textarea name="description" placeholder="What this department supports..." />
+                    Overview / leadership / mission
+                    <textarea name="description" placeholder="Chair, faculty, mission statement, and program details..." />
                   </label>
                   <div className="form-row-2">
                     <label>
@@ -999,7 +1122,7 @@ export default async function ShowWorkspacePage({
                     </label>
                     <label>
                       Contact Email
-                      <input name="contactEmail" type="email" placeholder="department@siena.edu" />
+                      <input name="contactEmail" type="email" placeholder="creativearts@siena.edu" />
                     </label>
                   </div>
                   <label>
@@ -1011,12 +1134,12 @@ export default async function ShowWorkspacePage({
               </article>
 
               <article className="card stack-sm">
-                <strong>Bind Departments to This Show</strong>
+                <strong>Bind Producing Department / Company to This Show</strong>
                 <div className="meta-text">
-                  Selected departments auto-generate the Program&apos;s Department Information section.
+                  Selected profiles auto-generate the Program&apos;s Producing Department / Company section.
                 </div>
                 {departmentRepository.length === 0 ? (
-                  <div className="meta-text">No departments yet. Create one above.</div>
+                  <div className="meta-text">No profiles yet. Create one above.</div>
                 ) : (
                   <form action={updateShowDepartmentsAction} className="stack-sm">
                     <div className="stack-sm">
