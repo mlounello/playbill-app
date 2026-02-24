@@ -363,17 +363,13 @@ button:disabled,
 
 .billing-section {
   display: grid;
-  gap: 0.12in;
+  gap: 0.1in;
 }
 
 .billing-section-title {
   margin: 0;
-  color: var(--accent);
-  font-family: var(--font-title);
-  font-size: 14pt;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
   text-align: center;
+  line-height: 1.1;
 }
 
 .billing-list {
@@ -381,17 +377,25 @@ button:disabled,
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.02in;
+  gap: 0.01in;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 10pt;
+  line-height: 1.15;
 }
 
 .billing-item {
   display: flex;
   align-items: baseline;
-  gap: 0.1rem;
-  font-size: 10pt;
+  gap: 0.14rem;
+  white-space: nowrap;
 }
 
 .billing-left {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -402,6 +406,7 @@ button:disabled,
 }
 
 .billing-right {
+  flex: 0 0 auto;
   white-space: nowrap;
   text-align: right;
 }

@@ -159,11 +159,27 @@ export async function renderProgramPdfWithPlaywright(params: {
   programSlug: string;
   exportType: "proof" | "print";
 }) {
-  const playwright = await import("playwright");
-  const browser = await playwright.chromium.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-  });
+  const launchBrowser = async () => {
+    const isVercel = Boolean(process.env.VERCEL);
+    if (isVercel) {
+      const playwrightCore = await import("playwright-core");
+      const chromium = await import("@sparticuz/chromium");
+      const executablePath = await chromium.default.executablePath();
+      return playwrightCore.chromium.launch({
+        executablePath,
+        headless: true,
+        args: [...chromium.default.args, "--disable-dev-shm-usage"]
+      });
+    }
+
+    const playwright = await import("playwright");
+    return playwright.chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+    });
+  };
+
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
@@ -174,6 +190,7 @@ export async function renderProgramPdfWithPlaywright(params: {
 
     await page.goto(targetUrl, { waitUntil: "networkidle" });
     await page.emulateMedia({ media: "print" });
+    await page.waitForTimeout(250);
 
     const pdf = await page.pdf(
       params.exportType === "print"

@@ -616,7 +616,7 @@ function buildCategoryRoleListHtml(title: string, rows: Array<{ role: string; na
         `<li class="billing-item"><span class="billing-left">${escapeHtml(row.role)}</span><span class="billing-leader" aria-hidden="true"></span><span class="billing-right">${escapeHtml(row.name)}</span></li>`
     )
     .join("");
-  const heading = showTitle ? `<h3 class="billing-section-title">${escapeHtml(title)}</h3>` : "";
+  const heading = showTitle ? `<h3 class="playbill-title billing-section-title">${escapeHtml(title)}</h3>` : "";
   return `<section class="billing-section">${heading}<ul class="billing-list">${listItems}</ul></section>`;
 }
 

@@ -38,6 +38,7 @@ export async function GET(
 
   const origin = new URL(request.url).origin;
   let bytes: Uint8Array;
+  let renderer: "playwright" | "fallback" = "playwright";
   try {
     bytes = await renderProgramPdfWithPlaywright({
       origin,
@@ -45,6 +46,7 @@ export async function GET(
       exportType: exportType === "print" ? "print" : "proof"
     });
   } catch {
+    renderer = "fallback";
     bytes =
       exportType === "print"
         ? await generatePrintImposedPdf({ title: program.title, spreads: program.bookletSpreads })
@@ -57,7 +59,8 @@ export async function GET(
   return new NextResponse(bytes as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filename}"`
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "X-Playbill-Export-Renderer": renderer
     }
   });
 }
