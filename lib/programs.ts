@@ -794,6 +794,13 @@ function isStackablePage(page: ProgramPage) {
   return page.type === "text" || (page.type === "filler" && richTextHasContent(page.body));
 }
 
+function isBillingStyledPage(page: ProgramPage) {
+  if (page.type !== "text" && page.type !== "filler") {
+    return false;
+  }
+  return page.body.includes("billing-section") || page.body.includes("billing-list");
+}
+
 function countTag(html: string, tag: string) {
   const re = new RegExp(`<${tag}(\\s|>)`, "gi");
   return (html.match(re) ?? []).length;
@@ -815,7 +822,8 @@ function estimateStackUnits(page: ProgramPage) {
     const textBody = page.body;
     const lineEstimate = estimateRichTextLines(textBody);
     const titleUnits = page.title?.trim() ? 44 : 0;
-    return titleUnits + Math.round(lineEstimate * 11.5);
+    const densityFactor = isBillingStyledPage(page) ? 7.4 : 11.5;
+    return titleUnits + Math.round(lineEstimate * densityFactor);
   }
   return Number.MAX_SAFE_INTEGER;
 }
@@ -828,6 +836,16 @@ function getStackPageBudget(densityMode: DensityMode) {
     return 800;
   }
   return 900;
+}
+
+function getBillingStackBudget(densityMode: DensityMode) {
+  if (densityMode === "compact") {
+    return 1450;
+  }
+  if (densityMode === "loose") {
+    return 1180;
+  }
+  return 1325;
 }
 
 function renderModulePages(
@@ -1198,7 +1216,10 @@ function buildRenderablePagesFromModules(
       continue;
     }
 
-    if (stackUsed > 0 && stackUsed + units > stackBudget) {
+    const isBillingPage = isBillingStyledPage(page);
+    const activeBudget = isBillingPage ? getBillingStackBudget(densityMode) : stackBudget;
+
+    if (stackUsed > 0 && stackUsed + units > activeBudget) {
       flushStackBuffer();
     }
 

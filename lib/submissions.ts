@@ -1632,8 +1632,13 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
       .eq("id", roleTemplateId)
       .maybeSingle();
     if (template?.id) {
-      roleName = String(template.name ?? "").trim() || roleName;
-      category = normalizeRoleCategoryValue(String(template.category ?? typedCategory));
+      // Template provides defaults, but explicit form edits should win.
+      if (!roleName) {
+        roleName = String(template.name ?? "").trim() || roleName;
+      }
+      if (!String(formData.get("roleCategory") ?? "").trim()) {
+        category = normalizeRoleCategoryValue(String(template.category ?? typedCategory));
+      }
       resolvedTemplateId = String(template.id);
     }
   }
