@@ -44,6 +44,7 @@ import {
   getShowRoleAssignments,
   getShowSpecialNoteAssignments,
   getShowSubmissionQueue,
+  resyncShowSubmissionRequests,
   getShowSubmissionPeople,
   updateRoleAssignment,
   updatePersonProfile,
@@ -111,6 +112,7 @@ export default async function ShowWorkspacePage({
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
   const updatePersonProfileAction = updatePersonProfile.bind(null, show.id);
   const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
+  const resyncSubmissionRequestsAction = resyncShowSubmissionRequests.bind(null, show.id);
   const addRoleAssignmentAction = addRoleAssignmentToPerson.bind(null, show.id);
   const updateRoleAssignmentAction = updateRoleAssignment.bind(null, show.id);
   const importBiosAction = importBiosFromCsv.bind(null, show.id);
@@ -591,6 +593,12 @@ export default async function ShowWorkspacePage({
                     </select>
                   </label>
                   <button type="submit">Save Special Note Assignments</button>
+                </form>
+                <form action={resyncSubmissionRequestsAction} className="top-actions" data-pending-label="Resyncing submission requests...">
+                  <button type="submit">Resync Submission Requests</button>
+                  <span className="section-note">
+                    Repairs missing bio requests and role links for this show.
+                  </span>
                 </form>
               </article>
 

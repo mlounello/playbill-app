@@ -1831,11 +1831,13 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
   const client = getSupabaseWriteClient();
   const { data: peopleRows } = await client
     .from("people")
-    .select("id, full_name")
+    .select("id, full_name, role_title, team_type")
     .eq("program_id", context.program_id);
   const people = (peopleRows ?? []).map((row) => ({
     id: String(row.id),
-    full_name: String(row.full_name ?? "")
+    full_name: String(row.full_name ?? ""),
+    role_title: String(row.role_title ?? ""),
+    team_type: String(row.team_type ?? "") === "cast" ? "cast" : "production"
   }));
 
   const peopleIdSet = new Set(people.map((person) => person.id));
@@ -1857,6 +1859,43 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
   for (const role of roles) {
     if (role.person_id && !roleByPersonId.has(role.person_id)) {
       roleByPersonId.set(role.person_id, role.id);
+    }
+  }
+  const showRolesColumns = await getTableColumns(client, "show_roles");
+  const castBillingValues = await client
+    .from("show_roles")
+    .select("billing_order, category")
+    .eq("show_id", showId);
+  let nextCastBillingOrder =
+    Math.max(
+      0,
+      ...((castBillingValues.data ?? [])
+        .filter((row) => String(row.category ?? "").toLowerCase() === "cast")
+        .map((row) => Number(row.billing_order ?? 0)))
+    ) + 1;
+
+  // Self-heal: if a selected person has no role assignment yet, create one so special-note requests can attach.
+  for (const selectedId of unique) {
+    if (roleByPersonId.has(selectedId)) continue;
+    const person = people.find((item) => item.id === selectedId);
+    if (!person) continue;
+    const inferredCategory = person.team_type === "cast" ? "cast" : inferRoleCategoryFromRole(person.role_title);
+    const roleInsert = filterToColumns(
+      {
+        show_id: showId,
+        person_id: selectedId,
+        role_name: person.role_title || "Production Team",
+        category: inferredCategory,
+        role_template_id: null,
+        billing_order: inferredCategory === "cast" ? nextCastBillingOrder++ : null,
+        bio_order: null
+      },
+      showRolesColumns
+    );
+    const { data: insertedRole } = await client.from("show_roles").insert(roleInsert).select("id").maybeSingle();
+    if (insertedRole?.id) {
+      roleByPersonId.set(selectedId, String(insertedRole.id));
+      roles.push({ id: String(insertedRole.id), person_id: selectedId });
     }
   }
 
@@ -1950,6 +1989,143 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
   redirect(
     `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
       "Special note assignments updated. Bio remains default and note requests were synced."
+    )}`
+  );
+}
+
+export async function resyncShowSubmissionRequests(showId: string) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const showRolesColumns = await getTableColumns(client, "show_roles");
+
+  const { data: peopleRows } = await client
+    .from("people")
+    .select("id, role_title, team_type")
+    .eq("program_id", context.program_id);
+  const people = (peopleRows ?? []).map((row) => ({
+    id: String(row.id),
+    role_title: String(row.role_title ?? ""),
+    team_type: String(row.team_type ?? "") === "cast" ? "cast" : "production"
+  }));
+
+  const { data: roleRows } = await client
+    .from("show_roles")
+    .select("id, person_id, category, billing_order")
+    .eq("show_id", showId);
+  const roles = (roleRows ?? []).map((row) => ({
+    id: String(row.id),
+    person_id: String(row.person_id ?? ""),
+    category: normalizeRoleCategoryValue(String(row.category ?? "production")),
+    billing_order: row.billing_order === null ? null : Number(row.billing_order ?? null)
+  }));
+  const rolesByPerson = new Map<string, Array<{ id: string; category: RoleCategory; billing_order: number | null }>>();
+  for (const role of roles) {
+    const list = rolesByPerson.get(role.person_id) ?? [];
+    list.push(role);
+    rolesByPerson.set(role.person_id, list);
+  }
+
+  let nextCastBillingOrder =
+    Math.max(
+      0,
+      ...roles
+        .filter((role) => role.category === "cast")
+        .map((role) => Number(role.billing_order ?? 0))
+    ) + 1;
+  let createdRoles = 0;
+  for (const person of people) {
+    if ((rolesByPerson.get(person.id) ?? []).length > 0) continue;
+    const inferredCategory = person.team_type === "cast" ? "cast" : inferRoleCategoryFromRole(person.role_title);
+    const roleInsert = filterToColumns(
+      {
+        show_id: showId,
+        person_id: person.id,
+        role_name: person.role_title || "Production Team",
+        category: inferredCategory,
+        role_template_id: null,
+        billing_order: inferredCategory === "cast" ? nextCastBillingOrder++ : null,
+        bio_order: null
+      },
+      showRolesColumns
+    );
+    const { data: inserted } = await client.from("show_roles").insert(roleInsert).select("id").maybeSingle();
+    if (inserted?.id) {
+      const createdRole = { id: String(inserted.id), category: inferredCategory as RoleCategory, billing_order: null };
+      const list = rolesByPerson.get(person.id) ?? [];
+      list.push(createdRole);
+      rolesByPerson.set(person.id, list);
+      createdRoles += 1;
+    }
+  }
+
+  const roleIds = [...new Set(Array.from(rolesByPerson.values()).flat().map((role) => role.id))];
+  const { data: requestRows } = roleIds.length
+    ? await client
+        .from("submission_requests")
+        .select("id, show_role_id, request_type")
+        .in("show_role_id", roleIds)
+    : { data: [] as Array<Record<string, unknown>> };
+  const requests = (requestRows ?? []).map((row) => ({
+    id: String(row.id ?? ""),
+    show_role_id: String(row.show_role_id ?? ""),
+    request_type: normalizeSubmissionType(String(row.request_type ?? "bio"))
+  }));
+
+  const requestsByRoleId = new Map<string, Array<{ id: string; request_type: SubmissionType }>>();
+  for (const request of requests) {
+    const list = requestsByRoleId.get(request.show_role_id) ?? [];
+    list.push({ id: request.id, request_type: request.request_type });
+    requestsByRoleId.set(request.show_role_id, list);
+  }
+
+  let createdBioRequests = 0;
+  let removedDuplicateBioRequests = 0;
+  for (const person of people) {
+    const personRoles = rolesByPerson.get(person.id) ?? [];
+    if (personRoles.length === 0) continue;
+    const sortedRoles = [...personRoles].sort((a, b) => {
+      if (a.category === "cast" && b.category !== "cast") return -1;
+      if (b.category === "cast" && a.category !== "cast") return 1;
+      return a.id.localeCompare(b.id);
+    });
+    const primaryRoleId = sortedRoles[0].id;
+    const personBioRequests = personRoles
+      .flatMap((role) => requestsByRoleId.get(role.id) ?? [])
+      .filter((request) => request.request_type === "bio");
+
+    if (personBioRequests.length === 0) {
+      await client.from("submission_requests").insert({
+        show_role_id: primaryRoleId,
+        request_type: "bio",
+        label: `${getSubmissionTypeLabel("bio")} Submission`,
+        constraints: getSubmissionConstraints("bio"),
+        status: "pending"
+      });
+      createdBioRequests += 1;
+      continue;
+    }
+
+    const keep = personBioRequests[0];
+    for (const duplicate of personBioRequests.slice(1)) {
+      await client.from("submission_requests").delete().eq("id", duplicate.id);
+      removedDuplicateBioRequests += 1;
+    }
+    if (keep && keep.id && requestsByRoleId.get(primaryRoleId)?.every((req) => req.id !== keep.id)) {
+      // Keep existing request placement to avoid unexpected reassignment side-effects.
+    }
+  }
+
+  redirect(
+    `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
+      `Submission requests resynced. Added ${createdRoles} roles, created ${createdBioRequests} bio requests, removed ${removedDuplicateBioRequests} duplicate bios.`
     )}`
   );
 }
