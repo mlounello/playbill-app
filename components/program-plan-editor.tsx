@@ -230,22 +230,7 @@ function ModuleSettings({
     );
   }
 
-  return (
-    <details>
-      <summary>Advanced settings (JSON)</summary>
-      <textarea
-        className="rich-textarea"
-        value={JSON.stringify(item.settings || {}, null, 2)}
-        onChange={(event) => {
-          try {
-            onUpdate(JSON.parse(event.target.value));
-          } catch {
-            // keep typing permissive
-          }
-          }}
-      />
-    </details>
-  );
+  return null;
 }
 
 export function ProgramPlanEditor({
@@ -385,6 +370,15 @@ export function ProgramPlanEditor({
                 onChange={(event) => update(index, "visible", event.target.checked)}
               />
               Visible
+            </label>
+
+            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={Boolean(item.settings.show_header ?? true)}
+                onChange={(event) => update(index, "settings", { ...item.settings, show_header: event.target.checked })}
+              />
+              Show section header
             </label>
 
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>

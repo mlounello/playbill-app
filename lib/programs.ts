@@ -571,6 +571,18 @@ function normalizeRoleCategory(value: string) {
   return "production";
 }
 
+function normalizeModuleType(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "cast" || normalized === "cast_team" || normalized === "cast_team_list") return "cast_list";
+  if (normalized === "creative_team_list") return "creative_team";
+  if (normalized === "production_team_list") return "production_team";
+  if (normalized === "director_notes") return "director_note";
+  if (normalized === "acknowledgments") return "acknowledgements";
+  if (normalized === "specialthanks") return "special_thanks";
+  if (normalized === "department") return "department_info";
+  return normalized;
+}
+
 function uniqueRoleNames(values: string[]) {
   const seen = new Set<string>();
   const ordered: string[] = [];
@@ -590,7 +602,7 @@ function joinRoles(values: string[]) {
   return uniqueRoleNames(values).join(" & ");
 }
 
-function buildCategoryRoleListHtml(title: string, rows: Array<{ role: string; name: string }>) {
+function buildCategoryRoleListHtml(title: string, rows: Array<{ role: string; name: string }>, showTitle: boolean = true) {
   if (rows.length === 0) {
     return "";
   }
@@ -600,7 +612,8 @@ function buildCategoryRoleListHtml(title: string, rows: Array<{ role: string; na
         `<li class="billing-item"><span class="billing-left">${escapeHtml(row.role)}</span><span class="billing-leader" aria-hidden="true"></span><span class="billing-right">${escapeHtml(row.name)}</span></li>`
     )
     .join("");
-  return `<section class="billing-section"><h3 class="billing-section-title">${escapeHtml(title)}</h3><ul class="billing-list">${listItems}</ul></section>`;
+  const heading = showTitle ? `<h3 class="billing-section-title">${escapeHtml(title)}</h3>` : "";
+  return `<section class="billing-section">${heading}<ul class="billing-list">${listItems}</ul></section>`;
 }
 
 function derivePeopleForBiosFromRoles(
@@ -800,9 +813,12 @@ function renderModulePages(
   showRoles: ShowRoleRecord[],
   densityMode: DensityMode
 ) {
-  const title = module.display_title.trim() || module.module_type.replace(/_/g, " ");
+  const normalizedType = normalizeModuleType(module.module_type);
+  const moduleTitle = module.display_title.trim() || normalizedType.replace(/_/g, " ");
+  const showHeader = Boolean(module.settings.show_header ?? true);
+  const title = showHeader ? moduleTitle : "";
   const safeModuleId = module.id ? module.id.slice(0, 8) : String(index);
-  const idBase = `${module.module_type}-${index}-${safeModuleId}`;
+  const idBase = `${normalizedType}-${index}-${safeModuleId}`;
   const hasPoster = Boolean(program.poster_image_url.trim());
   const hasDirectorNote = richTextHasContent(program.director_notes);
   const hasDramaturgicalNote = richTextHasContent(program.dramaturgical_note);
@@ -818,7 +834,6 @@ function renderModulePages(
   const castWithBios = peopleWithBios(cast);
   const productionWithBios = peopleWithBios(production);
   const allHeadshots = [...cast, ...production].map((person) => person.headshot_url).filter((url) => Boolean(url.trim()));
-  const { creativeTeam, productionTeam } = splitCreativeAndProductionTeam(production);
   const emptyPlaceholder = (placeholderTitle: string, body: string) =>
     [
       {
@@ -829,7 +844,7 @@ function renderModulePages(
       }
     ] satisfies ProgramPage[];
 
-  if (module.module_type === "cover") {
+  if (normalizedType === "cover") {
     if (!hasPoster) {
       return [] as ProgramPage[];
     }
@@ -844,7 +859,7 @@ function renderModulePages(
     ] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "production_info") {
+  if (normalizedType === "production_info") {
     const body = buildProductionInfoHtml(program);
     if (!richTextHasContent(body)) {
       return emptyPlaceholder(
@@ -855,21 +870,26 @@ function renderModulePages(
     return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "cast_list") {
-    const body = buildCategoryRoleListHtml("CAST", buildRoleListRowsByCategory([...cast, ...production], showRoles, "cast"));
+  if (normalizedType === "cast_list") {
+    const body = buildCategoryRoleListHtml(
+      moduleTitle,
+      buildRoleListRowsByCategory([...cast, ...production], showRoles, "cast"),
+      showHeader
+    );
     if (!richTextHasContent(body)) {
       return emptyPlaceholder(
         title,
         "Cast List is enabled, but no cast records were found. In People and Roles, confirm entries are assigned to category: cast."
       );
     }
-    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+    return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "creative_team") {
+  if (normalizedType === "creative_team") {
     const body = buildCategoryRoleListHtml(
-      "CREATIVE TEAM",
-      buildRoleListRowsByCategory([...cast, ...production], showRoles, "creative")
+      moduleTitle,
+      buildRoleListRowsByCategory([...cast, ...production], showRoles, "creative"),
+      showHeader
     );
     if (!richTextHasContent(body)) {
       return emptyPlaceholder(
@@ -877,13 +897,14 @@ function renderModulePages(
         "Creative Team module is enabled, but no creative team records were found. Add people in People and Roles with category: creative."
       );
     }
-    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+    return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "production_team") {
+  if (normalizedType === "production_team") {
     const body = buildCategoryRoleListHtml(
-      "PRODUCTION TEAM",
-      buildRoleListRowsByCategory([...cast, ...production], showRoles, "production")
+      moduleTitle,
+      buildRoleListRowsByCategory([...cast, ...production], showRoles, "production"),
+      showHeader
     );
     if (!richTextHasContent(body)) {
       return emptyPlaceholder(
@@ -891,10 +912,10 @@ function renderModulePages(
         "Production Team module is enabled, but no production records were found. Add people in People and Roles with category: production."
       );
     }
-    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+    return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "bios") {
+  if (normalizedType === "bios") {
     const pages: ProgramPage[] = [];
     const scope = getSettingString(module.settings, "scope");
     const allowMultiplePages = Boolean(module.settings.allow_multiple_pages ?? true);
@@ -917,35 +938,35 @@ function renderModulePages(
     return pages;
   }
 
-  if (module.module_type === "director_note") {
+  if (normalizedType === "director_note") {
     if (!hasDirectorNote) {
       return emptyPlaceholder(title, "Director's note module is enabled, but no note content has been submitted yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.director_notes }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "dramaturgical_note") {
+  if (normalizedType === "dramaturgical_note") {
     if (!hasDramaturgicalNote) {
       return emptyPlaceholder(title, "Dramaturgical note module is enabled, but no note content has been submitted yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.dramaturgical_note }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "music_director_note") {
+  if (normalizedType === "music_director_note") {
     if (!hasMusicDirectorNote) {
       return emptyPlaceholder(title, "Music director note module is enabled, but no note content has been submitted yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.music_director_note }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "acts_scenes" || module.module_type === "songs") {
+  if (normalizedType === "acts_scenes" || normalizedType === "songs") {
     if (!hasActsSongs) {
       return [] as ProgramPage[];
     }
     return [{ id: idBase, type: "text", title, body: program.acts_songs }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "headshots_grid") {
+  if (normalizedType === "headshots_grid") {
     const photos = allHeadshots.length > 0 ? allHeadshots : program.production_photo_urls;
     if (photos.length === 0) {
       return [] as ProgramPage[];
@@ -953,14 +974,14 @@ function renderModulePages(
     return [{ id: idBase, type: "photo_grid", title, photos }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "production_photos") {
+  if (normalizedType === "production_photos") {
     if (program.production_photo_urls.length === 0) {
       return [] as ProgramPage[];
     }
     return [{ id: idBase, type: "photo_grid", title, photos: program.production_photo_urls }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "sponsors") {
+  if (normalizedType === "sponsors") {
     const pages: ProgramPage[] = [];
     if (hasActfImage) {
       pages.push({ id: `${idBase}-image`, type: "image", title, imageUrl: program.actf_ad_image_url });
@@ -971,21 +992,21 @@ function renderModulePages(
     return pages;
   }
 
-  if (module.module_type === "special_thanks") {
+  if (normalizedType === "special_thanks") {
     if (!hasSpecialThanks) {
       return emptyPlaceholder(title, "Special Thanks module is enabled, but no Special Thanks content was added yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.special_thanks }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "acknowledgements") {
+  if (normalizedType === "acknowledgements") {
     if (!hasAcknowledgements) {
       return emptyPlaceholder(title, "Acknowledgements module is enabled, but no acknowledgements content was added yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.acknowledgements }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "back_cover") {
+  if (normalizedType === "back_cover") {
     const mode = getSettingString(module.settings, "mode") || "schedule";
     if (mode === "image") {
       if (hasActfImage) {
@@ -1010,15 +1031,15 @@ function renderModulePages(
     return [] as ProgramPage[];
   }
 
-  if (module.module_type === "billing" && hasBilling) {
+  if (normalizedType === "billing" && hasBilling) {
     return [{ id: idBase, type: "text", title, body: resolvedBillingPage }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "department_info" && hasDepartmentInfo) {
+  if (normalizedType === "department_info" && hasDepartmentInfo) {
     return [{ id: idBase, type: "text", title, body: program.department_info }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "custom_pages") {
+  if (normalizedType === "custom_pages") {
     const pages: ProgramPage[] = [];
     for (let i = 0; i < program.custom_pages.length; i += 1) {
       pages.push(mapCustomPageToRenderable(program.custom_pages[i], i));
@@ -1026,7 +1047,7 @@ function renderModulePages(
     return pages;
   }
 
-  if (module.module_type === "custom_text") {
+  if (normalizedType === "custom_text") {
     const body = sanitizeRichText(getSettingString(module.settings, "body"));
     if (!richTextHasContent(body)) {
       return [] as ProgramPage[];
@@ -1034,7 +1055,7 @@ function renderModulePages(
     return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
   }
 
-  if (module.module_type === "custom_image") {
+  if (normalizedType === "custom_image") {
     const imageUrl = getSettingString(module.settings, "image_url");
     if (!isValidHttpUrl(imageUrl)) {
       return [] as ProgramPage[];
@@ -1077,7 +1098,7 @@ function buildRenderablePagesFromModules(
     pages.push(...renderModulePages(visibleModules[index], index, program, cast, production, showRoles, densityMode));
   }
 
-  if (!modules.some((module) => module.visible && module.module_type === "custom_pages")) {
+  if (!modules.some((module) => module.visible && normalizeModuleType(module.module_type) === "custom_pages")) {
     for (let i = 0; i < program.custom_pages.length; i += 1) {
       pages.push(mapCustomPageToRenderable(program.custom_pages[i], i));
     }

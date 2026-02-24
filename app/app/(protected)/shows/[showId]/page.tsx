@@ -80,7 +80,9 @@ export default async function ShowWorkspacePage({
   const { showId } = await params;
   const { tab, error, success, submissionFilter, submissionQuery, submissionSort, submissionView, paddingSim } = await searchParams;
   const show = await getShowById(showId);
-  const activeTab = tab || "overview";
+  const validTabIds = new Set(tabs.map((item) => item.id));
+  const normalizedTab = String(tab ?? "overview").split("?")[0];
+  const activeTab = validTabIds.has(normalizedTab) ? normalizedTab : "overview";
 
   if (!show) {
     notFound();
@@ -1211,12 +1213,6 @@ export default async function ShowWorkspacePage({
             </section>
           ) : null}
 
-          {!["overview", "program-plan", "preview", "people-roles", "submissions", "export", "publish", "settings"].includes(activeTab) ? (
-            <section className="card">
-              <strong>{tabs.find((item) => item.id === activeTab)?.label ?? "Tab"}</strong>
-              <div style={{ marginTop: "0.5rem" }}>This tab is queued for the next milestone implementation.</div>
-            </section>
-          ) : null}
         </section>
       </div>
     </main>

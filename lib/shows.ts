@@ -93,6 +93,18 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   custom_image: []
 };
 
+function normalizeModuleType(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "cast" || normalized === "cast_team" || normalized === "cast_team_list") return "cast_list";
+  if (normalized === "creative_team_list") return "creative_team";
+  if (normalized === "production_team_list") return "production_team";
+  if (normalized === "director_notes") return "director_note";
+  if (normalized === "acknowledgments") return "acknowledgements";
+  if (normalized === "specialthanks") return "special_thanks";
+  if (normalized === "department") return "department_info";
+  return normalized;
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -200,7 +212,8 @@ function buildProgramLayoutTokens(modules: Array<z.infer<typeof modulePayloadSch
       continue;
     }
 
-    for (const token of moduleToProgramTokens[module.module_type] ?? []) {
+    const normalizedType = normalizeModuleType(module.module_type);
+    for (const token of moduleToProgramTokens[normalizedType] ?? []) {
       if (!seen.has(token)) {
         seen.add(token);
         ordered.push(token);
@@ -209,6 +222,11 @@ function buildProgramLayoutTokens(modules: Array<z.infer<typeof modulePayloadSch
   }
 
   return ordered;
+}
+
+function isSubmissionCompleteStatus(value: unknown) {
+  const normalized = String(value ?? "").toLowerCase();
+  return normalized === "submitted" || normalized === "approved" || normalized === "locked";
 }
 
 export function getProgramTokensFromShowModules(modules: ShowModule[]) {
@@ -362,7 +380,7 @@ export async function getShowsForDashboard() {
       const pid = String(row.program_id ?? "");
       const current = submissionByProgram.get(pid) ?? { total: 0, submitted: 0 };
       current.total += 1;
-      if (String(row.submission_status ?? "") === "submitted") {
+      if (isSubmissionCompleteStatus(row.submission_status)) {
         current.submitted += 1;
       }
       submissionByProgram.set(pid, current);
@@ -434,7 +452,7 @@ export async function getShowById(showId: string) {
       .order("module_order", { ascending: true });
 
     const total = (people ?? []).length;
-    const submitted = (people ?? []).filter((row) => String(row.submission_status ?? "") === "submitted").length;
+    const submitted = (people ?? []).filter((row) => isSubmissionCompleteStatus(row.submission_status)).length;
 
     return {
       id: String(show.id),

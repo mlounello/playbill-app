@@ -23,20 +23,21 @@ function withSuccess(path: string, message: string): never {
 }
 
 function renderDepartmentBlock(department: DepartmentRecord) {
-  const lines: string[] = [];
+  const sections: string[] = [];
   if (department.description.trim()) {
-    lines.push(department.description.trim());
+    // Description is already rich text HTML; preserve formatting instead of re-wrapping.
+    sections.push(department.description.trim());
   }
   if (department.website.trim()) {
-    lines.push(`<a href="${department.website.trim()}">${department.website.trim()}</a>`);
+    sections.push(`<p><a href="${department.website.trim()}">${department.website.trim()}</a></p>`);
   }
   if (department.contact_email.trim()) {
-    lines.push(`<a href="mailto:${department.contact_email.trim()}">${department.contact_email.trim()}</a>`);
+    sections.push(`<p><a href="mailto:${department.contact_email.trim()}">${department.contact_email.trim()}</a></p>`);
   }
   if (department.contact_phone.trim()) {
-    lines.push(department.contact_phone.trim());
+    sections.push(`<p>${department.contact_phone.trim()}</p>`);
   }
-  const body = lines.length > 0 ? lines.map((line) => `<p>${line}</p>`).join("") : "<p>Department details coming soon.</p>";
+  const body = sections.length > 0 ? sections.join("") : "<p>Department details coming soon.</p>";
   return `<section><h3>${department.name.trim()}</h3>${body}</section>`;
 }
 
