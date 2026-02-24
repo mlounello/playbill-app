@@ -22,6 +22,7 @@ import {
   restoreArchivedShow,
   setShowPublished,
   updateShowActsAndSongs,
+  updateShowAcknowledgements,
   updateShowPresentation,
   updateShowModules
 } from "@/lib/shows";
@@ -32,6 +33,7 @@ import {
   bulkEditPeopleField,
   bulkEditSelectedPeople,
   importBiosFromCsv,
+  getShowSpecialNoteAssignments,
   getShowSubmissionPeople,
   updateSpecialNoteAssignments
 } from "@/lib/submissions";
@@ -85,6 +87,10 @@ export default async function ShowWorkspacePage({
     activeTab === "overview" || activeTab === "people-roles" || activeTab === "submissions"
       ? await getShowSubmissionPeople(show.id)
       : [];
+  const specialNoteAssignments =
+    activeTab === "people-roles"
+      ? await getShowSpecialNoteAssignments(show.id)
+      : { directorPersonId: "", dramaturgPersonId: "", musicDirectorPersonId: "" };
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
@@ -96,6 +102,7 @@ export default async function ShowWorkspacePage({
   const requestExportAction = requestShowExport.bind(null, show.id);
   const setPublishAction = setShowPublished.bind(null, show.id);
   const updateActsAndSongsAction = updateShowActsAndSongs.bind(null, show.id);
+  const updateAcknowledgementsAction = updateShowAcknowledgements.bind(null, show.id);
   const updateShowPresentationAction = updateShowPresentation.bind(null, show.id);
   const assignSeasonToShowAction = assignSeasonToShow.bind(null, show.id);
   const updateShowDepartmentsAction = updateShowDepartments.bind(null, show.id);
@@ -104,6 +111,7 @@ export default async function ShowWorkspacePage({
   const sendInvitesAction = sendShowInvites.bind(null, show.id);
   const sendRemindersAction = sendShowRemindersNow.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
+  const hasDepartmentModuleVisible = show.modules.some((module) => module.module_type === "department_info" && module.visible);
   const departmentRepository = activeTab === "settings" ? await getDepartmentRepository() : [];
   const selectedDepartmentIds =
     activeTab === "settings" ? await getShowDepartmentSelection(show.id) : [];
@@ -226,12 +234,9 @@ export default async function ShowWorkspacePage({
   ];
   const activeBlockers = blockerItems.filter((item) => item.count > 0);
   const specialNotePeople = people.filter((person) => person.team_type === "production");
-  const currentDirectorNotePersonId =
-    specialNotePeople.find((person) => person.submission_type === "director_note")?.id ?? "";
-  const currentDramaturgNotePersonId =
-    specialNotePeople.find((person) => person.submission_type === "dramaturgical_note")?.id ?? "";
-  const currentMusicDirectorNotePersonId =
-    specialNotePeople.find((person) => person.submission_type === "music_director_note")?.id ?? "";
+  const currentDirectorNotePersonId = specialNoteAssignments.directorPersonId;
+  const currentDramaturgNotePersonId = specialNoteAssignments.dramaturgPersonId;
+  const currentMusicDirectorNotePersonId = specialNoteAssignments.musicDirectorPersonId;
 
   return (
     <main>
@@ -965,6 +970,22 @@ export default async function ShowWorkspacePage({
                   <button type="submit">Save Acts & Songs</button>
                 </form>
               </article>
+
+              <article className="card stack-sm">
+                <strong>Show Setup: Acknowledgements / Special Thanks</strong>
+                <div className="meta-text">
+                  This content powers both the Special Thanks and Acknowledgements modules.
+                </div>
+                <form action={updateAcknowledgementsAction} className="stack-sm">
+                  <RichTextField
+                    name="acknowledgements"
+                    label="Acknowledgements / Special Thanks"
+                    initialValue={show.acknowledgements}
+                    draftNamespace={`show-acknowledgements:${show.id}`}
+                  />
+                  <button type="submit">Save Acknowledgements</button>
+                </form>
+              </article>
               <article className="card stack-sm">
                 <strong>Season Calendar Module</strong>
                 <div className="meta-text">
@@ -995,8 +1016,14 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   Select profiles for this show. Manage the profile library in the Producing Profiles module.
                 </div>
+                {!hasDepartmentModuleVisible ? (
+                  <div className="meta-text" style={{ color: "#8f1f1f" }}>
+                    Department module is currently hidden in Program Plan. Enable <code>department_info</code> to render this section.
+                  </div>
+                ) : null}
                 <div className="top-actions">
                   <Link href="/app/producing-profiles">Open Producing Profiles</Link>
+                  {!hasDepartmentModuleVisible ? <Link href={`/app/shows/${show.id}?tab=program-plan`}>Open Program Plan</Link> : null}
                 </div>
                 {departmentRepository.length === 0 ? (
                   <div className="meta-text">No profiles yet. Use Producing Profiles to create one.</div>

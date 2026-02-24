@@ -20,6 +20,7 @@ export type ShowSummary = {
   reminders_paused: boolean;
   acts_and_songs: string;
   season_calendar: string;
+  acknowledgements: string;
   poster_image_url: string;
   show_dates: string;
   performance_schedule: Array<{ date?: string; time?: string }>;
@@ -78,6 +79,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   music_director_note: ["music_director_note"],
   acts_scenes: ["acts_songs"],
   songs: ["acts_songs"],
+  department_info: ["department_info"],
   headshots_grid: ["production_photos"],
   production_photos: ["production_photos"],
   sponsors: ["acknowledgements"],
@@ -309,6 +311,7 @@ export async function createShow(formData: FormData) {
     "music_director_note",
     "acts_scenes",
     "songs",
+    "department_info",
     "headshots_grid",
     "sponsors",
     "special_thanks",
@@ -344,7 +347,7 @@ export async function getShowsForDashboard() {
 
     const { data: programs } = await client
       .from("programs")
-      .select("id, slug, acts_songs, season_calendar, poster_image_url, show_dates, performance_schedule");
+      .select("id, slug, acts_songs, season_calendar, acknowledgements, poster_image_url, show_dates, performance_schedule");
     const { data: people } = await client.from("people").select("program_id, submission_status");
 
     const programSlugById = new Map<string, string>();
@@ -383,6 +386,7 @@ export async function getShowsForDashboard() {
         reminders_paused: Boolean(show.reminders_paused),
         acts_and_songs: String(program?.acts_songs ?? ""),
         season_calendar: String(program?.season_calendar ?? ""),
+        acknowledgements: String(program?.acknowledgements ?? ""),
         poster_image_url: String(program?.poster_image_url ?? ""),
         show_dates: String(program?.show_dates ?? ""),
         performance_schedule: Array.isArray(program?.performance_schedule)
@@ -416,7 +420,7 @@ export async function getShowById(showId: string) {
     const programId = String(show.program_id ?? "");
     const { data: program } = await client
       .from("programs")
-      .select("slug, acts_songs, season_calendar, poster_image_url, show_dates, performance_schedule")
+      .select("slug, acts_songs, season_calendar, acknowledgements, poster_image_url, show_dates, performance_schedule")
       .eq("id", programId)
       .single();
     const { data: people } = await client.from("people").select("submission_status").eq("program_id", programId);
@@ -445,6 +449,7 @@ export async function getShowById(showId: string) {
       reminders_paused: Boolean(show.reminders_paused),
       acts_and_songs: String(program?.acts_songs ?? ""),
       season_calendar: String(program?.season_calendar ?? ""),
+      acknowledgements: String(program?.acknowledgements ?? ""),
       poster_image_url: String(program?.poster_image_url ?? ""),
       show_dates: String(program?.show_dates ?? ""),
       performance_schedule: Array.isArray(program?.performance_schedule)
@@ -828,6 +833,41 @@ export async function updateShowActsAndSongs(showId: string, formData: FormData)
   }
 
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Acts & Songs updated from show setup.")}`);
+}
+
+export async function updateShowAcknowledgements(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const acknowledgements = sanitizeRichText(String(formData.get("acknowledgements") ?? ""));
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id, program_id")
+    .eq("id", showId)
+    .single();
+
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  if (show.program_id) {
+    const { error: programUpdateError } = await client
+      .from("programs")
+      .update({ acknowledgements })
+      .eq("id", show.program_id);
+    if (programUpdateError) {
+      withError(`/app/shows/${showId}?tab=settings`, programUpdateError.message);
+    }
+  }
+
+  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Acknowledgements / Special Thanks updated.")}`);
 }
 
 export async function updateShowPresentation(showId: string, formData: FormData) {

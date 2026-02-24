@@ -639,6 +639,15 @@ function renderModulePages(
   const productionWithBios = peopleWithBios(production);
   const allHeadshots = [...cast, ...production].map((person) => person.headshot_url).filter((url) => Boolean(url.trim()));
   const { creativeTeam, productionTeam } = splitCreativeAndProductionTeam(production);
+  const emptyPlaceholder = (placeholderTitle: string, body: string) =>
+    [
+      {
+        id: `${idBase}-placeholder`,
+        type: "filler" as const,
+        title: placeholderTitle,
+        body
+      }
+    ] satisfies ProgramPage[];
 
   if (module.module_type === "cover") {
     if (!hasPoster) {
@@ -714,21 +723,21 @@ function renderModulePages(
 
   if (module.module_type === "director_note") {
     if (!hasDirectorNote) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(title, "Director's note module is enabled, but no note content has been submitted yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.director_notes }] satisfies ProgramPage[];
   }
 
   if (module.module_type === "dramaturgical_note") {
     if (!hasDramaturgicalNote) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(title, "Dramaturgical note module is enabled, but no note content has been submitted yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.dramaturgical_note }] satisfies ProgramPage[];
   }
 
   if (module.module_type === "music_director_note") {
     if (!hasMusicDirectorNote) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(title, "Music director note module is enabled, but no note content has been submitted yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.music_director_note }] satisfies ProgramPage[];
   }
@@ -768,14 +777,14 @@ function renderModulePages(
 
   if (module.module_type === "special_thanks") {
     if (!hasAcknowledgements) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(title, "Special thanks module is enabled, but no acknowledgements/special thanks content was added yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.acknowledgements }] satisfies ProgramPage[];
   }
 
   if (module.module_type === "acknowledgements") {
     if (!hasAcknowledgements) {
-      return [] as ProgramPage[];
+      return emptyPlaceholder(title, "Acknowledgements module is enabled, but no acknowledgements content was added yet.");
     }
     return [{ id: idBase, type: "text", title, body: program.acknowledgements }] satisfies ProgramPage[];
   }

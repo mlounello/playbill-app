@@ -24,7 +24,7 @@ export default async function ContributorHomePage() {
           <section className="card stack-sm">
             <strong>Your Tasks ({tasks.length})</strong>
             {tasks.map((task) => (
-              <article key={`${task.show_id}-${task.person_id}`} className="card card-soft">
+              <article key={task.task_id} className="card card-soft">
                 <div className="row-between">
                   <div>
                     <strong>{task.show_title}</strong>
@@ -36,7 +36,7 @@ export default async function ContributorHomePage() {
                     </div>
                   </div>
                   <div className="link-row">
-                    <Link href={`/contribute/shows/${task.show_id}/tasks/${task.person_id}`}>Open Task</Link>
+                    <Link href={`/contribute/shows/${task.show_id}/tasks/${task.task_id}`}>Open Task</Link>
                     <Link href={`/programs/${task.program_slug}`}>Preview Program</Link>
                   </div>
                 </div>

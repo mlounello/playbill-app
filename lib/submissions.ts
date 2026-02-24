@@ -91,6 +91,7 @@ export type ShowSubmissionPerson = {
 };
 
 export type ContributorTaskSummary = {
+  task_id: string;
   show_id: string;
   show_title: string;
   show_slug: string;
@@ -224,6 +225,10 @@ function filterToColumns(record: Record<string, unknown>, columns: Set<string>) 
     return record;
   }
   return Object.fromEntries(Object.entries(record).filter(([key]) => columns.has(key)));
+}
+
+function rowHasColumn(row: Record<string, unknown>, column: string) {
+  return Object.prototype.hasOwnProperty.call(row, column);
 }
 
 function parseBulkPeople(text: string) {
@@ -429,7 +434,6 @@ export async function getShowSubmissionPeople(showId: string) {
   }
 
   const client = getSupabaseWriteClient();
-  const peopleColumns = await getTableColumns(client, "people");
   const { data: peopleRows } = await client
     .from("people")
     .select("*")
@@ -438,6 +442,7 @@ export async function getShowSubmissionPeople(showId: string) {
     .order("full_name", { ascending: true });
 
   return (peopleRows ?? []).map((person) => {
+    const row = person as Record<string, unknown>;
     const cleanBio = String(person.bio ?? "");
     return {
       id: String(person.id),
@@ -445,17 +450,66 @@ export async function getShowSubmissionPeople(showId: string) {
       role_title: String(person.role_title ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
-      submission_type: peopleColumns.has("submission_type")
+      submission_type: rowHasColumn(row, "submission_type")
         ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
         : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
       bio: cleanBio,
-      no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
+      no_bio: rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: String(person.headshot_url ?? ""),
       submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(cleanBio).length
     } satisfies ShowSubmissionPerson;
   });
+}
+
+export async function getShowSpecialNoteAssignments(showId: string) {
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    return {
+      directorPersonId: "",
+      dramaturgPersonId: "",
+      musicDirectorPersonId: ""
+    };
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: roles } = await client
+    .from("show_roles")
+    .select("id, person_id")
+    .eq("show_id", showId);
+  const roleById = new Map((roles ?? []).map((row) => [String(row.id), String(row.person_id ?? "")]));
+  const roleIds = [...roleById.keys()];
+  if (roleIds.length === 0) {
+    return {
+      directorPersonId: "",
+      dramaturgPersonId: "",
+      musicDirectorPersonId: ""
+    };
+  }
+
+  const { data: requests } = await client
+    .from("submission_requests")
+    .select("show_role_id, request_type")
+    .in("show_role_id", roleIds);
+
+  let directorPersonId = "";
+  let dramaturgPersonId = "";
+  let musicDirectorPersonId = "";
+  for (const request of requests ?? []) {
+    const personId = roleById.get(String(request.show_role_id ?? "")) ?? "";
+    if (!personId) continue;
+    const requestType = normalizeSubmissionType(String(request.request_type ?? "bio"));
+    if (requestType === "director_note") directorPersonId = personId;
+    if (requestType === "dramaturgical_note") dramaturgPersonId = personId;
+    if (requestType === "music_director_note") musicDirectorPersonId = personId;
+  }
+
+  return {
+    directorPersonId,
+    dramaturgPersonId,
+    musicDirectorPersonId
+  };
 }
 
 export async function addPeopleToShow(showId: string, formData: FormData) {
@@ -521,7 +575,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         role_title: record.roleTitle.trim(),
         team_type: record.teamType,
         email: normalizeEmail(record.email),
-        submission_type: record.submissionType ?? inferSubmissionTypeFromRole(record.roleTitle),
+        submission_type: "bio",
         bio: "",
         headshot_url: "",
         submission_status: "pending",
@@ -567,16 +621,8 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     await client.from("submission_requests").insert(
       (showRoles ?? []).map((role) => ({
         show_role_id: String(role.id),
-        request_type: String(
-          insertedPeople.find((person) => String(person.id) === String(role.person_id))?.submission_type ?? "bio"
-        ),
-        label: `${getSubmissionTypeLabel(
-          normalizeSubmissionType(
-            String(
-              insertedPeople.find((person) => String(person.id) === String(role.person_id))?.submission_type ?? "bio"
-            )
-          )
-        )} Submission`,
+        request_type: "bio",
+        label: `${getSubmissionTypeLabel("bio")} Submission`,
         constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
         status: "pending"
       }))
@@ -1020,12 +1066,11 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
   const client = getSupabaseWriteClient();
   const { data: peopleRows } = await client
     .from("people")
-    .select("id, full_name, submission_type")
+    .select("id, full_name")
     .eq("program_id", context.program_id);
   const people = (peopleRows ?? []).map((row) => ({
     id: String(row.id),
-    full_name: String(row.full_name ?? ""),
-    submission_type: normalizeSubmissionType(String(row.submission_type ?? "bio"))
+    full_name: String(row.full_name ?? "")
   }));
 
   const peopleIdSet = new Set(people.map((person) => person.id));
@@ -1035,82 +1080,76 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     }
   }
 
-  const noteTypes = new Set<SubmissionType>(["director_note", "dramaturgical_note", "music_director_note"]);
-  const assignmentByPersonId = new Map<string, SubmissionType>();
-  if (directorPersonId) {
-    assignmentByPersonId.set(directorPersonId, "director_note");
-  }
-  if (dramaturgPersonId) {
-    assignmentByPersonId.set(dramaturgPersonId, "dramaturgical_note");
-  }
-  if (musicDirectorPersonId) {
-    assignmentByPersonId.set(musicDirectorPersonId, "music_director_note");
-  }
-
-  const changedPersonIds: string[] = [];
-  for (const person of people) {
-    const isCurrentSpecial = noteTypes.has(person.submission_type);
-    const isSelectedSpecial = assignmentByPersonId.has(person.id);
-    if (!isCurrentSpecial && !isSelectedSpecial) {
-      continue;
+  const { data: roleRows } = await client
+    .from("show_roles")
+    .select("id, person_id")
+    .eq("show_id", showId);
+  const roles = (roleRows ?? []).map((row) => ({
+    id: String(row.id),
+    person_id: String(row.person_id ?? "")
+  }));
+  const roleByPersonId = new Map<string, string>();
+  for (const role of roles) {
+    if (role.person_id && !roleByPersonId.has(role.person_id)) {
+      roleByPersonId.set(role.person_id, role.id);
     }
-
-    const nextType = assignmentByPersonId.get(person.id) ?? "bio";
-    if (nextType === person.submission_type) {
-      continue;
-    }
-
-    const { error: peopleUpdateError } = await client
-      .from("people")
-      .update({ submission_type: nextType })
-      .eq("id", person.id);
-    if (peopleUpdateError) {
-      withError(`/app/shows/${showId}?tab=people-roles`, peopleUpdateError.message);
-    }
-
-    await writeAuditLog({
-      entity: "people",
-      entityId: person.id,
-      field: "submission_type",
-      beforeValue: person.submission_type,
-      afterValue: nextType,
-      reason: "special_note_assignment"
-    });
-    changedPersonIds.push(person.id);
   }
 
-  if (changedPersonIds.length > 0) {
-    const { data: roleRows } = await client
-      .from("show_roles")
-      .select("id, person_id")
-      .eq("show_id", showId)
-      .in("person_id", changedPersonIds);
+  const { data: existingRequests } = await client
+    .from("submission_requests")
+    .select("id, show_role_id, request_type")
+    .in("show_role_id", roles.map((role) => role.id));
+  const requests = (existingRequests ?? []).map((row) => ({
+    id: String(row.id),
+    show_role_id: String(row.show_role_id ?? ""),
+    request_type: normalizeSubmissionType(String(row.request_type ?? "bio"))
+  }));
+  const requestsByRoleId = new Map<string, Array<{ id: string; request_type: SubmissionType }>>();
+  for (const request of requests) {
+    const list = requestsByRoleId.get(request.show_role_id) ?? [];
+    list.push({ id: request.id, request_type: request.request_type });
+    requestsByRoleId.set(request.show_role_id, list);
+  }
 
-    for (const role of roleRows ?? []) {
-      const personId = String(role.person_id ?? "");
-      if (!personId) {
+  // Bio stays default for everyone.
+  for (const role of roles) {
+    const roleRequests = requestsByRoleId.get(role.id) ?? [];
+    const hasBio = roleRequests.some((item) => item.request_type === "bio");
+    if (!hasBio) {
+      await client.from("submission_requests").insert({
+        show_role_id: role.id,
+        request_type: "bio",
+        label: `${getSubmissionTypeLabel("bio")} Submission`,
+        constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
+        status: "pending"
+      });
+    }
+  }
+
+  const requestedAssignments: Array<{ type: SubmissionType; personId: string }> = [
+    { type: "director_note", personId: directorPersonId },
+    { type: "dramaturgical_note", personId: dramaturgPersonId },
+    { type: "music_director_note", personId: musicDirectorPersonId }
+  ];
+
+  for (const assignment of requestedAssignments) {
+    const selectedRoleId = assignment.personId ? roleByPersonId.get(assignment.personId) ?? "" : "";
+    const existingOfType = requests.filter((item) => item.request_type === assignment.type);
+
+    for (const existing of existingOfType) {
+      if (selectedRoleId && existing.show_role_id === selectedRoleId) {
         continue;
       }
-      const nextType = assignmentByPersonId.get(personId) ?? "bio";
-      const { data: existingRequest } = await client
-        .from("submission_requests")
-        .select("id")
-        .eq("show_role_id", String(role.id))
-        .maybeSingle();
+      await client.from("submission_requests").delete().eq("id", existing.id);
+    }
 
-      if (existingRequest?.id) {
-        await client
-          .from("submission_requests")
-          .update({
-            request_type: nextType,
-            label: `${getSubmissionTypeLabel(nextType)} Submission`
-          })
-          .eq("id", String(existingRequest.id));
-      } else {
+    if (selectedRoleId) {
+      const alreadyLinked = existingOfType.some((item) => item.show_role_id === selectedRoleId);
+      if (!alreadyLinked) {
         await client.from("submission_requests").insert({
-          show_role_id: String(role.id),
-          request_type: nextType,
-          label: `${getSubmissionTypeLabel(nextType)} Submission`,
+          show_role_id: selectedRoleId,
+          request_type: assignment.type,
+          label: `${getSubmissionTypeLabel(assignment.type)} Submission`,
           constraints: { maxChars: BIO_CHAR_LIMIT_DEFAULT },
           status: "pending"
         });
@@ -1145,7 +1184,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
 
   redirect(
     `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
-      `Special note assignments updated. ${changedPersonIds.length} submission type assignment(s) changed.`
+      "Special note assignments updated. Bio remains default and note requests were synced."
     )}`
   );
 }
@@ -1166,27 +1205,59 @@ export async function getContributorTasksForCurrentUser() {
     return [] as ContributorTaskSummary[];
   }
 
-  const programIds = [...new Set(peopleRows.map((row) => String(row.program_id ?? "")).filter(Boolean))];
+  const personIds = peopleRows.map((row) => String(row.id)).filter(Boolean);
+  const personById = new Map(
+    peopleRows.map((row) => [
+      String(row.id),
+      {
+        person_name: String(row.full_name ?? ""),
+        role_title: String(row.role_title ?? ""),
+        submitted_at: row.submitted_at ? String(row.submitted_at) : null,
+        fallback_status: normalizeSubmissionStatus(String(row.submission_status ?? "pending"))
+      }
+    ])
+  );
+  const { data: roles } = await client
+    .from("show_roles")
+    .select("id, show_id, person_id")
+    .in("person_id", personIds);
+  const roleRows = roles ?? [];
+  const roleIds = roleRows.map((row) => String(row.id)).filter(Boolean);
+  if (roleIds.length === 0) {
+    return [] as ContributorTaskSummary[];
+  }
+
+  const roleMetaById = new Map(
+    roleRows.map((row) => [
+      String(row.id),
+      {
+        show_id: String(row.show_id ?? ""),
+        person_id: String(row.person_id ?? "")
+      }
+    ])
+  );
+
+  const { data: requests } = await client
+    .from("submission_requests")
+    .select("id, show_role_id, due_date, status, request_type")
+    .in("show_role_id", roleIds);
+  const requestRows = (requests ?? []).filter((row) =>
+    ["bio", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio"))
+  );
+  if (requestRows.length === 0) {
+    return [] as ContributorTaskSummary[];
+  }
+
+  const showIds = [...new Set(roleRows.map((row) => String(row.show_id ?? "")).filter(Boolean))];
   const { data: shows } = await client
     .from("shows")
     .select("id, title, slug, program_id")
-    .in("program_id", programIds);
-  const { data: programs } = await client.from("programs").select("id, slug").in("id", programIds);
-  const { data: requests } = await client
-    .from("submission_requests")
-    .select("show_role_id, due_date, show_roles!inner(person_id)")
-    .in(
-      "show_roles.person_id",
-      peopleRows.map((row) => row.id)
-    );
-
-  const dueDateByPersonId = new Map<string, string | null>();
-  for (const request of requests ?? []) {
-    const showRole = request.show_roles as { person_id?: string } | null;
-    if (showRole?.person_id) {
-      dueDateByPersonId.set(String(showRole.person_id), request.due_date ? String(request.due_date) : null);
-    }
-  }
+    .in("id", showIds);
+  const programIds = [...new Set((shows ?? []).map((show) => String(show.program_id ?? "")).filter(Boolean))];
+  const { data: programs } =
+    programIds.length > 0
+      ? await client.from("programs").select("id, slug").in("id", programIds)
+      : { data: [] as Array<Record<string, unknown>> };
 
   const showByProgramId = new Map<string, { id: string; title: string; slug: string }>();
   for (const show of shows ?? []) {
@@ -1202,32 +1273,51 @@ export async function getContributorTasksForCurrentUser() {
     programSlugById.set(String(program.id), String(program.slug ?? ""));
   }
 
-  return peopleRows
-    .map((row) => {
-      const programId = String(row.program_id ?? "");
-      const show = showByProgramId.get(programId);
+  return requestRows
+    .map((request) => {
+      const roleMeta = roleMetaById.get(String(request.show_role_id ?? ""));
+      if (!roleMeta) {
+        return null;
+      }
+      const show = (shows ?? []).find((row) => String(row.id) === roleMeta.show_id);
       if (!show) {
         return null;
       }
+      const person = personById.get(roleMeta.person_id);
+      if (!person) {
+        return null;
+      }
+      const programId = String(show.program_id ?? "");
+      const showMeta = showByProgramId.get(programId);
+      if (!showMeta) {
+        return null;
+      }
       return {
-        show_id: show.id,
-        show_title: show.title,
-        show_slug: show.slug,
+        task_id: String(request.id),
+        show_id: showMeta.id,
+        show_title: showMeta.title,
+        show_slug: showMeta.slug,
         program_slug: programSlugById.get(programId) ?? "",
-        person_id: String(row.id),
-        person_name: String(row.full_name ?? ""),
-        role_title: String(row.role_title ?? ""),
-        submission_type: normalizeSubmissionType(String(row.submission_type ?? "bio")),
-        submission_status: normalizeSubmissionStatus(String(row.submission_status ?? "pending")),
-        due_date: dueDateByPersonId.get(String(row.id)) ?? null,
-        submitted_at: row.submitted_at ? String(row.submitted_at) : null
+        person_id: roleMeta.person_id,
+        person_name: person.person_name,
+        role_title: person.role_title,
+        submission_type: normalizeSubmissionType(String(request.request_type ?? "bio")),
+        submission_status: normalizeSubmissionStatus(String(request.status ?? person.fallback_status)),
+        due_date: request.due_date ? String(request.due_date) : null,
+        submitted_at: person.submitted_at
       } satisfies ContributorTaskSummary;
     })
     .filter((item): item is ContributorTaskSummary => item !== null)
-    .sort((a, b) => a.show_title.localeCompare(b.show_title) || a.person_name.localeCompare(b.person_name));
+    .sort((a, b) => {
+      const showSort = a.show_title.localeCompare(b.show_title);
+      if (showSort !== 0) return showSort;
+      const nameSort = a.person_name.localeCompare(b.person_name);
+      if (nameSort !== 0) return nameSort;
+      return a.submission_type.localeCompare(b.submission_type);
+    });
 }
 
-export async function getContributorTaskById(showId: string, personId: string) {
+export async function getContributorTaskById(showId: string, taskId: string) {
   const current = await getCurrentUserWithProfile();
   if (!current?.user?.email) {
     return null;
@@ -1239,11 +1329,57 @@ export async function getContributorTaskById(showId: string, personId: string) {
   }
 
   const client = getSupabaseWriteClient();
-  const peopleColumns = await getTableColumns(client, "people");
+  const { data: roles } = await client
+    .from("show_roles")
+    .select("id, person_id, show_id")
+    .eq("show_id", showId);
+  const roleRows = roles ?? [];
+  const roleById = new Map(roleRows.map((row) => [String(row.id), String(row.person_id ?? "")]));
+
+  const { data: requestById } = await client
+    .from("submission_requests")
+    .select("id, show_role_id, request_type, status, due_date")
+    .eq("id", taskId)
+    .maybeSingle();
+
+  let resolvedRequestId = "";
+  let resolvedRequestType: SubmissionType = "bio";
+  let resolvedRequestStatus: ShowSubmissionPerson["submission_status"] = "pending";
+  let resolvedDueDate: string | null = null;
+  let resolvedPersonId = "";
+
+  if (requestById && roleById.has(String(requestById.show_role_id ?? ""))) {
+    resolvedRequestId = String(requestById.id);
+    resolvedRequestType = normalizeSubmissionType(String(requestById.request_type ?? "bio"));
+    resolvedRequestStatus = normalizeSubmissionStatus(String(requestById.status ?? "pending"));
+    resolvedDueDate = requestById.due_date ? String(requestById.due_date) : null;
+    resolvedPersonId = roleById.get(String(requestById.show_role_id ?? "")) ?? "";
+  } else {
+    // Legacy fallback: taskId may be a person id; map to that person's bio request.
+    resolvedPersonId = taskId;
+    const roleForPerson = roleRows.find((row) => String(row.person_id ?? "") === resolvedPersonId);
+    if (!roleForPerson?.id) {
+      return null;
+    }
+    const { data: bioRequest } = await client
+      .from("submission_requests")
+      .select("id, request_type, status, due_date")
+      .eq("show_role_id", String(roleForPerson.id))
+      .eq("request_type", "bio")
+      .maybeSingle();
+    if (!bioRequest?.id) {
+      return null;
+    }
+    resolvedRequestId = String(bioRequest.id);
+    resolvedRequestType = normalizeSubmissionType(String(bioRequest.request_type ?? "bio"));
+    resolvedRequestStatus = normalizeSubmissionStatus(String(bioRequest.status ?? "pending"));
+    resolvedDueDate = bioRequest.due_date ? String(bioRequest.due_date) : null;
+  }
+
   const { data: person } = await client
     .from("people")
     .select("*")
-    .eq("id", personId)
+    .eq("id", resolvedPersonId)
     .eq("program_id", context.program_id)
     .single();
 
@@ -1259,12 +1395,31 @@ export async function getContributorTaskById(showId: string, personId: string) {
     .from("audit_log")
     .select("reason, changed_at, after_value")
     .eq("entity", "people")
-    .eq("entity_id", personId)
+    .eq("entity_id", resolvedPersonId)
     .eq("field", "return_message")
     .order("changed_at", { ascending: false })
     .limit(1);
 
+  let taskBody = String(person.bio ?? "");
+  if (resolvedRequestType !== "bio") {
+    const programField = getProgramFieldForSubmissionType(resolvedRequestType);
+    if (programField) {
+      const { data: program } = await client
+        .from("programs")
+        .select(programField)
+        .eq("id", context.program_id)
+        .maybeSingle();
+      taskBody = String((program as Record<string, unknown> | null)?.[programField] ?? "");
+    } else {
+      taskBody = "";
+    }
+  }
+
+  const row = person as Record<string, unknown>;
   return {
+    task_id: resolvedRequestId,
+    request_type: resolvedRequestType,
+    due_date: resolvedDueDate,
     show_id: context.show_id,
     show_title: context.show_title,
     show_slug: context.show_slug,
@@ -1275,15 +1430,13 @@ export async function getContributorTaskById(showId: string, personId: string) {
       role_title: String(person.role_title ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
-      submission_type: peopleColumns.has("submission_type")
-        ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
-        : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
-      bio: String(person.bio ?? ""),
-      no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
+      submission_type: resolvedRequestType,
+      bio: taskBody,
+      no_bio: resolvedRequestType === "bio" ? (rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false) : false,
       headshot_url: String(person.headshot_url ?? ""),
-      submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
+      submission_status: resolvedRequestStatus,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
-      bio_char_count: stripRichTextToPlain(String(person.bio ?? "")).length
+      bio_char_count: stripRichTextToPlain(taskBody).length
     } satisfies ShowSubmissionPerson,
     return_message: returnMessageAudit?.[0]
       ? {
@@ -1300,7 +1453,9 @@ export async function getContributorTaskById(showId: string, personId: string) {
 
 async function updateSubmissionCore(args: {
   showId: string;
+  requestId: string;
   personId: string;
+  submissionType: SubmissionType;
   bio: string;
   headshotUrl: string;
   status: ShowSubmissionPerson["submission_status"];
@@ -1325,9 +1480,9 @@ async function updateSubmissionCore(args: {
     return { ok: false as const, message: "Submission task was not found." };
   }
 
-  const submissionType = peopleColumns.has("submission_type")
-    ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
-    : inferSubmissionTypeFromRole(String(person.role_title ?? ""));
+  const row = person as Record<string, unknown>;
+  const hasNoBio = rowHasColumn(row, "no_bio");
+  const submissionType = args.submissionType;
   const submissionLabel = getSubmissionTypeLabel(submissionType);
   const isBioType = submissionType === "bio";
   const resolvedHeadshotUrl = isBioType ? args.headshotUrl : String(person.headshot_url ?? "");
@@ -1342,47 +1497,56 @@ async function updateSubmissionCore(args: {
     return { ok: false as const, message: `${submissionLabel} exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.` };
   }
 
-  const submittedAt =
-    args.status === "submitted" || args.status === "approved" || args.status === "locked"
-      ? new Date().toISOString()
-      : null;
+  const nowIso = new Date().toISOString();
+  const submittedAt = args.status === "submitted" || args.status === "approved" || args.status === "locked" ? nowIso : null;
 
-  const { error: updateError } = await client
-    .from("people")
-    .update(
-      filterToColumns(
-        {
-          bio: cleanBio,
-          headshot_url: resolvedHeadshotUrl,
-          submission_status: args.status,
-          submitted_at: submittedAt,
-          no_bio: isBioType ? Boolean(args.skipBio) : false
-        },
-        peopleColumns
+  if (isBioType) {
+    const { error: updateError } = await client
+      .from("people")
+      .update(
+        filterToColumns(
+          {
+            bio: cleanBio,
+            headshot_url: resolvedHeadshotUrl,
+            submission_status: args.status,
+            submitted_at: submittedAt,
+            no_bio: hasNoBio ? Boolean(args.skipBio) : undefined
+          },
+          peopleColumns
+        )
       )
-    )
-    .eq("id", args.personId);
+      .eq("id", args.personId);
 
-  if (updateError) {
-    return { ok: false as const, message: updateError.message };
+    if (updateError) {
+      return { ok: false as const, message: updateError.message };
+    }
   }
 
   const updates: Array<{ field: string; before: unknown; after: unknown }> = [];
-  if (String(person.bio ?? "") !== cleanBio) {
+  if (isBioType && String(person.bio ?? "") !== cleanBio) {
     updates.push({ field: "bio", before: person.bio, after: cleanBio });
   }
-  if (String(person.headshot_url ?? "") !== resolvedHeadshotUrl) {
+  if (isBioType && String(person.headshot_url ?? "") !== resolvedHeadshotUrl) {
     updates.push({ field: "headshot_url", before: person.headshot_url, after: resolvedHeadshotUrl });
   }
-  if (String(person.submission_status ?? "pending") !== args.status) {
+  if (isBioType && String(person.submission_status ?? "pending") !== args.status) {
     updates.push({ field: "submission_status", before: person.submission_status, after: args.status });
   }
-  if (isBioType && peopleColumns.has("no_bio") && Boolean(person.no_bio) !== Boolean(args.skipBio)) {
+  if (isBioType && hasNoBio && Boolean(person.no_bio) !== Boolean(args.skipBio)) {
     updates.push({ field: "no_bio", before: Boolean(person.no_bio), after: Boolean(args.skipBio) });
   }
 
   const programField = getProgramFieldForSubmissionType(submissionType);
   if (programField) {
+    let beforeValue: string | null = null;
+    if (!isBioType) {
+      const { data: existingProgram } = await client
+        .from("programs")
+        .select(programField)
+        .eq("id", context.program_id)
+        .maybeSingle();
+      beforeValue = String((existingProgram as Record<string, unknown> | null)?.[programField] ?? "");
+    }
     const { error: programUpdateError } = await client
       .from("programs")
       .update({ [programField]: cleanBio })
@@ -1394,9 +1558,42 @@ async function updateSubmissionCore(args: {
       entity: "programs",
       entityId: context.program_id,
       field: programField,
-      beforeValue: null,
+      beforeValue,
       afterValue: cleanBio,
       reason: `${submissionLabel} sync from contributor/admin submission`
+    });
+  }
+
+  const { error: requestUpdateError } = await client
+    .from("submission_requests")
+    .update({
+      status: args.status,
+      updated_at: nowIso
+    })
+    .eq("id", args.requestId);
+  if (requestUpdateError) {
+    return { ok: false as const, message: requestUpdateError.message };
+  }
+
+  const { data: existingSubmission } = await client
+    .from("submissions")
+    .select("id")
+    .eq("request_id", args.requestId)
+    .maybeSingle();
+  if (existingSubmission?.id) {
+    await client
+      .from("submissions")
+      .update({
+        plain_text: stripRichTextToPlain(cleanBio),
+        status: args.status,
+        updated_at: nowIso
+      })
+      .eq("id", String(existingSubmission.id));
+  } else {
+    await client.from("submissions").insert({
+      request_id: args.requestId,
+      plain_text: stripRichTextToPlain(cleanBio),
+      status: args.status
     });
   }
 
@@ -1414,7 +1611,33 @@ async function updateSubmissionCore(args: {
   return { ok: true as const };
 }
 
-export async function contributorSaveTask(showId: string, personId: string, formData: FormData) {
+async function getBioRequestForPerson(showId: string, personId: string) {
+  const client = getSupabaseWriteClient();
+  const { data: role } = await client
+    .from("show_roles")
+    .select("id")
+    .eq("show_id", showId)
+    .eq("person_id", personId)
+    .maybeSingle();
+  if (!role?.id) {
+    return null;
+  }
+  const { data: request } = await client
+    .from("submission_requests")
+    .select("id, request_type")
+    .eq("show_role_id", String(role.id))
+    .eq("request_type", "bio")
+    .maybeSingle();
+  if (!request?.id) {
+    return null;
+  }
+  return {
+    requestId: String(request.id),
+    requestType: normalizeSubmissionType(String(request.request_type ?? "bio"))
+  };
+}
+
+export async function contributorSaveTask(showId: string, taskId: string, formData: FormData) {
   "use server";
 
   const current = await getCurrentUserWithProfile();
@@ -1422,12 +1645,12 @@ export async function contributorSaveTask(showId: string, personId: string, form
     redirect("/app/login");
   }
 
-  const task = await getContributorTaskById(showId, personId);
+  const task = await getContributorTaskById(showId, taskId);
   if (!task) {
     withError(`/contribute`, "You do not have access to this task.");
   }
   if (task.person.submission_status === "locked" || task.person.submission_status === "approved") {
-    withError(`/contribute/shows/${showId}/tasks/${personId}`, "This submission is read-only.");
+    withError(`/contribute/shows/${showId}/tasks/${taskId}`, "This submission is read-only.");
   }
 
   const bio = formData.get("bio")?.toString() ?? "";
@@ -1437,7 +1660,9 @@ export async function contributorSaveTask(showId: string, personId: string, form
   const nextStatus: ShowSubmissionPerson["submission_status"] = intent === "submit" ? "submitted" : "draft";
   const result = await updateSubmissionCore({
     showId,
-    personId,
+    requestId: String(task.task_id ?? ""),
+    personId: task.person.id,
+    submissionType: task.person.submission_type,
     bio,
     headshotUrl,
     status: nextStatus,
@@ -1446,10 +1671,10 @@ export async function contributorSaveTask(showId: string, personId: string, form
   });
 
   if (!result.ok) {
-    withError(`/contribute/shows/${showId}/tasks/${personId}`, result.message);
+    withError(`/contribute/shows/${showId}/tasks/${taskId}`, result.message);
   }
 
-  redirect(`/contribute/shows/${showId}/tasks/${personId}?saved=1`);
+  redirect(`/contribute/shows/${showId}/tasks/${taskId}?saved=1`);
 }
 
 export async function getShowSubmissionByPerson(showId: string, personId: string) {
@@ -1459,7 +1684,6 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
   }
 
   const client = getSupabaseWriteClient();
-  const peopleColumns = await getTableColumns(client, "people");
   const { data: person } = await client
     .from("people")
     .select("*")
@@ -1488,6 +1712,7 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
     emailByUserId.set(String(profile.user_id), String(profile.email));
   }
 
+  const row = person as Record<string, unknown>;
   return {
     show: context,
     person: {
@@ -1496,11 +1721,11 @@ export async function getShowSubmissionByPerson(showId: string, personId: string
       role_title: String(person.role_title ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
-      submission_type: peopleColumns.has("submission_type")
+      submission_type: rowHasColumn(row, "submission_type")
         ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
         : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
       bio: String(person.bio ?? ""),
-      no_bio: peopleColumns.has("no_bio") ? Boolean(person.no_bio) : false,
+      no_bio: rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: String(person.headshot_url ?? ""),
       submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
@@ -1537,9 +1762,16 @@ export async function adminSaveSubmission(showId: string, personId: string, form
     withError(`/app/shows/${showId}/submissions/${personId}`, "Invalid review payload.");
   }
 
+  const requestInfo = await getBioRequestForPerson(showId, personId);
+  if (!requestInfo) {
+    withError(`/app/shows/${showId}/submissions/${personId}`, "Bio request not found for this person.");
+  }
+
   const result = await updateSubmissionCore({
     showId,
+    requestId: requestInfo.requestId,
     personId,
+    submissionType: requestInfo.requestType,
     bio: parsed.bio ?? "",
     headshotUrl: parsed.headshotUrl ?? "",
     status: parsed.status,
@@ -1578,9 +1810,16 @@ export async function adminReturnSubmission(showId: string, personId: string, fo
     withError(`/app/shows/${showId}?tab=submissions`, "Return message is required.");
   }
 
+  const requestInfo = await getBioRequestForPerson(showId, personId);
+  if (!requestInfo) {
+    withError(`/app/shows/${showId}?tab=submissions`, "Bio request not found for this person.");
+  }
+
   const result = await updateSubmissionCore({
     showId,
+    requestId: requestInfo.requestId,
     personId,
+    submissionType: requestInfo.requestType,
     bio: current.person.bio,
     headshotUrl: current.person.headshot_url,
     status: "returned",
@@ -1612,9 +1851,16 @@ export async function adminQuickStatus(showId: string, personId: string, status:
     withError(`/app/shows/${showId}?tab=submissions`, "Submission was not found.");
   }
 
+  const requestInfo = await getBioRequestForPerson(showId, personId);
+  if (!requestInfo) {
+    withError(`/app/shows/${showId}?tab=submissions`, "Bio request not found for this person.");
+  }
+
   const result = await updateSubmissionCore({
     showId,
+    requestId: requestInfo.requestId,
     personId,
+    submissionType: requestInfo.requestType,
     bio: current.person.bio,
     headshotUrl: current.person.headshot_url,
     status,

@@ -12,14 +12,14 @@ export default async function ContributorTaskPage({
   params: Promise<{ showId: string; personId: string }>;
   searchParams: Promise<{ error?: string; saved?: string }>;
 }) {
-  const { showId, personId } = await params;
+  const { showId, personId: taskId } = await params;
   const { error, saved } = await searchParams;
-  const task = await getContributorTaskById(showId, personId);
+  const task = await getContributorTaskById(showId, taskId);
   if (!task) {
     notFound();
   }
 
-  const saveAction = contributorSaveTask.bind(null, showId, personId);
+  const saveAction = contributorSaveTask.bind(null, showId, taskId);
   const isReadOnly = task.person.submission_status === "approved" || task.person.submission_status === "locked";
   const submissionLabel = getSubmissionTypeLabel(task.person.submission_type);
   const isBioTask = task.person.submission_type === "bio";
@@ -82,7 +82,7 @@ export default async function ContributorTaskPage({
           {isBioTask ? (
             <HeadshotUploadField
               showId={showId}
-              personId={personId}
+              personId={task.person.id}
               initialUrl={task.person.headshot_url}
               disabled={isReadOnly}
             />

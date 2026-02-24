@@ -100,7 +100,7 @@ async function getReminderRecipients(showId: string) {
   const personIds = [...new Set((roles ?? []).map((row) => String(row.person_id)).filter(Boolean))];
   const { data: people } = await client
     .from("people")
-    .select("id, full_name, role_title, email, submission_status")
+    .select("id, full_name, role_title, email")
     .in("id", personIds);
   const personById = new Map(
     (people ?? []).map((person) => [
@@ -108,8 +108,7 @@ async function getReminderRecipients(showId: string) {
       {
         name: String(person.full_name ?? ""),
         roleTitle: String(person.role_title ?? ""),
-        email: String(person.email ?? ""),
-        status: String(person.submission_status ?? "pending")
+        email: String(person.email ?? "")
       }
     ])
   );
@@ -129,7 +128,7 @@ async function getReminderRecipients(showId: string) {
         requestId: String(request.id),
         requestType: String(request.request_type ?? "bio"),
         dueDate: request.due_date ? String(request.due_date) : null,
-        status: person.status
+        status: String(request.status ?? "pending")
       } satisfies ReminderRecipient;
     })
     .filter((row): row is ReminderRecipient => row !== null);

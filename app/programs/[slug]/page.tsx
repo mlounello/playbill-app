@@ -71,6 +71,14 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
   }
 
   if (page.type === "filler") {
+    if (page.body.trim()) {
+      return (
+        <article className="booklet-page">
+          <h2 className="section-title playbill-title">{page.title}</h2>
+          <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(page.body) }} />
+        </article>
+      );
+    }
     return (
       <article className="booklet-page blank-padding-page" aria-label="Blank padding page">
         <div className="blank-padding-label hide-print">Blank padding page</div>
