@@ -45,8 +45,8 @@ export async function POST(request: Request) {
     if (!file.type.startsWith("image/")) {
       return NextResponse.json({ ok: false, error: "Only image uploads are allowed." }, { status: 400 });
     }
-    if (file.size > 10 * 1024 * 1024) {
-      return NextResponse.json({ ok: false, error: "Image must be 10MB or smaller." }, { status: 400 });
+    if (file.size > 4 * 1024 * 1024) {
+      return NextResponse.json({ ok: false, error: "Image must be 4MB or smaller." }, { status: 400 });
     }
 
     const admin = getSupabaseWriteClient();

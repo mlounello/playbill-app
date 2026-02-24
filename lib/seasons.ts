@@ -26,6 +26,14 @@ type SeasonModuleData = {
   events: SeasonEventRecord[];
 };
 
+type SeasonLibraryData = {
+  seasons: SeasonRecord[];
+  selectedSeasonId: string;
+  selectedSeasonName: string;
+  selectedSeasonEvents: SeasonEventRecord[];
+  linkedShowCount: number;
+};
+
 function withError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
   redirect(`${path}?${qp.toString()}`);
@@ -153,6 +161,88 @@ async function refreshSeasonCalendarForShow(showId: string) {
   }
 }
 
+async function refreshSeasonCalendarsForSeason(seasonId: string) {
+  const client = getSupabaseWriteClient();
+  const { data: shows, error } = await client
+    .from("shows")
+    .select("id")
+    .eq("season_id", seasonId);
+  if (error) {
+    throw new Error(error.message);
+  }
+  for (const show of shows ?? []) {
+    const showId = String(show.id ?? "");
+    if (showId) {
+      await refreshSeasonCalendarForShow(showId);
+    }
+  }
+}
+
+export async function getSeasonLibraryData(selectedSeasonId = ""): Promise<SeasonLibraryData> {
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    return {
+      seasons: [],
+      selectedSeasonId: "",
+      selectedSeasonName: "",
+      selectedSeasonEvents: [],
+      linkedShowCount: 0
+    };
+  }
+
+  try {
+    const client = getSupabaseWriteClient();
+    const { data: seasons } = await client.from("seasons").select("id, name").order("name", { ascending: true });
+    const allSeasons = (seasons ?? []).map((season) => ({
+      id: String(season.id),
+      name: String(season.name ?? "")
+    }));
+    const resolvedSeasonId = selectedSeasonId || allSeasons[0]?.id || "";
+    const selectedSeasonName = allSeasons.find((season) => season.id === resolvedSeasonId)?.name ?? "";
+
+    const { data: events } = resolvedSeasonId
+      ? await client
+          .from("season_events")
+          .select("id, season_id, title, location, event_start_date, event_end_date, time_text, sort_order")
+          .eq("season_id", resolvedSeasonId)
+          .order("event_start_date", { ascending: true })
+          .order("sort_order", { ascending: true })
+      : { data: [] as Array<Record<string, unknown>> };
+
+    const { count } = resolvedSeasonId
+      ? await client
+          .from("shows")
+          .select("id", { count: "exact", head: true })
+          .eq("season_id", resolvedSeasonId)
+      : { count: 0 };
+
+    return {
+      seasons: allSeasons,
+      selectedSeasonId: resolvedSeasonId,
+      selectedSeasonName,
+      selectedSeasonEvents: (events ?? []).map((event) => ({
+        id: String(event.id),
+        season_id: String(event.season_id),
+        title: String(event.title ?? ""),
+        location: String(event.location ?? ""),
+        event_start_date: String(event.event_start_date ?? ""),
+        event_end_date: event.event_end_date ? String(event.event_end_date) : null,
+        time_text: String(event.time_text ?? ""),
+        sort_order: Number(event.sort_order ?? 0)
+      })),
+      linkedShowCount: Number(count ?? 0)
+    };
+  } catch {
+    return {
+      seasons: [],
+      selectedSeasonId: "",
+      selectedSeasonName: "",
+      selectedSeasonEvents: [],
+      linkedShowCount: 0
+    };
+  }
+}
+
 export async function getSeasonModuleData(showId: string): Promise<SeasonModuleData> {
   const missing = getMissingSupabaseEnvVars();
   if (missing.length > 0) {
@@ -196,6 +286,191 @@ export async function getSeasonModuleData(showId: string): Promise<SeasonModuleD
   } catch {
     return { seasons: [], selectedSeasonId: "", selectedSeasonName: "", events: [] };
   }
+}
+
+export async function createSeasonLibraryEntry(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/seasons", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) {
+    withError("/app/seasons", "Season name is required.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data, error } = await client.from("seasons").insert({ name }).select("id").single();
+  if (error || !data?.id) {
+    withError("/app/seasons", error?.message ?? "Could not create season.");
+  }
+
+  const qp = new URLSearchParams({
+    seasonId: String(data.id),
+    success: "Season created."
+  });
+  redirect(`/app/seasons?${qp.toString()}`);
+}
+
+export async function updateSeasonLibraryEntry(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/seasons", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const seasonId = String(formData.get("seasonId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!seasonId || !name) {
+    withError("/app/seasons", "Season id and name are required.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { error } = await client
+    .from("seasons")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("id", seasonId);
+  if (error) {
+    const qp = new URLSearchParams({ seasonId, error: error.message });
+    redirect(`/app/seasons?${qp.toString()}`);
+  }
+
+  const qp = new URLSearchParams({ seasonId, success: "Season updated." });
+  redirect(`/app/seasons?${qp.toString()}`);
+}
+
+export async function deleteSeasonLibraryEntry(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/seasons", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const seasonId = String(formData.get("seasonId") ?? "").trim();
+  if (!seasonId) {
+    withError("/app/seasons", "Season id is required.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { error } = await client.from("seasons").delete().eq("id", seasonId);
+  if (error) {
+    const qp = new URLSearchParams({ seasonId, error: error.message });
+    redirect(`/app/seasons?${qp.toString()}`);
+  }
+
+  redirect(`/app/seasons?${new URLSearchParams({ success: "Season deleted." }).toString()}`);
+}
+
+export async function upsertSeasonLibraryEvent(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/seasons", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  const seasonId = String(formData.get("seasonId") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  const location = String(formData.get("location") ?? "").trim();
+  const eventStartDate = String(formData.get("eventStartDate") ?? "").trim();
+  const eventEndDate = String(formData.get("eventEndDate") ?? "").trim();
+  const timeText = String(formData.get("timeText") ?? "").trim();
+  const sortOrder = Number(String(formData.get("sortOrder") ?? "0"));
+
+  if (!seasonId) {
+    withError("/app/seasons", "Select a season before adding events.");
+  }
+  if (!title || !eventStartDate) {
+    const qp = new URLSearchParams({ seasonId, error: "Event title and start date are required." });
+    redirect(`/app/seasons?${qp.toString()}`);
+  }
+
+  const client = getSupabaseWriteClient();
+  const payload = {
+    season_id: seasonId,
+    title,
+    location,
+    event_start_date: eventStartDate,
+    event_end_date: eventEndDate || null,
+    time_text: timeText,
+    sort_order: Number.isFinite(sortOrder) ? sortOrder : 0,
+    updated_at: new Date().toISOString()
+  };
+
+  if (eventId) {
+    const { error } = await client.from("season_events").update(payload).eq("id", eventId);
+    if (error) {
+      const qp = new URLSearchParams({ seasonId, error: error.message });
+      redirect(`/app/seasons?${qp.toString()}`);
+    }
+  } else {
+    const { error } = await client.from("season_events").insert(payload);
+    if (error) {
+      const qp = new URLSearchParams({ seasonId, error: error.message });
+      redirect(`/app/seasons?${qp.toString()}`);
+    }
+  }
+
+  try {
+    await refreshSeasonCalendarsForSeason(seasonId);
+  } catch (refreshError) {
+    const qp = new URLSearchParams({
+      seasonId,
+      error: refreshError instanceof Error ? refreshError.message : "Could not refresh linked shows."
+    });
+    redirect(`/app/seasons?${qp.toString()}`);
+  }
+
+  const qp = new URLSearchParams({
+    seasonId,
+    success: eventId ? "Season event updated." : "Season event added."
+  });
+  redirect(`/app/seasons?${qp.toString()}`);
+}
+
+export async function deleteSeasonLibraryEvent(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/seasons", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const seasonId = String(formData.get("seasonId") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim();
+  if (!eventId || !seasonId) {
+    withError("/app/seasons", "Season id and event id are required.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { error } = await client.from("season_events").delete().eq("id", eventId);
+  if (error) {
+    const qp = new URLSearchParams({ seasonId, error: error.message });
+    redirect(`/app/seasons?${qp.toString()}`);
+  }
+
+  try {
+    await refreshSeasonCalendarsForSeason(seasonId);
+  } catch (refreshError) {
+    const qp = new URLSearchParams({
+      seasonId,
+      error: refreshError instanceof Error ? refreshError.message : "Could not refresh linked shows."
+    });
+    redirect(`/app/seasons?${qp.toString()}`);
+  }
+
+  const qp = new URLSearchParams({ seasonId, success: "Season event deleted." });
+  redirect(`/app/seasons?${qp.toString()}`);
 }
 
 export async function createSeason(showId: string, formData: FormData) {

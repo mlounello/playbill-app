@@ -17,6 +17,11 @@ function withError(path: string, message: string): never {
   redirect(`${path}?${qp.toString()}`);
 }
 
+function withSuccess(path: string, message: string): never {
+  const qp = new URLSearchParams({ success: message });
+  redirect(`${path}?${qp.toString()}`);
+}
+
 function renderDepartmentBlock(department: DepartmentRecord) {
   const lines: string[] = [];
   if (department.description.trim()) {
@@ -40,6 +45,62 @@ export function buildDepartmentInfoHtml(departments: DepartmentRecord[]) {
     return "";
   }
   return sanitizeRichText(departments.map((department) => renderDepartmentBlock(department)).join(""));
+}
+
+async function refreshDepartmentInfoForShow(showId: string) {
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id, program_id")
+    .eq("id", showId)
+    .single();
+  if (showError || !show?.program_id) {
+    return;
+  }
+
+  const { data: selectedRows } = await client
+    .from("show_departments")
+    .select("department_id, sort_order")
+    .eq("show_id", showId)
+    .order("sort_order", { ascending: true });
+  const selectedDepartmentIds = (selectedRows ?? [])
+    .map((row) => String(row.department_id ?? ""))
+    .filter(Boolean);
+
+  const { data: departments } = selectedDepartmentIds.length
+    ? await client
+        .from("departments")
+        .select("id, name, description, website, contact_email, contact_phone")
+        .in("id", selectedDepartmentIds)
+    : { data: [] as Array<Record<string, unknown>> };
+
+  const order = new Map(selectedDepartmentIds.map((id, index) => [id, index]));
+  const selected = (departments ?? [])
+    .map((row) => ({
+      id: String(row.id ?? ""),
+      name: String(row.name ?? ""),
+      description: String(row.description ?? ""),
+      website: String(row.website ?? ""),
+      contact_email: String(row.contact_email ?? ""),
+      contact_phone: String(row.contact_phone ?? "")
+    }))
+    .sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+
+  const departmentInfoHtml = buildDepartmentInfoHtml(selected);
+  await client.from("programs").update({ department_info: departmentInfoHtml }).eq("id", String(show.program_id));
+  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+}
+
+async function refreshDepartmentInfoForDepartment(departmentId: string) {
+  const client = getSupabaseWriteClient();
+  const { data: bindings } = await client
+    .from("show_departments")
+    .select("show_id")
+    .eq("department_id", departmentId);
+  const showIds = [...new Set((bindings ?? []).map((row) => String(row.show_id ?? "")).filter(Boolean))];
+  for (const showId of showIds) {
+    await refreshDepartmentInfoForShow(showId);
+  }
 }
 
 export async function getDepartmentRepository() {
@@ -68,6 +129,10 @@ export async function getDepartmentRepository() {
   } catch {
     return [] as DepartmentRecord[];
   }
+}
+
+export async function getProducingProfileLibrary() {
+  return getDepartmentRepository();
 }
 
 export async function getShowDepartmentSelection(showId: string) {
@@ -132,6 +197,101 @@ export async function createDepartment(formData: FormData) {
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Producing department / company profile created.")}`);
 }
 
+export async function createProducingProfile(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/producing-profiles", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) {
+    withError("/app/producing-profiles", "Producing department / company name is required.");
+  }
+  const website = String(formData.get("website") ?? "").trim();
+  if (website && !/^https?:\/\//i.test(website)) {
+    withError("/app/producing-profiles", "Website must begin with http:// or https://");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { error } = await client.from("departments").insert({
+    name,
+    description: sanitizeRichText(String(formData.get("description") ?? "")),
+    website,
+    contact_email: String(formData.get("contactEmail") ?? "").trim().toLowerCase(),
+    contact_phone: String(formData.get("contactPhone") ?? "").trim()
+  });
+  if (error) {
+    withError("/app/producing-profiles", error.message);
+  }
+
+  withSuccess("/app/producing-profiles", "Producing profile created.");
+}
+
+export async function updateProducingProfile(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/producing-profiles", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const id = String(formData.get("id") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!id || !name) {
+    withError("/app/producing-profiles", "Profile id and name are required.");
+  }
+  const website = String(formData.get("website") ?? "").trim();
+  if (website && !/^https?:\/\//i.test(website)) {
+    withError("/app/producing-profiles", "Website must begin with http:// or https://");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { error } = await client
+    .from("departments")
+    .update({
+      name,
+      description: sanitizeRichText(String(formData.get("description") ?? "")),
+      website,
+      contact_email: String(formData.get("contactEmail") ?? "").trim().toLowerCase(),
+      contact_phone: String(formData.get("contactPhone") ?? "").trim()
+    })
+    .eq("id", id);
+  if (error) {
+    withError("/app/producing-profiles", error.message);
+  }
+
+  await refreshDepartmentInfoForDepartment(id);
+  withSuccess("/app/producing-profiles", "Producing profile updated.");
+}
+
+export async function deleteProducingProfile(formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError("/app/producing-profiles", `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) {
+    withError("/app/producing-profiles", "Profile id is required.");
+  }
+
+  await refreshDepartmentInfoForDepartment(id);
+  const client = getSupabaseWriteClient();
+  const { error } = await client.from("departments").delete().eq("id", id);
+  if (error) {
+    withError("/app/producing-profiles", error.message);
+  }
+
+  withSuccess("/app/producing-profiles", "Producing profile deleted.");
+}
+
 export async function updateShowDepartments(showId: string, formData: FormData) {
   "use server";
 
@@ -174,38 +334,7 @@ export async function updateShowDepartments(showId: string, formData: FormData) 
     }
   }
 
-  const { data: departments } = selectedDepartmentIds.length
-    ? await client
-        .from("departments")
-        .select("id, name, description, website, contact_email, contact_phone")
-        .in("id", selectedDepartmentIds)
-    : { data: [] as Array<Record<string, unknown>> };
-
-  const order = new Map(selectedDepartmentIds.map((id, index) => [id, index]));
-  const selected = (departments ?? [])
-    .map((row) => ({
-      id: String(row.id ?? ""),
-      name: String(row.name ?? ""),
-      description: String(row.description ?? ""),
-      website: String(row.website ?? ""),
-      contact_email: String(row.contact_email ?? ""),
-      contact_phone: String(row.contact_phone ?? "")
-    }))
-    .sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER));
-
-  const departmentInfoHtml = buildDepartmentInfoHtml(selected);
-
-  if (show.program_id) {
-    const { error: programError } = await client
-      .from("programs")
-      .update({ department_info: departmentInfoHtml })
-      .eq("id", show.program_id);
-    if (programError) {
-      withError(`/app/shows/${showId}?tab=settings`, programError.message);
-    }
-  }
-
-  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  await refreshDepartmentInfoForShow(showId);
 
   redirect(
     `/app/shows/${showId}?tab=settings&success=${encodeURIComponent(

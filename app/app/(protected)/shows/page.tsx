@@ -15,9 +15,13 @@ export default async function AdminShowsPage({
       <div className="container page-shell">
         <div className="title-row">
           <h1>Show Workspaces</h1>
-          <Link className="button-link" href="/app/shows/new">
-            Create Show
-          </Link>
+          <div className="top-actions">
+            <Link href="/app/seasons">Season Builder</Link>
+            <Link href="/app/producing-profiles">Producing Profiles</Link>
+            <Link className="button-link" href="/app/shows/new">
+              Create Show
+            </Link>
+          </div>
         </div>
 
         <FlashToast message={error} tone="error" />

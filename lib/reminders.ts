@@ -15,12 +15,12 @@ type ReminderRecipient = {
 
 function withError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
-  redirect(`${path}?${qp.toString()}`);
+  redirect(`${path}${path.includes("?") ? "&" : "?"}${qp.toString()}`);
 }
 
 function withSuccess(path: string, message: string): never {
   const qp = new URLSearchParams({ success: message });
-  redirect(`${path}?${qp.toString()}`);
+  redirect(`${path}${path.includes("?") ? "&" : "?"}${qp.toString()}`);
 }
 
 async function sendEmail(params: { to: string; subject: string; text: string; html: string }) {
