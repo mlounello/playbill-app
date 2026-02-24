@@ -183,6 +183,7 @@ create table if not exists public.show_roles (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows (id) on delete cascade,
   person_id uuid not null references public.people (id) on delete cascade,
+  role_template_id uuid,
   role_name text not null,
   category text not null default 'production',
   billing_order integer,
@@ -191,6 +192,34 @@ create table if not exists public.show_roles (
   hidden_from_bios boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+create table if not exists public.role_templates (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  name text not null,
+  category text not null default 'production',
+  scope text not null default 'global',
+  show_id uuid references public.shows (id) on delete cascade,
+  is_hidden boolean not null default false,
+  unique(name, category, scope, show_id)
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'show_roles_role_template_id_fkey'
+      and conrelid = 'public.show_roles'::regclass
+  ) then
+    alter table public.show_roles
+      add constraint show_roles_role_template_id_fkey
+      foreign key (role_template_id) references public.role_templates (id) on delete set null;
+  end if;
+end $$;
+
+alter table public.show_roles add column if not exists role_template_id uuid;
 
 create table if not exists public.submission_requests (
   id uuid primary key default gen_random_uuid(),
@@ -263,6 +292,7 @@ alter table public.season_events enable row level security;
 alter table public.departments enable row level security;
 alter table public.show_departments enable row level security;
 alter table public.show_roles enable row level security;
+alter table public.role_templates enable row level security;
 alter table public.submission_requests enable row level security;
 alter table public.submissions enable row level security;
 alter table public.assets enable row level security;
@@ -320,6 +350,13 @@ create policy "authenticated manage program_modules" on public.program_modules
 
 drop policy if exists "authenticated manage show_roles" on public.show_roles;
 create policy "authenticated manage show_roles" on public.show_roles
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage role_templates" on public.role_templates;
+create policy "authenticated manage role_templates" on public.role_templates
   for all
   to authenticated
   using (true)

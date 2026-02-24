@@ -5,6 +5,7 @@ const navItems = [
   { href: "/programs", label: "Programs" },
   { href: "/app/shows/new", label: "New Show" },
   { href: "/app/shows", label: "Admin" },
+  { href: "/app/roles", label: "Roles" },
   { href: "/app/seasons", label: "Seasons" },
   { href: "/app/producing-profiles", label: "Profiles" },
   { href: "/contribute", label: "Contribute" },

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
+import { hideShowOnlyCastRoleTemplatesForShow } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/rich-text";
 import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
@@ -565,6 +566,8 @@ export async function archiveShow(showId: string) {
   if (updateError) {
     withError(`/app/shows/${showId}?tab=settings`, updateError.message);
   }
+
+  await hideShowOnlyCastRoleTemplatesForShow(showId);
 
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Show archived. Delete is now enabled.")}`);
 }

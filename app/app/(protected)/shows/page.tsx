@@ -16,6 +16,7 @@ export default async function AdminShowsPage({
         <div className="title-row">
           <h1>Show Workspaces</h1>
           <div className="top-actions">
+            <Link href="/app/roles">Role Library</Link>
             <Link href="/app/seasons">Season Builder</Link>
             <Link href="/app/producing-profiles">Producing Profiles</Link>
             <Link className="button-link" href="/app/shows/new">

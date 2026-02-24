@@ -372,6 +372,13 @@ function inferRoleCategoryFromRole(roleTitle: string): RoleCategory {
   return "production";
 }
 
+function normalizeRoleCategoryValue(value: string): RoleCategory {
+  const lowered = value.trim().toLowerCase();
+  if (lowered === "cast") return "cast";
+  if (lowered === "creative") return "creative";
+  return "production";
+}
+
 function isValidEmail(value: string) {
   return z.string().email().safeParse(value).success;
 }
@@ -720,6 +727,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     .from("show_roles")
     .select("id, person_id, role_name, category, billing_order")
     .eq("show_id", showId);
+  const showRolesColumns = await getTableColumns(client, "show_roles");
   const existingRoleKeys = new Set(
     (existingRoleRows ?? []).map(
       (row) => `${String(row.person_id ?? "")}|${String(row.role_name ?? "").trim().toLowerCase()}|${String(row.category ?? "").trim().toLowerCase()}`
@@ -733,34 +741,149 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         .map((row) => Number(row.billing_order ?? 0))
     ) + 1;
 
-  const newRoleRows: Array<{
-    show_id: string;
-    person_id: string;
-    role_name: string;
-    category: string;
-    billing_order: number | null;
-    bio_order: number | null;
-  }> = [];
+  type RoleTemplateRow = {
+    id: string;
+    name: string;
+    category: RoleCategory;
+    scope: "global" | "show_only";
+    show_id: string | null;
+    is_hidden: boolean;
+  };
+  let roleTemplates: RoleTemplateRow[] = [];
+  try {
+    const { data } = await client
+      .from("role_templates")
+      .select("id, name, category, scope, show_id, is_hidden");
+    roleTemplates = (data ?? [])
+      .map((row) => ({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? "").trim(),
+        category: normalizeRoleCategoryValue(String(row.category ?? "production")),
+        scope: (String(row.scope ?? "global") === "show_only" ? "show_only" : "global") as "global" | "show_only",
+        show_id: row.show_id ? String(row.show_id) : null,
+        is_hidden: Boolean(row.is_hidden)
+      }))
+      .filter((row) => row.id && row.name);
+  } catch {
+    roleTemplates = [];
+  }
+
+  const templateCache = new Map<string, { templateId: string | null; category: RoleCategory }>();
+  async function resolveRoleTemplate(roleName: string, fallbackCategory: RoleCategory) {
+    const cacheKey = `${roleName.trim().toLowerCase()}|${fallbackCategory}`;
+    const cached = templateCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const normalizedName = roleName.trim().toLowerCase();
+    const matchedShowOnly = roleTemplates.find(
+      (template) =>
+        !template.is_hidden &&
+        template.scope === "show_only" &&
+        template.show_id === showId &&
+        template.name.trim().toLowerCase() === normalizedName
+    );
+    const matchedGlobal = roleTemplates.find(
+      (template) =>
+        !template.is_hidden &&
+        template.scope === "global" &&
+        template.name.trim().toLowerCase() === normalizedName
+    );
+    const matched = matchedShowOnly ?? matchedGlobal;
+    if (matched) {
+      const resolved = { templateId: matched.id, category: matched.category };
+      templateCache.set(cacheKey, resolved);
+      return resolved;
+    }
+
+    const scope = fallbackCategory === "cast" ? "show_only" : "global";
+    const insertPayload = {
+      name: roleName.trim(),
+      category: fallbackCategory,
+      scope,
+      show_id: scope === "show_only" ? showId : null,
+      is_hidden: false,
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      const { data: inserted } = await client.from("role_templates").insert(insertPayload).select("id").maybeSingle();
+      if (inserted?.id) {
+        const templateId = String(inserted.id);
+        roleTemplates.push({
+          id: templateId,
+          name: insertPayload.name,
+          category: fallbackCategory,
+          scope,
+          show_id: insertPayload.show_id,
+          is_hidden: false
+        });
+        const resolved = { templateId, category: fallbackCategory };
+        templateCache.set(cacheKey, resolved);
+        return resolved;
+      }
+    } catch {
+      // continue to lookup fallback
+    }
+
+    const query = scope === "show_only"
+      ? await client
+          .from("role_templates")
+          .select("id, category")
+          .eq("name", insertPayload.name)
+          .eq("scope", "show_only")
+          .eq("show_id", showId)
+          .maybeSingle()
+      : await client
+          .from("role_templates")
+          .select("id, category")
+          .eq("name", insertPayload.name)
+          .eq("scope", "global")
+          .is("show_id", null)
+          .maybeSingle();
+    if (query.data?.id) {
+      const resolved = {
+        templateId: String(query.data.id),
+        category: normalizeRoleCategoryValue(String(query.data.category ?? fallbackCategory))
+      };
+      templateCache.set(cacheKey, resolved);
+      return resolved;
+    }
+
+    const unresolved = { templateId: null, category: fallbackCategory };
+    templateCache.set(cacheKey, unresolved);
+    return unresolved;
+  }
+
+  const newRoleRows: Array<Record<string, unknown>> = [];
   for (const record of records) {
     const personId = personIdByEmail.get(normalizeEmail(record.email));
     if (!personId) {
       continue;
     }
     const roleName = record.roleTitle.trim();
-    const category = record.roleCategory;
+    const resolvedTemplate = await resolveRoleTemplate(roleName, record.roleCategory);
+    const category = resolvedTemplate.category;
     const roleKey = `${personId}|${roleName.toLowerCase()}|${category}`;
     if (existingRoleKeys.has(roleKey)) {
       continue;
     }
     existingRoleKeys.add(roleKey);
-    newRoleRows.push({
-      show_id: showId,
-      person_id: personId,
-      role_name: roleName,
-      category,
-      billing_order: category === "cast" ? nextCastBillingOrder++ : null,
-      bio_order: null
-    });
+    newRoleRows.push(
+      filterToColumns(
+        {
+          show_id: showId,
+          person_id: personId,
+          role_name: roleName,
+          category,
+          role_template_id: resolvedTemplate.templateId,
+          billing_order: category === "cast" ? nextCastBillingOrder++ : null,
+          bio_order: null
+        },
+        showRolesColumns
+      )
+    );
   }
 
   if (newRoleRows.length > 0) {
@@ -836,9 +959,9 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         email: person.email
       })),
       added_roles: newRoleRows.map((role) => ({
-        person_id: role.person_id,
-        role_name: role.role_name,
-        category: role.category
+        person_id: String(role.person_id ?? ""),
+        role_name: String(role.role_name ?? ""),
+        category: String(role.category ?? "")
       }))
     },
     reason: mode === "bulk" ? "bulk import" : "manual add"
