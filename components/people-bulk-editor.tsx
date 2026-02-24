@@ -38,7 +38,7 @@ export function PeopleBulkEditor({
   roleError,
   roleErrorRoleName,
   highlightedPersonId,
-  getRoleManageHref
+  roleManageBasePath
 }: {
   people: PersonRow[];
   onSubmitAction: (formData: FormData) => void;
@@ -50,7 +50,7 @@ export function PeopleBulkEditor({
   roleError?: string;
   roleErrorRoleName?: string;
   highlightedPersonId?: string;
-  getRoleManageHref?: (personId: string) => string;
+  roleManageBasePath?: string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
@@ -201,8 +201,8 @@ export function PeopleBulkEditor({
                         >
                           Edit
                         </button>
-                        {getRoleManageHref ? (
-                          <a className="ghost-button" href={getRoleManageHref(person.id)}>
+                        {roleManageBasePath ? (
+                          <a className="ghost-button" href={`${roleManageBasePath}&personForRole=${encodeURIComponent(person.id)}#role-assignments`}>
                             Manage Roles
                           </a>
                         ) : null}

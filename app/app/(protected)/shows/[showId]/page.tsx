@@ -801,7 +801,7 @@ export default async function ShowWorkspacePage({
                 roleError={roleError}
                 roleErrorRoleName={roleName}
                 highlightedPersonId={personForRole || ""}
-                getRoleManageHref={(personId) => `/app/shows/${show.id}?tab=people-roles&personForRole=${personId}#role-assignments`}
+                roleManageBasePath={`/app/shows/${show.id}?tab=people-roles`}
               />
               <p className="section-note">
                 Tip: if someone has more than one role, click <strong>Manage Roles</strong> in their row. Role/category edits are handled in Role Assignments.
