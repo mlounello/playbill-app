@@ -8,11 +8,22 @@ type Props = {
   placeholder?: string;
   required?: boolean;
   initialValue?: string;
+  draftNamespace?: string;
 };
 
-export function RichTextField({ name, label, placeholder, required = false, initialValue = "" }: Props) {
+export function RichTextField({ name, label, placeholder, required = false, initialValue = "", draftNamespace }: Props) {
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const [value, setValue] = useState(initialValue);
+  const [value, setValue] = useState(() => {
+    if (!draftNamespace || typeof window === "undefined") {
+      return initialValue;
+    }
+    try {
+      const saved = window.localStorage.getItem(`${draftNamespace}:rich:${name}`);
+      return saved ?? initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -20,6 +31,17 @@ export function RichTextField({ name, label, placeholder, required = false, init
       editorRef.current.innerHTML = value;
     }
   }, [value]);
+
+  useEffect(() => {
+    if (!draftNamespace || typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(`${draftNamespace}:rich:${name}`, value);
+    } catch {
+      // Ignore.
+    }
+  }, [draftNamespace, name, value]);
 
   const run = (command: string, arg?: string) => {
     if (!editorRef.current) return;
@@ -74,4 +96,3 @@ export function RichTextField({ name, label, placeholder, required = false, init
     </label>
   );
 }
-

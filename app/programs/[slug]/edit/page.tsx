@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PerformanceInputs } from "@/components/performance-inputs";
+import { ProgramEditDraftManager } from "@/components/program-edit-draft-manager";
+import { ProgramImageUpload } from "@/components/program-image-upload";
 import { RichTextField } from "@/components/rich-text-field";
-import { SectionOrderBuilder } from "@/components/section-order-builder";
 import { getProgramBySlug, updateProgram } from "@/lib/programs";
+import { getSupabaseReadClient } from "@/lib/supabase";
 
 export default async function EditProgramPage({
   params,
@@ -20,11 +22,17 @@ export default async function EditProgramPage({
     notFound();
   }
 
+  const client = getSupabaseReadClient();
+  const { data: showRow } = await client.from("shows").select("id").eq("program_id", program.id).maybeSingle();
+  const programPlanHref = showRow?.id ? `/app/shows/${showRow.id}?tab=program-plan` : null;
+
   const rosterLines = [...program.castPeople, ...program.productionPeople]
     .map((person) => `${person.full_name} | ${person.role_title} | ${person.team_type} | ${person.email || ""}`)
     .join("\n");
 
   const action = updateProgram.bind(null, slug);
+  const draftNamespace = `program-edit:${slug}`;
+  const formId = "program-edit-form";
 
   return (
     <main>
@@ -40,8 +48,20 @@ export default async function EditProgramPage({
             {error}
           </div>
         ) : null}
+        <div className="card stack-sm">
+          <strong>Program Structure</strong>
+          <div className="meta-text">
+            Page order and visibility are managed in Program Plan, not on this form.
+          </div>
+          {programPlanHref ? (
+            <div>
+              <Link href={programPlanHref}>Open Program Plan</Link>
+            </div>
+          ) : null}
+        </div>
 
-        <form action={action} className="form-grid page-shell">
+        <form id={formId} action={action} className="form-grid page-shell">
+          <ProgramEditDraftManager formId={formId} draftNamespace={draftNamespace} />
           <label>
             Show Title
             <input name="title" required defaultValue={program.title} />
@@ -55,25 +75,38 @@ export default async function EditProgramPage({
           <PerformanceInputs
             initialPerformances={program.performance_schedule}
             initialShowDatesOverride={program.show_dates}
+            draftNamespace={draftNamespace}
           />
 
           <label>
             Poster Image URL
-            <input name="posterImageUrl" defaultValue={program.poster_image_url} />
+            <input id="posterImageUrlInput" name="posterImageUrl" defaultValue={program.poster_image_url} />
           </label>
+          <ProgramImageUpload
+            programSlug={slug}
+            assetType="poster"
+            targetInputId="posterImageUrlInput"
+            label="Upload Poster Image (optional)"
+          />
 
-          <RichTextField name="directorNotes" label="Director's Note" initialValue={program.director_notes} />
-          <RichTextField name="dramaturgicalNote" label="Dramaturgical Note" initialValue={program.dramaturgical_note} />
-          <RichTextField name="billingPage" label="Billing Page" initialValue={program.billing_page} />
-          <RichTextField name="actsAndSongs" label="Acts & Songs" initialValue={program.acts_songs} />
-          <RichTextField name="departmentInfo" label="Department Information" initialValue={program.department_info} />
-          <RichTextField name="acknowledgements" label="Acknowledgements" initialValue={program.acknowledgements} />
-          <RichTextField name="seasonCalendar" label="Season Calendar" initialValue={program.season_calendar} />
+          <RichTextField name="directorNotes" label="Director's Note" initialValue={program.director_notes} draftNamespace={draftNamespace} />
+          <RichTextField name="dramaturgicalNote" label="Dramaturgical Note" initialValue={program.dramaturgical_note} draftNamespace={draftNamespace} />
+          <RichTextField name="billingPage" label="Billing Page" initialValue={program.billing_page} draftNamespace={draftNamespace} />
+          <RichTextField name="actsAndSongs" label="Acts & Songs" initialValue={program.acts_songs} draftNamespace={draftNamespace} />
+          <RichTextField name="departmentInfo" label="Department Information" initialValue={program.department_info} draftNamespace={draftNamespace} />
+          <RichTextField name="acknowledgements" label="Acknowledgements" initialValue={program.acknowledgements} draftNamespace={draftNamespace} />
+          <RichTextField name="seasonCalendar" label="Season Calendar" initialValue={program.season_calendar} draftNamespace={draftNamespace} />
 
           <label>
             ACTF Ad Image URL
-            <input name="actfAdImageUrl" defaultValue={program.actf_ad_image_url} />
+            <input id="actfAdImageUrlInput" name="actfAdImageUrl" defaultValue={program.actf_ad_image_url} />
           </label>
+          <ProgramImageUpload
+            programSlug={slug}
+            assetType="actf"
+            targetInputId="actfAdImageUrlInput"
+            label="Upload ACTF/Ad Image (optional)"
+          />
 
           <label>
             Production Roster
@@ -84,6 +117,11 @@ export default async function EditProgramPage({
             Production Photo URLs (one per line)
             <textarea name="productionPhotoUrls" defaultValue={program.production_photo_urls.join("\n")} />
           </label>
+          <ProgramImageUpload
+            programSlug={slug}
+            assetType="photo"
+            label="Upload a Production Photo (copy URL into list above)"
+          />
 
           <label>
             Custom Pages (one per line)
@@ -94,8 +132,9 @@ export default async function EditProgramPage({
                 .join("\n")}
             />
           </label>
-
-          <SectionOrderBuilder initialValue={program.layout_order.join("\n")} />
+          <div className="meta-text">
+            Google Drive files can be used if they are shared publicly and pasted as direct image URLs.
+          </div>
 
           <button type="submit">Save Changes</button>
         </form>

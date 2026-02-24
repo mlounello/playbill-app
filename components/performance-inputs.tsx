@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Performance = {
   date: string;
@@ -37,16 +37,45 @@ const formatDateTime = (date: string, time: string) => {
 
 export function PerformanceInputs({
   initialPerformances,
-  initialShowDatesOverride
+  initialShowDatesOverride,
+  draftNamespace
 }: {
   initialPerformances?: Array<{ date?: string; time?: string }>;
   initialShowDatesOverride?: string;
+  draftNamespace?: string;
 }) {
-  const seeded =
-    initialPerformances && initialPerformances.length > 0
+  const seeded = (() => {
+    if (draftNamespace && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(`${draftNamespace}:performances`);
+        if (raw) {
+          const parsed = JSON.parse(raw) as Array<{ date?: string; time?: string }>;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.map((item) => ({ date: item.date ?? "", time: item.time ?? "" }));
+          }
+        }
+      } catch {
+        // Ignore draft parse errors.
+      }
+    }
+    return initialPerformances && initialPerformances.length > 0
       ? initialPerformances.map((item) => ({ date: item.date ?? "", time: item.time ?? "" }))
       : [{ date: "", time: "" }];
+  })();
   const [performances, setPerformances] = useState<Performance[]>(seeded);
+  const [showDatesOverride, setShowDatesOverride] = useState(() => {
+    if (draftNamespace && typeof window !== "undefined") {
+      try {
+        const saved = window.localStorage.getItem(`${draftNamespace}:showDatesOverride`);
+        if (saved !== null) {
+          return saved;
+        }
+      } catch {
+        // Ignore.
+      }
+    }
+    return initialShowDatesOverride ?? "";
+  });
 
   const summary = useMemo(() => {
     return performances
@@ -57,6 +86,18 @@ export function PerformanceInputs({
   }, [performances]);
 
   const encodedSchedule = useMemo(() => JSON.stringify(performances.filter((p) => p.date)), [performances]);
+
+  useEffect(() => {
+    if (!draftNamespace || typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(`${draftNamespace}:performances`, JSON.stringify(performances));
+      window.localStorage.setItem(`${draftNamespace}:showDatesOverride`, showDatesOverride);
+    } catch {
+      // Ignore.
+    }
+  }, [draftNamespace, performances, showDatesOverride]);
 
   const update = (index: number, key: keyof Performance, value: string) => {
     setPerformances((current) => current.map((row, i) => (i === index ? { ...row, [key]: value } : row)));
@@ -126,7 +167,8 @@ export function PerformanceInputs({
           type="text"
           name="showDatesOverride"
           placeholder="If empty, this is auto-generated from selected dates/times."
-          defaultValue={initialShowDatesOverride ?? ""}
+          value={showDatesOverride}
+          onChange={(event) => setShowDatesOverride(event.target.value)}
         />
       </label>
 

@@ -106,7 +106,7 @@ const payloadSchema = z.object({
   showDates: z.string().optional().or(z.literal("")),
   showDatesOverride: z.string().optional().or(z.literal("")),
   performanceSchedule: z.string().optional().or(z.literal("[]")),
-  posterImageUrl: z.string().url().optional().or(z.literal("")),
+  posterImageUrl: z.string().optional().or(z.literal("")),
   directorNotes: z.string().optional().or(z.literal("")),
   dramaturgicalNote: z.string().optional().or(z.literal("")),
   billingPage: z.string().optional().or(z.literal("")),
@@ -114,7 +114,7 @@ const payloadSchema = z.object({
   departmentInfo: z.string().optional().or(z.literal("")),
   seasonCalendar: z.string().optional().or(z.literal("")),
   acknowledgements: z.string().optional().or(z.literal("")),
-  actfAdImageUrl: z.string().url().optional().or(z.literal("")),
+  actfAdImageUrl: z.string().optional().or(z.literal("")),
   rosterLines: z.string().optional().or(z.literal("")),
   castLines: z.string().optional().or(z.literal("")),
   productionTeamLines: z.string().optional().or(z.literal("")),
@@ -122,6 +122,17 @@ const payloadSchema = z.object({
   customPages: z.string().optional(),
   layoutOrder: z.string().optional().or(z.literal(""))
 });
+
+function normalizeOptionalHttpUrl(value: string | undefined, fieldLabel: string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (!isValidHttpUrl(trimmed)) {
+    throw new Error(`${fieldLabel} must be a valid http(s) URL.`);
+  }
+  return trimmed;
+}
 
 const submissionSchema = z.object({
   personId: z.string().uuid(),
@@ -875,33 +886,33 @@ function formatPerformanceLabel(performance: PerformanceRecord) {
 export async function createProgram(formData: FormData) {
   "use server";
 
-  let parsed: z.infer<typeof payloadSchema>;
-  try {
-    parsed = payloadSchema.parse({
-      title: formData.get("title"),
-      theatreName: formData.get("theatreName"),
-      showDates: formData.get("showDates"),
-      showDatesOverride: formData.get("showDatesOverride"),
-      performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
-      posterImageUrl: formData.get("posterImageUrl"),
-      directorNotes: formData.get("directorNotes"),
-      dramaturgicalNote: formData.get("dramaturgicalNote"),
-      billingPage: formData.get("billingPage"),
-      actsAndSongs: formData.get("actsAndSongs"),
-      departmentInfo: formData.get("departmentInfo"),
-      seasonCalendar: formData.get("seasonCalendar"),
-      acknowledgements: formData.get("acknowledgements"),
-      actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
-      rosterLines: formData.get("rosterLines"),
-      castLines: formData.get("castLines"),
-      productionTeamLines: formData.get("productionTeamLines"),
-      productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
-      customPages: formData.get("customPages")?.toString(),
-      layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
-    });
-  } catch {
-    return redirectWithError("/programs/new", "Please review required fields and input formats.");
+  const parseResult = payloadSchema.safeParse({
+    title: formData.get("title"),
+    theatreName: formData.get("theatreName"),
+    showDates: formData.get("showDates"),
+    showDatesOverride: formData.get("showDatesOverride"),
+    performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
+    posterImageUrl: formData.get("posterImageUrl"),
+    directorNotes: formData.get("directorNotes"),
+    dramaturgicalNote: formData.get("dramaturgicalNote"),
+    billingPage: formData.get("billingPage"),
+    actsAndSongs: formData.get("actsAndSongs"),
+    departmentInfo: formData.get("departmentInfo"),
+    seasonCalendar: formData.get("seasonCalendar"),
+    acknowledgements: formData.get("acknowledgements"),
+    actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
+    rosterLines: formData.get("rosterLines"),
+    castLines: formData.get("castLines"),
+    productionTeamLines: formData.get("productionTeamLines"),
+    productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
+    customPages: formData.get("customPages")?.toString(),
+    layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
+  });
+  if (!parseResult.success) {
+    const issue = parseResult.error.issues[0];
+    return redirectWithError("/programs/new", `Invalid ${issue?.path?.join(".") || "input"}: ${issue?.message ?? "check your form values."}`);
   }
+  const parsed = parseResult.data;
 
   const missingEnv = getMissingSupabaseEnvVars();
   if (missingEnv.length > 0) {
@@ -934,8 +945,27 @@ export async function createProgram(formData: FormData) {
     redirectWithError("/programs/new", "Roster format is invalid. Use Name | Role | cast|production | optional@email.com.");
   }
 
+  const posterImageUrl = (() => {
+    try {
+      return normalizeOptionalHttpUrl(parsed.posterImageUrl, "Poster image URL");
+    } catch (error) {
+      return redirectWithError("/programs/new", error instanceof Error ? error.message : "Invalid poster image URL.");
+    }
+  })();
+  const actfAdImageUrl = (() => {
+    try {
+      return normalizeOptionalHttpUrl(parsed.actfAdImageUrl, "ACTF ad image URL");
+    } catch (error) {
+      return redirectWithError("/programs/new", error instanceof Error ? error.message : "Invalid ACTF ad image URL.");
+    }
+  })();
   const productionPhotoUrls = parseProductionPhotos(parsed.productionPhotoUrls);
-  const customPages = parseCustomPages(parsed.customPages);
+  let customPages: CustomPageRecord[] = [];
+  try {
+    customPages = parseCustomPages(parsed.customPages);
+  } catch (error) {
+    return redirectWithError("/programs/new", error instanceof Error ? error.message : "Invalid custom pages format.");
+  }
 
   const billingHtml = sanitizeRichText(parsed.billingPage);
   const resolvedBilling = richTextHasContent(billingHtml) ? billingHtml : generateAutoBilling(rosterPeople);
@@ -947,13 +977,13 @@ export async function createProgram(formData: FormData) {
     theatre_name: parsed.theatreName ?? "",
     show_dates: resolvedShowDates,
     performance_schedule: performanceSchedule,
-    poster_image_url: parsed.posterImageUrl,
+    poster_image_url: posterImageUrl,
     director_notes: sanitizeRichText(parsed.directorNotes),
     dramaturgical_note: sanitizeRichText(parsed.dramaturgicalNote),
     billing_page: resolvedBilling,
     acts_songs: sanitizeRichText(parsed.actsAndSongs),
     department_info: sanitizeRichText(parsed.departmentInfo),
-    actf_ad_image_url: parsed.actfAdImageUrl,
+    actf_ad_image_url: actfAdImageUrl,
     acknowledgements: sanitizeRichText(parsed.acknowledgements),
     season_calendar: sanitizeRichText(parsed.seasonCalendar),
     production_photo_urls: productionPhotoUrls,
@@ -1452,33 +1482,33 @@ export async function getProgramWorkspaceList() {
 export async function updateProgram(slug: string, formData: FormData) {
   "use server";
 
-  let parsed: z.infer<typeof payloadSchema>;
-  try {
-    parsed = payloadSchema.parse({
-      title: formData.get("title"),
-      theatreName: formData.get("theatreName"),
-      showDates: formData.get("showDates"),
-      showDatesOverride: formData.get("showDatesOverride"),
-      performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
-      posterImageUrl: formData.get("posterImageUrl"),
-      directorNotes: formData.get("directorNotes"),
-      dramaturgicalNote: formData.get("dramaturgicalNote"),
-      billingPage: formData.get("billingPage"),
-      actsAndSongs: formData.get("actsAndSongs"),
-      departmentInfo: formData.get("departmentInfo"),
-      seasonCalendar: formData.get("seasonCalendar"),
-      acknowledgements: formData.get("acknowledgements"),
-      actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
-      rosterLines: formData.get("rosterLines"),
-      castLines: formData.get("castLines"),
-      productionTeamLines: formData.get("productionTeamLines"),
-      productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
-      customPages: formData.get("customPages")?.toString(),
-      layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
-    });
-  } catch {
-    return redirectWithError(`/programs/${slug}/edit`, "Please review required fields and input formats.");
+  const parseResult = payloadSchema.safeParse({
+    title: formData.get("title"),
+    theatreName: formData.get("theatreName"),
+    showDates: formData.get("showDates"),
+    showDatesOverride: formData.get("showDatesOverride"),
+    performanceSchedule: formData.get("performanceSchedule")?.toString() ?? "[]",
+    posterImageUrl: formData.get("posterImageUrl"),
+    directorNotes: formData.get("directorNotes"),
+    dramaturgicalNote: formData.get("dramaturgicalNote"),
+    billingPage: formData.get("billingPage"),
+    actsAndSongs: formData.get("actsAndSongs"),
+    departmentInfo: formData.get("departmentInfo"),
+    seasonCalendar: formData.get("seasonCalendar"),
+    acknowledgements: formData.get("acknowledgements"),
+    actfAdImageUrl: formData.get("actfAdImageUrl") ?? "",
+    rosterLines: formData.get("rosterLines"),
+    castLines: formData.get("castLines"),
+    productionTeamLines: formData.get("productionTeamLines"),
+    productionPhotoUrls: formData.get("productionPhotoUrls")?.toString(),
+    customPages: formData.get("customPages")?.toString(),
+    layoutOrder: formData.get("layoutOrder")?.toString() ?? ""
+  });
+  if (!parseResult.success) {
+    const issue = parseResult.error.issues[0];
+    return redirectWithError(`/programs/${slug}/edit`, `Invalid ${issue?.path?.join(".") || "input"}: ${issue?.message ?? "check your form values."}`);
   }
+  const parsed = parseResult.data;
 
   const missingEnv = getMissingSupabaseEnvVars();
   if (missingEnv.length > 0) {
@@ -1499,7 +1529,15 @@ export async function updateProgram(slug: string, formData: FormData) {
   const { data: existingPeopleRows } = await client.from("people").select("*").eq("program_id", existingProgram.id);
   const existingPeople = normalizeExistingPeopleRows((existingPeopleRows ?? []) as Record<string, unknown>[]);
 
-  const layoutOrder = parseLayoutOrder(parsed.layoutOrder ?? "");
+  const layoutOrderRaw = parsed.layoutOrder?.trim() ?? "";
+  let layoutOrder: LayoutToken[] | null = null;
+  if (layoutOrderRaw) {
+    try {
+      layoutOrder = parseLayoutOrder(layoutOrderRaw);
+    } catch {
+      return redirectWithError(`/programs/${slug}/edit`, "Layout order contains invalid section tokens.");
+    }
+  }
   const performanceSchedule = parsePerformanceSchedule(parsed.performanceSchedule);
   const autoShowDates = performanceSchedule.map((item) => formatPerformanceLabel(item)).filter(Boolean).join(" | ");
   const resolvedShowDates = (parsed.showDatesOverride && parsed.showDatesOverride.trim()) || parsed.showDates || autoShowDates;
@@ -1527,8 +1565,27 @@ export async function updateProgram(slug: string, formData: FormData) {
   }
 
   const mergedPeople = mergeRosterWithExisting(rosterPeople, existingPeople);
+  const posterImageUrl = (() => {
+    try {
+      return normalizeOptionalHttpUrl(parsed.posterImageUrl, "Poster image URL");
+    } catch (error) {
+      return redirectWithError(`/programs/${slug}/edit`, error instanceof Error ? error.message : "Invalid poster image URL.");
+    }
+  })();
+  const actfAdImageUrl = (() => {
+    try {
+      return normalizeOptionalHttpUrl(parsed.actfAdImageUrl, "ACTF ad image URL");
+    } catch (error) {
+      return redirectWithError(`/programs/${slug}/edit`, error instanceof Error ? error.message : "Invalid ACTF ad image URL.");
+    }
+  })();
   const productionPhotoUrls = parseProductionPhotos(parsed.productionPhotoUrls);
-  const customPages = parseCustomPages(parsed.customPages);
+  let customPages: CustomPageRecord[] = [];
+  try {
+    customPages = parseCustomPages(parsed.customPages);
+  } catch (error) {
+    return redirectWithError(`/programs/${slug}/edit`, error instanceof Error ? error.message : "Invalid custom pages format.");
+  }
   const billingHtml = sanitizeRichText(parsed.billingPage);
   const resolvedBilling = richTextHasContent(billingHtml) ? billingHtml : generateAutoBilling(rosterPeople);
 
@@ -1539,18 +1596,18 @@ export async function updateProgram(slug: string, formData: FormData) {
       theatre_name: parsed.theatreName ?? "",
       show_dates: resolvedShowDates,
       performance_schedule: performanceSchedule,
-      poster_image_url: parsed.posterImageUrl,
+      poster_image_url: posterImageUrl,
       director_notes: sanitizeRichText(parsed.directorNotes),
       dramaturgical_note: sanitizeRichText(parsed.dramaturgicalNote),
       billing_page: resolvedBilling,
       acts_songs: sanitizeRichText(parsed.actsAndSongs),
       department_info: sanitizeRichText(parsed.departmentInfo),
-      actf_ad_image_url: parsed.actfAdImageUrl,
+      actf_ad_image_url: actfAdImageUrl,
       acknowledgements: sanitizeRichText(parsed.acknowledgements),
       season_calendar: sanitizeRichText(parsed.seasonCalendar),
       production_photo_urls: productionPhotoUrls,
       custom_pages: customPages,
-      layout_order: layoutOrder
+      ...(layoutOrder ? { layout_order: layoutOrder } : {})
     },
     programsColumns
   );
