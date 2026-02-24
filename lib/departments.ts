@@ -37,7 +37,7 @@ function renderDepartmentBlock(department: DepartmentRecord) {
   if (department.contact_phone.trim()) {
     sections.push(`<p>${department.contact_phone.trim()}</p>`);
   }
-  const body = sections.length > 0 ? sections.join("") : "<p>Department details coming soon.</p>";
+  const body = sections.length > 0 ? sections.join("") : "<p>Department details were not provided.</p>";
   return `<section><h3>${department.name.trim()}</h3>${body}</section>`;
 }
 

@@ -1722,7 +1722,15 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
     .eq("category", category)
     .maybeSingle();
   if (existing?.id) {
-    redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role already assigned to this person.")}`);
+    const params = new URLSearchParams({
+      tab: "people-roles",
+      roleError: "duplicate",
+      roleName
+    });
+    if (personId) {
+      params.set("personForRole", personId);
+    }
+    redirect(`/app/shows/${showId}?${params.toString()}`);
   }
 
   const { data: castMax } = await client

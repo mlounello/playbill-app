@@ -11,12 +11,42 @@ export function GlobalLoadingOverlay() {
 
   useEffect(() => {
     setActive(false);
+    try {
+      const raw = window.sessionStorage.getItem("playbill:return-scroll");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { path?: string; y?: number; ts?: number };
+      const samePath = parsed?.path === pathname;
+      const fresh = typeof parsed?.ts === "number" ? Date.now() - parsed.ts < 90_000 : false;
+      if (samePath && fresh && typeof parsed?.y === "number") {
+        window.requestAnimationFrame(() => window.scrollTo({ top: parsed.y as number, behavior: "auto" }));
+      }
+      window.sessionStorage.removeItem("playbill:return-scroll");
+    } catch {
+      // Ignore scroll restore errors.
+    }
   }, [pathname, searchParams]);
 
   useEffect(() => {
     const onSubmit = (event: Event) => {
       const form = event.target as HTMLFormElement | null;
       if (!form) return;
+      if (form.dataset.preserveScroll === "true") {
+        try {
+          window.sessionStorage.setItem(
+            "playbill:return-scroll",
+            JSON.stringify({ path: window.location.pathname, y: window.scrollY, ts: Date.now() })
+          );
+        } catch {
+          // Ignore.
+        }
+      }
+      if (form.dataset.rowPending === "true" || form.classList.contains("role-assignment-row")) {
+        form.setAttribute("data-pending", "true");
+        const buttons = form.querySelectorAll("button, input[type='submit']");
+        buttons.forEach((button) => {
+          (button as HTMLButtonElement | HTMLInputElement).disabled = true;
+        });
+      }
       const method = (form.getAttribute("method") || "post").toLowerCase();
       if (method === "get") {
         setLabel("Loading...");

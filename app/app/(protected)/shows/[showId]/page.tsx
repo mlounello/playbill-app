@@ -83,6 +83,8 @@ export default async function ShowWorkspacePage({
     roleQuery?: string;
     roleCategory?: string;
     roleSaved?: string;
+    roleError?: string;
+    roleName?: string;
     submissionFilter?: string;
     submissionQuery?: string;
     submissionSort?: string;
@@ -100,6 +102,8 @@ export default async function ShowWorkspacePage({
     roleQuery,
     roleCategory,
     roleSaved,
+    roleError,
+    roleName,
     submissionFilter,
     submissionQuery,
     submissionSort,
@@ -391,7 +395,7 @@ export default async function ShowWorkspacePage({
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
                 </div>
                 <div className="stack-sm">
-                  <form action={setDueDateAction} className="top-actions" data-pending-label="Saving due date...">
+                  <form action={setDueDateAction} className="top-actions" data-pending-label="Saving due date..." data-preserve-scroll="true">
                     <label>
                       Global bio due date
                       <input type="date" name="dueDate" required />
@@ -399,15 +403,15 @@ export default async function ShowWorkspacePage({
                     <button type="submit">Set Due Date</button>
                   </form>
                   <div className="top-actions">
-                    <form action={sendInvitesAction} data-pending-label="Sending invites...">
+                    <form action={sendInvitesAction} data-pending-label="Sending invites..." data-preserve-scroll="true">
                       <button type="submit">Send Invites</button>
                     </form>
-                    <form action={sendRemindersAction} data-pending-label="Sending reminders...">
+                    <form action={sendRemindersAction} data-pending-label="Sending reminders..." data-preserve-scroll="true">
                       <button type="submit" disabled={show.reminders_paused}>
                         {show.reminders_paused ? "Reminders Paused" : "Send Reminders Now"}
                       </button>
                     </form>
-                    <form action={setReminderPausedAction} data-pending-label="Updating reminders setting...">
+                    <form action={setReminderPausedAction} data-pending-label="Updating reminders setting..." data-preserve-scroll="true">
                       <input type="hidden" name="intent" value={show.reminders_paused ? "resume" : "pause"} />
                       <button type="submit">
                         {show.reminders_paused ? "Resume Reminders" : "Pause Reminders"}
@@ -437,13 +441,6 @@ export default async function ShowWorkspacePage({
                 )}
               </article>
 
-              <article className="card stack-sm">
-                <strong>Milestone 4 Tracker</strong>
-                <div>1. Admin review panel: done</div>
-                <div>2. Approve/return/lock workflow: done</div>
-                <div>3. Audit history visibility: done</div>
-                <div>4. Blockers + queue triage polish: done</div>
-              </article>
             </section>
           ) : null}
 
@@ -559,7 +556,12 @@ export default async function ShowWorkspacePage({
                 </div>
                 <ProgramPagePreviewCard page={paddingPlanProgram?.modulePreviewPage ?? null} />
               </article>
-              <ProgramPlanEditor modules={show.modules} onSubmitAction={savePlanAction} />
+              <ProgramPlanEditor
+                modules={show.modules}
+                onSubmitAction={savePlanAction}
+                previewModuleId={modulePreviewId}
+                getModulePreviewHref={makeModulePreviewHref}
+              />
             </section>
           ) : null}
 
@@ -608,7 +610,7 @@ export default async function ShowWorkspacePage({
                 <p className="section-note">
                   Assign who should submit Director, Dramaturgical, and Music Director notes. This updates submission requirements automatically.
                 </p>
-                <form action={updateSpecialNotesAction} className="form-row-3" data-pending-label="Saving special note assignments...">
+                <form action={updateSpecialNotesAction} className="form-row-3" data-pending-label="Saving special note assignments..." data-preserve-scroll="true">
                   <label>
                     Director&apos;s Note
                     <select name="directorPersonId" defaultValue={currentDirectorNotePersonId}>
@@ -644,7 +646,7 @@ export default async function ShowWorkspacePage({
                   </label>
                   <button type="submit">Save Special Note Assignments</button>
                 </form>
-                <form action={resyncSubmissionRequestsAction} className="top-actions" data-pending-label="Resyncing submission requests...">
+                <form action={resyncSubmissionRequestsAction} className="top-actions" data-pending-label="Resyncing submission requests..." data-preserve-scroll="true">
                   <button type="submit">Resync Submission Requests</button>
                   <span className="section-note">
                     Repairs missing bio requests and role links for this show.
@@ -658,7 +660,7 @@ export default async function ShowWorkspacePage({
                   <p className="section-note">
                     Add one person at a time. Use Import options for larger casts/crews.
                   </p>
-                  <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }} data-pending-label="Adding person...">
+                  <form action={addPeopleAction} className="grid" style={{ gap: "0.55rem" }} data-pending-label="Adding person..." data-preserve-scroll="true">
                     <input type="hidden" name="mode" value="manual" />
                     <label>
                       Full name
@@ -699,7 +701,7 @@ export default async function ShowWorkspacePage({
                     Paste either: <code>Name | Role | cast|creative|production | email</code> per line, or a CSV/tabular paste with headers
                     <code> First Name, Last Name, Preferred Name, Pronouns, Project Role, Email</code>.
                   </p>
-                  <form action={addPeopleAction} className="stack-sm" data-pending-label="Importing people...">
+                  <form action={addPeopleAction} className="stack-sm" data-pending-label="Importing people..." data-preserve-scroll="true">
                     <input type="hidden" name="mode" value="bulk" />
                     <textarea name="bulkLines" className="rich-textarea" placeholder={"Name | Role | creative | email@example.com"} />
                     <button type="submit">Import People</button>
@@ -714,7 +716,7 @@ export default async function ShowWorkspacePage({
                   <p className="section-note">
                     Uses <code>Preferred Name</code> when available, maps <code>Project Role</code> to role title, and infers cast vs production.
                   </p>
-                  <form action={addPeopleAction} className="stack-sm" data-pending-label="Uploading people CSV...">
+                  <form action={addPeopleAction} className="stack-sm" data-pending-label="Uploading people CSV..." data-preserve-scroll="true">
                     <input type="hidden" name="mode" value="csv" />
                     <input type="file" name="csvFile" accept=".csv,text/csv" required />
                     <button type="submit">Upload CSV</button>
@@ -728,7 +730,7 @@ export default async function ShowWorkspacePage({
                   <p className="section-note" style={{ marginTop: "0.45rem" }}>
                     Select one or more fields, then paste lines using <code>lookup | field=value | field=value</code>. Only selected fields are updated.
                   </p>
-                  <form action={bulkEditPeopleAction} className="stack-sm" data-pending-label="Applying bulk edit..." style={{ marginTop: "0.45rem" }}>
+                  <form action={bulkEditPeopleAction} className="stack-sm" data-pending-label="Applying bulk edit..." style={{ marginTop: "0.45rem" }} data-preserve-scroll="true">
                     <div className="stack-sm">
                       <strong>Fields to update</strong>
                       <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
@@ -796,6 +798,9 @@ export default async function ShowWorkspacePage({
                   name: template.name,
                   category: template.category
                 }))}
+                roleError={roleError}
+                roleErrorRoleName={roleName}
+                highlightedPersonId={personForRole || ""}
                 getRoleManageHref={(personId) => `/app/shows/${show.id}?tab=people-roles&personForRole=${personId}#role-assignments`}
               />
               <p className="section-note">
@@ -807,7 +812,7 @@ export default async function ShowWorkspacePage({
                 <p className="section-note">
                   Use this section for role/category changes and multi-role setup. Use "Current People" above for person identity fields (name/email/submission type).
                 </p>
-                <form method="get" className="form-row-2">
+                <form method="get" className="form-row-2" data-preserve-scroll="true">
                   <input type="hidden" name="tab" value="people-roles" />
                   {personForRole ? <input type="hidden" name="personForRole" value={personForRole} /> : null}
                   <label>
@@ -825,7 +830,12 @@ export default async function ShowWorkspacePage({
                   </label>
                   <button type="submit">Apply Role Filters</button>
                 </form>
-                <form action={addRoleAssignmentAction} className="form-row-2" data-pending-label="Adding role assignment...">
+                <form
+                  action={addRoleAssignmentAction}
+                  className="form-row-2"
+                  data-pending-label="Adding role assignment..."
+                  data-preserve-scroll="true"
+                >
                   <label>
                     Person
                     <select name="personId" required defaultValue={personForRole || ""}>
@@ -864,13 +874,27 @@ export default async function ShowWorkspacePage({
                   </label>
                   <button type="submit">Add Role Assignment</button>
                 </form>
+                {roleError === "duplicate" ? (
+                  <div className="meta-text danger-title">
+                    Role already assigned to this person{roleName ? `: ${roleName}` : ""}.
+                  </div>
+                ) : null}
 
                 {filteredRoleAssignments.length === 0 ? (
-                  <div className="meta-text">No role assignments yet.</div>
+                  <div className="meta-text">
+                    {roleAssignments.length === 0 ? "No role assignments yet." : "No role assignments match the current filters."}
+                  </div>
                 ) : (
                   <div className="role-assignments-list">
                     {filteredRoleAssignments.map((assignment) => (
-                      <form key={assignment.id} action={updateRoleAssignmentAction} className="role-assignment-row" data-pending-label="Saving role assignment...">
+                      <form
+                        key={assignment.id}
+                        action={updateRoleAssignmentAction}
+                        className="role-assignment-row"
+                        data-pending-label="Saving role assignment..."
+                        data-row-pending="true"
+                        data-preserve-scroll="true"
+                      >
                         <input type="hidden" name="roleId" value={assignment.id} />
                         <label className="role-assign-person">
                           Person
@@ -902,6 +926,7 @@ export default async function ShowWorkspacePage({
                         <div className="stack-sm">
                           <button type="submit">Save</button>
                           {roleSaved === assignment.id ? <span className="meta-text">Saved</span> : null}
+                          <span className="meta-text row-pending-indicator">Saving...</span>
                         </div>
                       </form>
                     ))}
@@ -931,7 +956,7 @@ export default async function ShowWorkspacePage({
                     <code>Production Character or Role</code>, <code>Bio</code>.
                   </p>
                   <p className="section-note">Matching uses Email Address first, then Name + Role fallback.</p>
-                  <form action={importBiosAction} className="top-actions" data-pending-label="Importing bios...">
+                  <form action={importBiosAction} className="top-actions" data-pending-label="Importing bios..." data-preserve-scroll="true">
                     <input type="file" name="bioCsvFile" accept=".csv,text/csv" required />
                     <button type="submit">Import Bios CSV</button>
                   </form>
@@ -958,7 +983,7 @@ export default async function ShowWorkspacePage({
                     </Link>
                   ))}
                 </div>
-                <form method="get" className="form-row-2">
+                <form method="get" className="form-row-2" data-preserve-scroll="true">
                   <input type="hidden" name="tab" value="submissions" />
                   <input type="hidden" name="submissionFilter" value={activeSubmissionFilter} />
                   <input type="hidden" name="submissionView" value={activeSubmissionView} />
@@ -1037,13 +1062,13 @@ export default async function ShowWorkspacePage({
                                 <td>
                                   <div className="submission-actions">
                                     <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Review</Link>
-                                    <form action={approveAction} data-pending-label="Approving submission...">
+                                    <form action={approveAction} data-pending-label="Approving submission..." data-preserve-scroll="true">
                                       <button type="submit">Approve</button>
                                     </form>
-                                    <form action={lockAction} data-pending-label="Locking submission...">
+                                    <form action={lockAction} data-pending-label="Locking submission..." data-preserve-scroll="true">
                                       <button type="submit">Lock</button>
                                     </form>
-                                    <form action={returnAction} className="inline-form" data-pending-label="Returning submission...">
+                                    <form action={returnAction} className="inline-form" data-pending-label="Returning submission..." data-preserve-scroll="true">
                                       <input name="message" placeholder="Return note" required />
                                       <button type="submit">Return</button>
                                     </form>
@@ -1081,14 +1106,14 @@ export default async function ShowWorkspacePage({
                             </div>
                             <div className="submission-actions">
                               <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Open Review</Link>
-                              <form action={approveAction} data-pending-label="Approving submission...">
+                              <form action={approveAction} data-pending-label="Approving submission..." data-preserve-scroll="true">
                                 <button type="submit">Approve</button>
                               </form>
-                              <form action={returnAction} className="inline-form" data-pending-label="Returning submission...">
+                              <form action={returnAction} className="inline-form" data-pending-label="Returning submission..." data-preserve-scroll="true">
                                 <input name="message" placeholder="Return message" required />
                                 <button type="submit">Return</button>
                               </form>
-                              <form action={lockAction} data-pending-label="Locking submission...">
+                              <form action={lockAction} data-pending-label="Locking submission..." data-preserve-scroll="true">
                                 <button type="submit">Lock</button>
                               </form>
                             </div>
@@ -1111,11 +1136,11 @@ export default async function ShowWorkspacePage({
               <article className="card stack-sm">
                 <strong>Generate Exports</strong>
                 <div className="top-actions">
-                  <form action={requestExportAction} data-pending-label="Generating proof export...">
+                  <form action={requestExportAction} data-pending-label="Generating proof export..." data-preserve-scroll="true">
                     <input type="hidden" name="exportType" value="proof" />
                     <button type="submit">Generate Proof Export</button>
                   </form>
-                  <form action={requestExportAction} data-pending-label="Generating print export...">
+                  <form action={requestExportAction} data-pending-label="Generating print export..." data-preserve-scroll="true">
                     <input type="hidden" name="exportType" value="print" />
                     <button type="submit">Generate Print Export</button>
                   </form>
@@ -1172,7 +1197,7 @@ export default async function ShowWorkspacePage({
                   </div>
                 ) : null}
                 <div className="top-actions">
-                  <form action={setPublishAction} data-pending-label="Updating publish status...">
+                  <form action={setPublishAction} data-pending-label="Updating publish status..." data-preserve-scroll="true">
                     <input type="hidden" name="intent" value={show.is_published ? "unpublish" : "publish"} />
                     <button type="submit">{show.is_published ? "Unpublish" : "Publish"}</button>
                   </form>
@@ -1201,7 +1226,7 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   This is the source for cover poster and program performance date/time text.
                 </div>
-                <form action={updateShowPresentationAction} className="stack-sm" data-pending-label="Saving poster and schedule...">
+                <form action={updateShowPresentationAction} className="stack-sm" data-pending-label="Saving poster and schedule..." data-preserve-scroll="true">
                   <PerformanceInputs
                     initialPerformances={show.performance_schedule}
                     initialShowDatesOverride={show.show_dates}
@@ -1229,7 +1254,7 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   This is the source for the Acts & Songs section in previews and exports.
                 </div>
-                <form action={updateActsAndSongsAction} className="stack-sm" data-pending-label="Saving acts and songs...">
+                <form action={updateActsAndSongsAction} className="stack-sm" data-pending-label="Saving acts and songs..." data-preserve-scroll="true">
                   <RichTextField
                     name="actsAndSongs"
                     label="Acts & Songs"
@@ -1245,7 +1270,7 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   These feed separate modules in Program Plan.
                 </div>
-                <form action={updateAcknowledgementsAction} className="stack-sm" data-pending-label="Saving acknowledgements and thanks...">
+                <form action={updateAcknowledgementsAction} className="stack-sm" data-pending-label="Saving acknowledgements and thanks..." data-preserve-scroll="true">
                   <RichTextField
                     name="acknowledgements"
                     label="Acknowledgements"
@@ -1266,7 +1291,7 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   Choose the season for this show. Manage seasons and season events in the global Season Builder.
                 </div>
-                <form action={assignSeasonToShowAction} className="top-actions" data-pending-label="Applying season...">
+                <form action={assignSeasonToShowAction} className="top-actions" data-pending-label="Applying season..." data-preserve-scroll="true">
                   <label>
                     Applied season
                     <select name="seasonId" defaultValue={seasonModuleData.selectedSeasonId}>
@@ -1303,7 +1328,7 @@ export default async function ShowWorkspacePage({
                 {departmentRepository.length === 0 ? (
                   <div className="meta-text">No profiles yet. Use Producing Profiles to create one.</div>
                 ) : (
-                  <form action={updateShowDepartmentsAction} className="stack-sm" data-pending-label="Saving department bindings...">
+                  <form action={updateShowDepartmentsAction} className="stack-sm" data-pending-label="Saving department bindings..." data-preserve-scroll="true">
                     <div className="stack-sm">
                       {departmentRepository.map((department) => (
                         <label key={department.id} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
@@ -1331,14 +1356,14 @@ export default async function ShowWorkspacePage({
                   Current status: <span className="status-pill">{show.status}</span>
                 </div>
                 {show.status !== "archived" ? (
-                  <form action={archiveShowAction} className="stack-sm" data-pending-label="Archiving show...">
+                  <form action={archiveShowAction} className="stack-sm" data-pending-label="Archiving show..." data-preserve-scroll="true">
                     <p className="section-note">
                       Archive this show first to disable active editing and unlock permanent deletion controls.
                     </p>
                     <button type="submit">Archive Show</button>
                   </form>
                 ) : (
-                  <form action={restoreShowAction} className="stack-sm" data-pending-label="Restoring show...">
+                  <form action={restoreShowAction} className="stack-sm" data-pending-label="Restoring show..." data-preserve-scroll="true">
                     <p className="section-note">
                       This show is archived. You can restore it to draft if deletion was accidental.
                     </p>
@@ -1355,7 +1380,7 @@ export default async function ShowWorkspacePage({
                 <p className="section-note">
                   Required phrase: <code>{deletePhrase}</code>
                 </p>
-                <form action={deleteShowAction} className="stack-sm" data-pending-label="Deleting show...">
+                <form action={deleteShowAction} className="stack-sm" data-pending-label="Deleting show..." data-preserve-scroll="true">
                   <label>
                     Type confirmation phrase
                     <input

@@ -35,6 +35,9 @@ export function PeopleBulkEditor({
   onRemoveRoleAction,
   personRoles,
   roleTemplates,
+  roleError,
+  roleErrorRoleName,
+  highlightedPersonId,
   getRoleManageHref
 }: {
   people: PersonRow[];
@@ -44,6 +47,9 @@ export function PeopleBulkEditor({
   onRemoveRoleAction: (formData: FormData) => void;
   personRoles: PersonRoleRow[];
   roleTemplates: RoleTemplateOption[];
+  roleError?: string;
+  roleErrorRoleName?: string;
+  highlightedPersonId?: string;
   getRoleManageHref?: (personId: string) => string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -355,29 +361,30 @@ export function PeopleBulkEditor({
                 </button>
               </div>
             </form>
-            <div className="people-field-row">
-              <label className="people-field-toggle">Roles for this person</label>
-              <div className="stack-sm">
+              <div className="people-field-row">
+                <label className="people-field-toggle">Roles for this person</label>
+                <div className="stack-sm">
                 {editPersonRoles.length === 0 ? (
                   <div className="meta-text">No roles assigned yet.</div>
-                ) : (
-                  editPersonRoles.map((role) => (
-                    <div key={role.id} className="row-between">
-                      <div className="meta-text">
-                        {role.role_name} ({role.category})
+                  ) : (
+                    editPersonRoles.map((role) => (
+                      <div key={role.id} className="row-between">
+                        <div className="meta-text">
+                          {role.role_name} ({role.category})
+                        </div>
+                        <form action={onRemoveRoleAction} data-row-pending="true" data-preserve-scroll="true" className="person-role-remove-form">
+                          <input type="hidden" name="roleId" value={role.id} />
+                          <button type="submit" className="ghost-button">Remove Role</button>
+                          <span className="meta-text row-pending-indicator">Removing...</span>
+                        </form>
                       </div>
-                      <form action={onRemoveRoleAction}>
-                        <input type="hidden" name="roleId" value={role.id} />
-                        <button type="submit" className="ghost-button">Remove Role</button>
-                      </form>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="people-field-row">
-              <label className="people-field-toggle">Add role</label>
-              <form action={onAddRoleAction} className="stack-sm">
+              <div className="people-field-row">
+                <label className="people-field-toggle">Add role</label>
+                <form action={onAddRoleAction} className="stack-sm person-role-add-form" data-row-pending="true" data-preserve-scroll="true">
                 <input type="hidden" name="personId" value={editPersonId} />
                 <label>
                   Role template (optional)
@@ -403,7 +410,13 @@ export function PeopleBulkEditor({
                   </select>
                 </label>
                 <button type="submit" className="ghost-button">Add Role</button>
+                <span className="meta-text row-pending-indicator">Adding...</span>
               </form>
+              {roleError === "duplicate" && highlightedPersonId && highlightedPersonId === editPersonId ? (
+                <div className="meta-text danger-title">
+                  Role already exists for this person{roleErrorRoleName ? `: ${roleErrorRoleName}` : ""}.
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

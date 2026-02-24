@@ -237,10 +237,14 @@ function ModuleSettings({
 
 export function ProgramPlanEditor({
   modules,
-  onSubmitAction
+  onSubmitAction,
+  previewModuleId,
+  getModulePreviewHref
 }: {
   modules: ShowModule[];
   onSubmitAction: (formData: FormData) => void;
+  previewModuleId?: string;
+  getModulePreviewHref?: (moduleId: string) => string;
 }) {
   const [items, setItems] = useState<ModuleItem[]>(() => normalizeModules(modules));
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -249,6 +253,28 @@ export function ProgramPlanEditor({
 
   const update = <K extends keyof ModuleItem>(index: number, key: K, value: ModuleItem[K]) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
+  };
+
+  const updateSettings = (index: number, nextSettings: Record<string, unknown>) => {
+    update(index, "settings", nextSettings);
+  };
+
+  const setPageBehavior = (index: number, mode: "share" | "standalone") => {
+    setItems((current) =>
+      current.map((item, i) => {
+        if (i !== index) return item;
+        const separate = mode === "standalone";
+        return {
+          ...item,
+          settings: {
+            ...item.settings,
+            separate_page: separate,
+            // Keep legacy flag aligned to avoid contradictory older records.
+            keep_together: separate
+          }
+        };
+      })
+    );
   };
 
   const payload = useMemo(() => JSON.stringify(items), [items]);
@@ -271,17 +297,17 @@ export function ProgramPlanEditor({
     moduleType === "custom_text" || moduleType === "custom_image" || moduleType === "custom_pages";
 
   return (
-    <form action={onSubmitAction} className="card-list" data-pending-label="Saving program plan...">
+    <form action={onSubmitAction} className="card-list" data-pending-label="Saving program plan..." data-preserve-scroll="true">
       <article className="card stack-sm">
         <strong>Program Plan Builder</strong>
         <p className="section-note">
           Reorder by drag-and-drop, or use Move Up/Move Down. Turn sections on or off with the Visible toggle.
         </p>
         <p className="section-note">
-          Modules stay together as blocks. “Must remain by itself” forces a new page. Turn it off to allow this module to share a page with others.
+          Page behavior controls whether a module can share a page with other modules or must stay on its own page.
         </p>
         <p className="section-note">
-          “Allow module to span multiple pages” only controls whether a long section can continue to another page.
+          “Allow multiple pages” controls whether long sections can continue to another page.
         </p>
         <div className="top-actions">
           <label>
@@ -358,6 +384,15 @@ export function ProgramPlanEditor({
                   Remove Section
                 </button>
               ) : null}
+              {getModulePreviewHref ? (
+                <a
+                  className="ghost-button"
+                  href={getModulePreviewHref(item.id)}
+                  style={previewModuleId === item.id ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
+                >
+                  {previewModuleId === item.id ? "Previewing" : "Preview this module"}
+                </a>
+              ) : null}
               <span className="meta-text">Drag to reorder</span>
             </div>
           </div>
@@ -381,19 +416,32 @@ export function ProgramPlanEditor({
               <input
                 type="checkbox"
                 checked={Boolean(item.settings.show_header ?? true)}
-                onChange={(event) => update(index, "settings", { ...item.settings, show_header: event.target.checked })}
+                onChange={(event) => updateSettings(index, { ...item.settings, show_header: event.target.checked })}
               />
               Show section header
             </label>
 
-            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={Boolean(item.settings.separate_page ?? true)}
-                onChange={(event) => update(index, "settings", { ...item.settings, separate_page: event.target.checked })}
-              />
-              Must remain by itself (new page)
-            </label>
+            <fieldset style={{ border: "none", margin: 0, padding: 0, display: "flex", gap: "0.65rem", alignItems: "center", flexWrap: "wrap" }}>
+              <legend className="meta-text" style={{ marginRight: "0.25rem" }}>Page behavior</legend>
+              <label style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name={`page-behavior-${item.id}`}
+                  checked={!Boolean(item.settings.separate_page ?? true)}
+                  onChange={() => setPageBehavior(index, "share")}
+                />
+                Can share page with other modules
+              </label>
+              <label style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name={`page-behavior-${item.id}`}
+                  checked={Boolean(item.settings.separate_page ?? true)}
+                  onChange={() => setPageBehavior(index, "standalone")}
+                />
+                Must remain by itself
+              </label>
+            </fieldset>
 
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
               <input
@@ -409,19 +457,10 @@ export function ProgramPlanEditor({
                 type="checkbox"
                 checked={Boolean(item.settings.allow_multiple_pages ?? (item.module_type === "bios" || item.module_type === "custom_pages"))}
                 onChange={(event) =>
-                  update(index, "settings", { ...item.settings, allow_multiple_pages: event.target.checked })
+                  updateSettings(index, { ...item.settings, allow_multiple_pages: event.target.checked })
                 }
               />
-              Allow module to span multiple pages
-            </label>
-
-            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={Boolean(item.settings.keep_together ?? false)}
-                onChange={(event) => update(index, "settings", { ...item.settings, keep_together: event.target.checked })}
-              />
-              Keep module together (avoid sharing page)
+              Allow multiple pages
             </label>
           </div>
 

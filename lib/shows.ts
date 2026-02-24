@@ -68,10 +68,6 @@ const modulePayloadSchema = z.object({
   filler_eligible: z.boolean(),
   settings: z.record(z.unknown()).optional()
 });
-const moduleMoveSchema = z.object({
-  moduleId: z.string().uuid(),
-  direction: z.enum(["up", "down"])
-});
 const moduleReorderSchema = z.array(z.string().uuid());
 
 export const moduleToProgramTokens: Record<string, string[]> = {
@@ -558,73 +554,6 @@ export async function updateShowModules(showId: string, formData: FormData) {
     savedAt: String(Date.now())
   });
   redirect(`/app/shows/${showId}?${qp.toString()}`);
-}
-
-export async function moveShowModule(showId: string, formData: FormData) {
-  "use server";
-
-  const missing = getMissingSupabaseEnvVars();
-  if (missing.length > 0) {
-    withError(`/app/shows/${showId}?tab=preview`, `Supabase is not configured: ${missing.join(", ")}`);
-  }
-
-  let parsed: z.infer<typeof moduleMoveSchema>;
-  try {
-    parsed = moduleMoveSchema.parse({
-      moduleId: formData.get("moduleId"),
-      direction: formData.get("direction")
-    });
-  } catch {
-    withError(`/app/shows/${showId}?tab=preview`, "Invalid module move request.");
-  }
-
-  const client = getSupabaseWriteClient();
-  const { data: modules, error: modulesError } = await client
-    .from("program_modules")
-    .select("id, module_order")
-    .eq("show_id", showId)
-    .order("module_order", { ascending: true });
-
-  if (modulesError) {
-    withError(`/app/shows/${showId}?tab=preview`, modulesError.message);
-  }
-
-  const ordered = (modules ?? []).map((row) => ({
-    id: String(row.id ?? ""),
-    module_order: Number(row.module_order ?? 0)
-  }));
-  const currentIndex = ordered.findIndex((row) => row.id === parsed.moduleId);
-  if (currentIndex < 0) {
-    withError(`/app/shows/${showId}?tab=preview`, "Module not found.");
-  }
-
-  const swapIndex = parsed.direction === "up" ? currentIndex - 1 : currentIndex + 1;
-  if (swapIndex < 0 || swapIndex >= ordered.length) {
-    redirect(`/app/shows/${showId}?tab=preview`);
-  }
-
-  const current = ordered[currentIndex];
-  const target = ordered[swapIndex];
-
-  const { error: updateCurrentError } = await client
-    .from("program_modules")
-    .update({ module_order: target.module_order })
-    .eq("id", current.id)
-    .eq("show_id", showId);
-  if (updateCurrentError) {
-    withError(`/app/shows/${showId}?tab=preview`, updateCurrentError.message);
-  }
-
-  const { error: updateTargetError } = await client
-    .from("program_modules")
-    .update({ module_order: current.module_order })
-    .eq("id", target.id)
-    .eq("show_id", showId);
-  if (updateTargetError) {
-    withError(`/app/shows/${showId}?tab=preview`, updateTargetError.message);
-  }
-
-  redirect(`/app/shows/${showId}?tab=preview&success=${encodeURIComponent("Module order updated.")}`);
 }
 
 export async function reorderShowModules(showId: string, formData: FormData) {

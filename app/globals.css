@@ -1317,6 +1317,16 @@ body.density-compact .admin-surface textarea {
   background: #f8f5ee;
 }
 
+.row-pending-indicator {
+  display: none;
+}
+
+.role-assignment-row[data-pending="true"] .row-pending-indicator,
+.person-role-remove-form[data-pending="true"] .row-pending-indicator,
+.person-role-add-form[data-pending="true"] .row-pending-indicator {
+  display: inline;
+}
+
 @media (max-width: 1200px) {
   .sheet-grid {
     grid-template-columns: 1fr;
