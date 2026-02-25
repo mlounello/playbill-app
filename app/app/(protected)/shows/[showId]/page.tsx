@@ -28,6 +28,7 @@ import {
   reorderShowModules,
   updateShowActsAndSongs,
   updateShowAcknowledgements,
+  updateShowSponsorships,
   updateShowPresentation,
   updateShowModules
 } from "@/lib/shows";
@@ -160,6 +161,7 @@ export default async function ShowWorkspacePage({
   const setPublishAction = setShowPublished.bind(null, show.id);
   const updateActsAndSongsAction = updateShowActsAndSongs.bind(null, show.id);
   const updateAcknowledgementsAction = updateShowAcknowledgements.bind(null, show.id);
+  const updateSponsorshipsAction = updateShowSponsorships.bind(null, show.id);
   const updateShowPresentationAction = updateShowPresentation.bind(null, show.id);
   const assignSeasonToShowAction = assignSeasonToShow.bind(null, show.id);
   const updateShowDepartmentsAction = updateShowDepartments.bind(null, show.id);
@@ -1317,6 +1319,35 @@ export default async function ShowWorkspacePage({
                     draftNamespace={`show-settings:${show.id}`}
                   />
                   <button type="submit">Save Acts & Songs</button>
+                </form>
+              </article>
+
+              <article className="card stack-sm">
+                <strong>Show Setup: Sponsorships</strong>
+                <div className="meta-text">
+                  Dedicated sponsorship content source for the Sponsors module (separate from Acknowledgements/Special Thanks).
+                </div>
+                <form action={updateSponsorshipsAction} className="stack-sm" data-pending-label="Saving sponsorships..." data-preserve-scroll="true">
+                  <RichTextField
+                    name="sponsorships"
+                    label="Sponsorship Copy"
+                    initialValue={show.sponsorships}
+                    draftNamespace={`show-sponsorships:${show.id}`}
+                  />
+                  <label>
+                    Sponsorship Image URL
+                    <input id="showSponsorshipImageUrlInput" name="sponsorshipImageUrl" defaultValue={show.sponsorship_image_url} />
+                  </label>
+                  {show.program_slug ? (
+                    <ProgramImageUpload
+                      programSlug={show.program_slug}
+                      showId={show.id}
+                      assetType="sponsor"
+                      targetInputId="showSponsorshipImageUrlInput"
+                      label="Upload Sponsorship Image (optional)"
+                    />
+                  ) : null}
+                  <button type="submit">Save Sponsorships</button>
                 </form>
               </article>
 

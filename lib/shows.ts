@@ -21,8 +21,10 @@ export type ShowSummary = {
   reminders_paused: boolean;
   acts_and_songs: string;
   season_calendar: string;
+  sponsorships: string;
   acknowledgements: string;
   special_thanks: string;
+  sponsorship_image_url: string;
   poster_image_url: string;
   show_dates: string;
   performance_schedule: Array<{ date?: string; time?: string }>;
@@ -85,7 +87,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   department_info: ["department_info"],
   headshots_grid: ["production_photos"],
   production_photos: ["production_photos"],
-  sponsors: ["acknowledgements"],
+  sponsors: [],
   acknowledgements: ["acknowledgements"],
   special_thanks: ["special_thanks"],
   back_cover: ["season_calendar"],
@@ -438,8 +440,10 @@ export async function getShowsForDashboard() {
         reminders_paused: Boolean(show.reminders_paused),
         acts_and_songs: String(program?.acts_songs ?? ""),
         season_calendar: String(program?.season_calendar ?? ""),
+        sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
         acknowledgements: String(program?.acknowledgements ?? ""),
         special_thanks: String((program as Record<string, unknown> | undefined)?.special_thanks ?? ""),
+        sponsorship_image_url: String(program?.actf_ad_image_url ?? ""),
         poster_image_url: String(program?.poster_image_url ?? ""),
         show_dates: String(program?.show_dates ?? ""),
         performance_schedule: Array.isArray(program?.performance_schedule)
@@ -502,8 +506,10 @@ export async function getShowById(showId: string) {
       reminders_paused: Boolean(show.reminders_paused),
       acts_and_songs: String(program?.acts_songs ?? ""),
       season_calendar: String(program?.season_calendar ?? ""),
+      sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
       acknowledgements: String(program?.acknowledgements ?? ""),
       special_thanks: String((program as Record<string, unknown> | undefined)?.special_thanks ?? ""),
+      sponsorship_image_url: String(program?.actf_ad_image_url ?? ""),
       poster_image_url: String(program?.poster_image_url ?? ""),
       show_dates: String(program?.show_dates ?? ""),
       performance_schedule: Array.isArray(program?.performance_schedule)
@@ -988,6 +994,68 @@ export async function updateShowAcknowledgements(showId: string, formData: FormD
 
   await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Acknowledgements and Special Thanks updated.")}`);
+}
+
+export async function updateShowSponsorships(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const sponsorships = sanitizeRichText(String(formData.get("sponsorships") ?? ""));
+  const sponsorshipImageUrl = (() => {
+    try {
+      return normalizeOptionalHttpUrl(String(formData.get("sponsorshipImageUrl") ?? ""), "Sponsorship image URL");
+    } catch (error) {
+      withError(
+        `/app/shows/${showId}?tab=settings`,
+        error instanceof Error ? error.message : "Invalid sponsorship image URL."
+      );
+    }
+  })();
+
+  const client = getSupabaseWriteClient();
+  const { data: show, error: showError } = await client
+    .from("shows")
+    .select("id, program_id")
+    .eq("id", showId)
+    .single();
+
+  if (showError || !show) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  if (show.program_id) {
+    const { data: columnsData } = await client
+      .from("information_schema.columns")
+      .select("column_name")
+      .eq("table_schema", "public")
+      .eq("table_name", "programs");
+    const columnSet = new Set(
+      (columnsData ?? []).map((item) => String((item as { column_name?: unknown }).column_name ?? ""))
+    );
+
+    const updates: Record<string, string> = {
+      actf_ad_image_url: sponsorshipImageUrl
+    };
+    if (columnSet.has("sponsorships")) {
+      updates.sponsorships = sponsorships;
+    }
+
+    const { error: programUpdateError } = await client
+      .from("programs")
+      .update(updates)
+      .eq("id", show.program_id);
+    if (programUpdateError) {
+      withError(`/app/shows/${showId}?tab=settings`, programUpdateError.message);
+    }
+  }
+
+  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Sponsorships updated.")}`);
 }
 
 export async function updateShowPresentation(showId: string, formData: FormData) {

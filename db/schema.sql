@@ -16,6 +16,7 @@ create table if not exists public.programs (
   department_info text not null default '',
   actf_ad_image_url text not null default '',
   acknowledgements text not null default '',
+  sponsorships text not null default '',
   special_thanks text not null default '',
   season_calendar text not null default '',
   performance_schedule jsonb not null default '[]'::jsonb,
@@ -32,6 +33,7 @@ alter table public.programs add column if not exists acts_songs text not null de
 alter table public.programs add column if not exists department_info text not null default '';
 alter table public.programs add column if not exists actf_ad_image_url text not null default '';
 alter table public.programs add column if not exists special_thanks text not null default '';
+alter table public.programs add column if not exists sponsorships text not null default '';
 alter table public.programs add column if not exists season_calendar text not null default '';
 alter table public.programs add column if not exists performance_schedule jsonb not null default '[]'::jsonb;
 alter table public.programs add column if not exists production_photo_urls text[] not null default '{}';

@@ -5,7 +5,7 @@ import { type ChangeEvent, useState } from "react";
 type Props = {
   programSlug: string;
   showId?: string;
-  assetType: "poster" | "actf" | "photo" | "custom";
+  assetType: "poster" | "actf" | "sponsor" | "photo" | "custom";
   targetInputId?: string;
   label: string;
 };

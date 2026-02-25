@@ -49,20 +49,21 @@ In Supabase Dashboard:
    - `https://playbillapp.mlounello.com/auth/callback`
    - `http://localhost:3000/auth/callback` (for local dev)
 
-## Current MVP
+## Current Product Surface
 
-- `/programs/new` to create a program.
-- `/programs` to view all programs.
-- `/programs/[slug]/edit` to edit a program.
-- `/programs/[slug]` as public online layout with:
-  - program-order view
-  - booklet imposition view (2-up saddle stitch)
-- `/programs/[slug]/submit` as a bio intake form for cast/production entries.
-- Platform route scaffolds:
+- Primary admin workspace:
   - `/app/login` magic-link login
-  - `/app/shows` role-gated admin workspace
-  - `/contribute` role-gated contributor portal shell
-  - `/p/[showSlug]` public viewer shell
+  - `/app/shows` list + creation + show workspace tabs
+- Contributor portal:
+  - `/contribute`
+  - `/contribute/shows/[showId]/tasks/[personId]`
+- Public program:
+  - `/p/[showSlug]` flip viewer + scroll mode + export links
+- Program rendering/debug views (retained for compatibility and print checks):
+  - `/programs`
+  - `/programs/[slug]`
+  - `/programs/[slug]/submit`
+  - `/programs/[slug]/edit` (redirects to show workspace when linked)
 
 ## Milestone 1 implemented
 

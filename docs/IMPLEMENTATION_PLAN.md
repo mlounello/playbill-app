@@ -42,6 +42,12 @@
 - Due-date warnings in dashboard
 - Scheduled reminder jobs
 
+## Phase 8: Cleanup + Hardening
+- Remove dead UI/components and obsolete helper paths.
+- Keep compatibility routes intentionally and document why.
+- Audit database/table usage before destructive schema pruning.
+- Maintain export/public/admin regression coverage during cleanup.
+
 ## Notes
 - Existing `programs` table remains active during migration.
 - New `shows` domain tables are in place for phased transition without downtime.
