@@ -257,24 +257,44 @@ export function PublicProgramViewer({
 
       {current ? (
         <article key={`flip-step-${stepIndex}`} className="card" aria-label={`View ${stepIndex + 1} content`}>
-          <div
-            className={`sheet-grid flip-view-sheet flip-${flipDirection}`}
-            style={
-              current.kind === "single"
-                ? { gap: "0.3in", gridTemplateColumns: "5.5in", justifyContent: "center" }
-                : { gap: "0.3in", gridTemplateColumns: "5.5in 5.5in", justifyContent: "center" }
-            }
-          >
-            <div>
-              <PublicRenderPage page={current.left} />
-              <div className="folio">Page {current.startPage}</div>
-            </div>
-            {current.right ? (
+          <div className="flip-view-frame">
+            <button
+              type="button"
+              className="flip-side-button flip-side-prev"
+              onClick={goPrev}
+              disabled={stepIndex <= 0}
+              aria-label="Previous page view"
+            >
+              ‹
+            </button>
+            <div
+              className={`sheet-grid flip-view-sheet flip-${flipDirection}`}
+              style={
+                current.kind === "single"
+                  ? { gap: "0.3in", gridTemplateColumns: "5.5in", justifyContent: "center" }
+                  : { gap: "0.3in", gridTemplateColumns: "5.5in 5.5in", justifyContent: "center" }
+              }
+            >
               <div>
-                <PublicRenderPage page={current.right} />
-                <div className="folio">Page {current.endPage}</div>
+                <PublicRenderPage page={current.left} />
+                <div className="folio">Page {current.startPage}</div>
               </div>
-            ) : null}
+              {current.right ? (
+                <div>
+                  <PublicRenderPage page={current.right} />
+                  <div className="folio">Page {current.endPage}</div>
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="flip-side-button flip-side-next"
+              onClick={goNext}
+              disabled={stepIndex >= steps.length - 1}
+              aria-label="Next page view"
+            >
+              ›
+            </button>
           </div>
         </article>
       ) : null}
