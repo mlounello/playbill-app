@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generatePrintImposedPdf, generateProofPdf, renderProgramPdfWithPlaywright } from "@/lib/export-pdf";
+import { buildExportPageMap, generateExportBinary, toPageMapCsv } from "@/lib/export-runtime";
 import { getProgramBySlug } from "@/lib/programs";
 import { getSupabaseReadClient } from "@/lib/supabase";
 
@@ -36,21 +36,62 @@ export async function GET(
     return NextResponse.json({ error: "program_content_not_found" }, { status: 404 });
   }
 
+  const diagnostics = {
+    export_type: exportType,
+    page_count: program.pageSequence.length,
+    padded_page_count: program.paddedPages.length,
+    booklet_spread_count: program.bookletSpreads.length,
+    blank_padding_pages: program.paddingNeeded,
+    preview_export_parity_ok: program.previewExportParityOk
+  };
+  const requestUrl = new URL(request.url);
+  const debugMode = requestUrl.searchParams.get("debug") === "1";
+  const artifact = String(requestUrl.searchParams.get("artifact") ?? "").trim().toLowerCase();
+  const mapFormat = String(requestUrl.searchParams.get("format") ?? "json").trim().toLowerCase();
+  if (artifact === "page-map") {
+    const pageMap = buildExportPageMap(program, exportType === "print" ? "print" : "proof");
+    if (mapFormat === "csv") {
+      const csv = toPageMapCsv(pageMap);
+      const safe = program.title.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-");
+      return new NextResponse(csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${safe}-${exportType}-page-map.csv"`
+        }
+      });
+    }
+    return NextResponse.json({ ok: true, diagnostics, page_map: pageMap });
+  }
+  if (debugMode) {
+    return NextResponse.json({ ok: true, diagnostics });
+  }
+
   const origin = new URL(request.url).origin;
   let bytes: Uint8Array;
   let renderer: "playwright" | "fallback" = "playwright";
+  let fallbackReason = "";
+  let cacheStatus = "miss";
   try {
-    bytes = await renderProgramPdfWithPlaywright({
+    const generated = await generateExportBinary({
+      cacheKey: `public:${showSlug}:${String(programRow.slug)}:${exportType}`,
       origin,
       programSlug: String(programRow.slug),
-      exportType: exportType === "print" ? "print" : "proof"
+      exportType: exportType === "print" ? "print" : "proof",
+      program
     });
-  } catch {
-    renderer = "fallback";
-    bytes =
-      exportType === "print"
-        ? await generatePrintImposedPdf({ title: program.title, spreads: program.bookletSpreads })
-        : await generateProofPdf({ title: program.title, pages: program.pageSequence });
+    bytes = generated.bytes;
+    renderer = generated.renderer;
+    fallbackReason = generated.fallbackReason;
+    cacheStatus = generated.cacheHit ? "hit" : "miss";
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "export_generation_failed",
+        stage: "pipeline",
+        message: error instanceof Error ? error.message : "unknown"
+      },
+      { status: 500 }
+    );
   }
 
   const safe = program.title.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-");
@@ -60,7 +101,14 @@ export async function GET(
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${filename}"`,
-      "X-Playbill-Export-Renderer": renderer
+      "X-Playbill-Export-Renderer": renderer,
+      "X-Playbill-Page-Count": String(diagnostics.page_count),
+      "X-Playbill-Padded-Count": String(diagnostics.padded_page_count),
+      "X-Playbill-Sheet-Count": String(diagnostics.booklet_spread_count),
+      "X-Playbill-Blank-Pages": String(diagnostics.blank_padding_pages),
+      "X-Playbill-Preview-Parity": diagnostics.preview_export_parity_ok ? "ok" : "mismatch",
+      "X-Playbill-Fallback-Reason": fallbackReason.slice(0, 120),
+      "X-Playbill-Cache": cacheStatus
     }
   });
 }

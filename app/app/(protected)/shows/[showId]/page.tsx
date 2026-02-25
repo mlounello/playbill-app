@@ -165,6 +165,8 @@ export default async function ShowWorkspacePage({
     ? await getSeasonModuleData(show.id)
     : { seasons: [], selectedSeasonId: "", selectedSeasonName: "", events: [] };
   const exportRows = activeTab === "export" ? await getShowExports(show.id) : [];
+  const exportProgramDiagnostics =
+    activeTab === "export" && show.program_slug ? await getProgramBySlug(show.program_slug) : null;
   const publicUrl = show.slug ? `/p/${show.slug}` : "";
   const activeSubmissionFilter = submissionFilter || "all";
   const activeSubmissionQuery = (submissionQuery || "").trim().toLowerCase();
@@ -1172,6 +1174,15 @@ export default async function ShowWorkspacePage({
               <div className="export-cards">
               <article className="card stack-sm">
                 <strong>Generate Exports</strong>
+                {exportProgramDiagnostics ? (
+                  <div className="meta-text">
+                    Diagnostics: {exportProgramDiagnostics.pageSequence.length} designed pages •{" "}
+                    {exportProgramDiagnostics.paddedPages.length} booklet pages •{" "}
+                    {exportProgramDiagnostics.bookletSpreads.length} spreads •{" "}
+                    {exportProgramDiagnostics.paddingNeeded} blank padding • parity{" "}
+                    {exportProgramDiagnostics.previewExportParityOk ? "OK" : "check needed"}
+                  </div>
+                ) : null}
                 <div className="top-actions">
                   <form action={requestExportAction} data-pending-label="Generating proof export..." data-preserve-scroll="true">
                     <input type="hidden" name="exportType" value="proof" />
@@ -1201,7 +1212,13 @@ export default async function ShowWorkspacePage({
                         Created: {new Date(row.created_at).toLocaleString("en-US")}
                         {row.completed_at ? ` • Completed: ${new Date(row.completed_at).toLocaleString("en-US")}` : ""}
                       </div>
-                      {row.file_path ? <Link href={row.file_path}>Open Export</Link> : null}
+                      {row.file_path ? (
+                        <div className="link-row">
+                          <Link href={row.file_path}>Open Export</Link>
+                          <Link href={`${row.file_path}?artifact=page-map`}>View Page Map</Link>
+                          <Link href={`${row.file_path}?artifact=page-map&format=csv`}>Download Page Map CSV</Link>
+                        </div>
+                      ) : null}
                     </div>
                   ))
                 )}
