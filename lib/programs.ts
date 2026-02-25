@@ -711,7 +711,10 @@ function buildRoleListRowsByCategory(
   category: "cast" | "creative" | "production"
 ) {
   const personNameById = new Map(people.map((person) => [person.id, person.full_name]));
-  const grouped = new Map<string, { personId: string; name: string; roles: string[]; billingOrder: number | null }>();
+  const grouped = new Map<
+    string,
+    { personId: string; name: string; roles: string[]; billingOrder: number | null; bioOrder: number | null }
+  >();
 
   for (const role of roles) {
     if (normalizeRoleCategory(role.category) !== category) {
@@ -725,11 +728,15 @@ function buildRoleListRowsByCategory(
       personId: role.person_id,
       name: personName,
       roles: [],
-      billingOrder: role.billing_order ?? null
+      billingOrder: role.billing_order ?? null,
+      bioOrder: role.bio_order ?? null
     };
     existing.roles.push(role.role_name);
     if (existing.billingOrder === null && role.billing_order !== null) {
       existing.billingOrder = role.billing_order;
+    }
+    if (existing.bioOrder === null && role.bio_order !== null) {
+      existing.bioOrder = role.bio_order;
     }
     grouped.set(role.person_id, existing);
   }
@@ -739,6 +746,10 @@ function buildRoleListRowsByCategory(
       if (category === "cast") {
         const aOrder = a.billingOrder ?? Number.MAX_SAFE_INTEGER;
         const bOrder = b.billingOrder ?? Number.MAX_SAFE_INTEGER;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+      } else {
+        const aOrder = a.bioOrder ?? Number.MAX_SAFE_INTEGER;
+        const bOrder = b.bioOrder ?? Number.MAX_SAFE_INTEGER;
         if (aOrder !== bOrder) return aOrder - bOrder;
       }
       return a.name.localeCompare(b.name);

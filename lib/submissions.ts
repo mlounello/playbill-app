@@ -180,6 +180,8 @@ export type ShowRoleAssignment = {
   role_name: string;
   category: RoleCategory;
   role_template_id: string | null;
+  billing_order: number | null;
+  bio_order: number | null;
 };
 
 export type SpecialNoteTemplateOption = {
@@ -283,7 +285,7 @@ function canTransitionSubmissionStatus(
 ) {
   if (from === to) return true;
   const allowed: Record<ShowSubmissionPerson["submission_status"], ShowSubmissionPerson["submission_status"][]> = {
-    pending: ["draft", "submitted", "returned"],
+    pending: ["draft", "submitted", "returned", "approved", "locked"],
     draft: ["pending", "submitted", "returned"],
     submitted: ["approved", "returned", "locked", "draft"],
     returned: ["draft", "submitted", "approved"],
@@ -1855,8 +1857,11 @@ export async function getShowRoleAssignments(showId: string) {
   const client = getSupabaseWriteClient();
   const { data: roles } = await client
     .from("show_roles")
-    .select("id, person_id, role_name, category, role_template_id")
+    .select("id, person_id, role_name, category, role_template_id, billing_order, bio_order")
     .eq("show_id", showId)
+    .order("category", { ascending: true })
+    .order("billing_order", { ascending: true, nullsFirst: false })
+    .order("bio_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
   if (!roles || roles.length === 0) {
     return [] as ShowRoleAssignment[];
@@ -1876,8 +1881,84 @@ export async function getShowRoleAssignments(showId: string) {
     person_name: personNameById.get(String(row.person_id ?? "")) ?? "Unknown Person",
     role_name: String(row.role_name ?? ""),
     category: normalizeRoleCategoryValue(String(row.category ?? "production")),
-    role_template_id: row.role_template_id ? String(row.role_template_id) : null
+    role_template_id: row.role_template_id ? String(row.role_template_id) : null,
+    billing_order: row.billing_order === null ? null : Number(row.billing_order ?? null),
+    bio_order: row.bio_order === null ? null : Number(row.bio_order ?? null)
   }));
+}
+
+export async function reorderRoleListOrder(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const payloadRaw = String(formData.get("orderedRoleIds") ?? "[]");
+  let orderedIds: string[] = [];
+  try {
+    const parsed = JSON.parse(payloadRaw) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new Error("invalid payload");
+    }
+    orderedIds = parsed.map((item) => String(item ?? "").trim()).filter(Boolean);
+  } catch {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Invalid role order payload.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const { data: roles } = await client
+    .from("show_roles")
+    .select("id, category")
+    .eq("show_id", showId);
+  const roleRows = (roles ?? []).map((row) => ({
+    id: String(row.id ?? ""),
+    category: normalizeRoleCategoryValue(String(row.category ?? "production"))
+  }));
+  const roleById = new Map(roleRows.map((row) => [row.id, row]));
+  if (roleRows.length === 0 || orderedIds.length === 0) {
+    redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("No role order changes to apply.")}`);
+  }
+
+  const filteredOrdered = orderedIds.filter((id) => roleById.has(id));
+  const seen = new Set(filteredOrdered);
+  const missingIds = roleRows.map((row) => row.id).filter((id) => !seen.has(id));
+  const finalOrder = [...filteredOrdered, ...missingIds];
+
+  const categoryBuckets: Record<RoleCategory, string[]> = {
+    cast: [],
+    creative: [],
+    production: []
+  };
+  for (const roleId of finalOrder) {
+    const role = roleById.get(roleId);
+    if (!role) continue;
+    categoryBuckets[role.category].push(roleId);
+  }
+
+  for (let idx = 0; idx < categoryBuckets.cast.length; idx += 1) {
+    const roleId = categoryBuckets.cast[idx];
+    await client
+      .from("show_roles")
+      .update({ billing_order: idx + 1 })
+      .eq("show_id", showId)
+      .eq("id", roleId);
+  }
+  for (let idx = 0; idx < categoryBuckets.creative.length; idx += 1) {
+    const roleId = categoryBuckets.creative[idx];
+    await client
+      .from("show_roles")
+      .update({ bio_order: idx + 1 })
+      .eq("show_id", showId)
+      .eq("id", roleId);
+  }
+  for (let idx = 0; idx < categoryBuckets.production.length; idx += 1) {
+    const roleId = categoryBuckets.production[idx];
+    await client
+      .from("show_roles")
+      .update({ bio_order: idx + 1 })
+      .eq("show_id", showId)
+      .eq("id", roleId);
+  }
+
+  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role list order updated.")}`);
 }
 
 export async function addRoleAssignmentToPerson(showId: string, formData: FormData) {

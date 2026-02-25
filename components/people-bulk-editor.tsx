@@ -11,6 +11,8 @@ type PersonRow = {
   role_count?: number;
   role_summary?: string;
   submission_type?: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
+  submission_status?: "pending" | "draft" | "submitted" | "returned" | "approved" | "locked";
+  submitted_at?: string | null;
 };
 
 type PersonRoleRow = {
@@ -152,6 +154,8 @@ export function PeopleBulkEditor({
                 <th>Category</th>
                 <th>Email</th>
                 <th>Submission</th>
+                <th>Status</th>
+                <th>Updated</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -192,6 +196,10 @@ export function PeopleBulkEditor({
                     <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
                     <td>{person.email || "No email"}</td>
                     <td>{person.submission_type ?? "bio"}</td>
+                    <td>
+                      <span className="status-pill">{person.submission_status ?? "pending"}</span>
+                    </td>
+                    <td>{person.submitted_at ? new Date(person.submitted_at).toLocaleDateString("en-US") : "Not submitted"}</td>
                     <td>
                       <div className="row-wrap" onClick={(event) => event.stopPropagation()}>
                         <button

@@ -8,6 +8,7 @@ import { PreviewModuleReorder } from "@/components/preview-module-reorder";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import { ProgramImageUpload } from "@/components/program-image-upload";
 import { RichTextField } from "@/components/rich-text-field";
+import { RoleListOrderEditor } from "@/components/role-list-order-editor";
 import { SubmissionFilterPresets } from "@/components/submission-filter-presets";
 import { SubmissionViewToggle } from "@/components/submission-view-toggle";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
@@ -47,6 +48,7 @@ import {
   getShowSpecialNoteTemplates,
   getShowSubmissionQueue,
   removeRoleAssignment,
+  reorderRoleListOrder,
   resyncShowSubmissionRequests,
   getShowSubmissionPeople,
   updateRoleAssignment,
@@ -141,6 +143,7 @@ export default async function ShowWorkspacePage({
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
   const updatePersonProfileAction = updatePersonProfile.bind(null, show.id);
   const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
+  const reorderRoleListOrderAction = reorderRoleListOrder.bind(null, show.id);
   const createSpecialNoteTemplateAction = createSpecialNoteTemplate.bind(null, show.id);
   const archiveSpecialNoteTemplateAction = archiveSpecialNoteTemplate.bind(null, show.id);
   const resyncSubmissionRequestsAction = resyncShowSubmissionRequests.bind(null, show.id);
@@ -266,13 +269,17 @@ export default async function ShowWorkspacePage({
           .map((item) => item.trim())
           .filter(Boolean)
       : [];
-  const paddingPlanProgram =
-    activeTab === "program-plan" && show.program_slug
-      ? await getProgramBySlug(show.program_slug, {
-          forceVisibleModuleIds: paddingSimIds,
-          previewModuleId: modulePreviewId
-        })
-      : null;
+  let paddingPlanProgram = null as Awaited<ReturnType<typeof getProgramBySlug>> | null;
+  if (activeTab === "program-plan" && show.program_slug) {
+    try {
+      paddingPlanProgram = await getProgramBySlug(show.program_slug, {
+        forceVisibleModuleIds: paddingSimIds,
+        previewModuleId: modulePreviewId
+      });
+    } catch {
+      paddingPlanProgram = null;
+    }
+  }
   const fillerCandidates =
     activeTab === "program-plan"
       ? show.modules
@@ -916,7 +923,9 @@ export default async function ShowWorkspacePage({
                   email: person.email,
                   role_count: roleAssignmentSummaryByPersonId.get(person.id)?.count ?? 1,
                   role_summary: roleAssignmentSummaryByPersonId.get(person.id)?.summary ?? person.role_title,
-                  submission_type: person.submission_type
+                  submission_type: person.submission_type,
+                  submission_status: person.submission_status,
+                  submitted_at: person.submitted_at
                 }))}
                 onSubmitAction={bulkEditSelectedPeopleAction}
                 onEditAction={updatePersonProfileAction}
@@ -936,6 +945,21 @@ export default async function ShowWorkspacePage({
               <p className="section-note">
                 Tip: if someone has more than one role, click <strong>Edit</strong> in their row and manage all role assignments in that modal.
               </p>
+              <article className="card stack-sm">
+                <strong>Program List Ordering (Cast / Creative / Production)</strong>
+                <p className="section-note">
+                  Drag within each category to control the printed list order (Role ... Name). Cast uses billing order; creative/production use team list order.
+                </p>
+                <RoleListOrderEditor
+                  roles={roleAssignments.map((assignment) => ({
+                    id: assignment.id,
+                    person_name: assignment.person_name,
+                    role_name: assignment.role_name,
+                    category: assignment.category
+                  }))}
+                  onSubmitAction={reorderRoleListOrderAction}
+                />
+              </article>
             </section>
           ) : null}
 
