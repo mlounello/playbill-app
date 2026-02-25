@@ -1029,31 +1029,20 @@ export async function updateShowSponsorships(showId: string, formData: FormData)
   }
 
   if (show.program_id) {
-    const { data: columnsData } = await client
-      .from("information_schema.columns")
-      .select("column_name")
-      .eq("table_schema", "public")
-      .eq("table_name", "programs");
-    const columnSet = new Set(
-      (columnsData ?? []).map((item) => String((item as { column_name?: unknown }).column_name ?? ""))
-    );
-
-    const updates: Record<string, string> = {
-      actf_ad_image_url: sponsorshipImageUrl
-    };
-    if (!columnSet.has("sponsorships")) {
-      withError(
-        `/app/shows/${showId}?tab=settings`,
-        "Sponsorship text column is missing. Run: alter table public.programs add column if not exists sponsorships text not null default '';"
-      );
-    }
-    updates.sponsorships = sponsorships;
-
     const { error: programUpdateError } = await client
       .from("programs")
-      .update(updates)
+      .update({
+        actf_ad_image_url: sponsorshipImageUrl,
+        sponsorships
+      })
       .eq("id", show.program_id);
     if (programUpdateError) {
+      if (/column.*sponsorships/i.test(programUpdateError.message)) {
+        withError(
+          `/app/shows/${showId}?tab=settings`,
+          "Sponsorship text column is missing. Run: alter table public.programs add column if not exists sponsorships text not null default '';"
+        );
+      }
       withError(`/app/shows/${showId}?tab=settings`, programUpdateError.message);
     }
   }

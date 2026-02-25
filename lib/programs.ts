@@ -1017,7 +1017,7 @@ function renderModulePages(
   const hasActsSongs = richTextHasContent(program.acts_songs);
   const hasDepartmentInfo = richTextHasContent(program.department_info);
   const hasAcknowledgements = richTextHasContent(program.acknowledgements);
-  const sponsorshipBody = richTextHasContent(program.sponsorships) ? program.sponsorships : program.acknowledgements;
+  const sponsorshipBody = program.sponsorships;
   const hasSponsorships = richTextHasContent(sponsorshipBody);
   const hasSpecialThanks = richTextHasContent(program.special_thanks);
   const hasSeasonCalendar = richTextHasContent(program.season_calendar);
