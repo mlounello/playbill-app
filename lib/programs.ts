@@ -927,6 +927,32 @@ function estimateStackUnits(page: ProgramPage) {
   return Number.MAX_SAFE_INTEGER;
 }
 
+function buildBiosStackBody(people: PersonRecord[]) {
+  return `<div class="bios-list">${people
+    .map((person) => {
+      const safeBio = sanitizeRichText(person.bio);
+      const roleInline = person.role_title?.trim()
+        ? `<span class="bio-role-inline"> (${escapeHtml(person.role_title)})</span>`
+        : "";
+      const headshot = person.headshot_url?.trim()
+        ? `<img src="${escapeHtml(person.headshot_url)}" alt="${escapeHtml(person.full_name)}" class="headshot" />`
+        : "";
+      return `<section class="bio-row">${headshot}<div><div class="bio-name">${escapeHtml(person.full_name)}${roleInline}</div><div class="page-body rich-render bio-body">${safeBio}</div></div></section>`;
+    })
+    .join("")}</div>`;
+}
+
+function estimateBiosStackUnits(page: Extract<ProgramPage, { type: "bios" }>) {
+  const titleUnits = page.title.trim() ? 54 : 0;
+  const bodyUnits = page.people.reduce((total, person) => {
+    const plain = richTextToPlain(person.bio);
+    const textUnits = Math.max(90, Math.round(plain.length * 0.24));
+    const headshotUnits = person.headshot_url.trim() ? 70 : 25;
+    return total + textUnits + headshotUnits + 42;
+  }, 0);
+  return titleUnits + bodyUnits;
+}
+
 function getStackPageBudget(densityMode: DensityMode) {
   if (densityMode === "compact") {
     return 860;
@@ -1342,7 +1368,34 @@ function buildRenderablePagesFromModules(
     stackUsed = 0;
   };
 
-  const appendPackedPage = (page: ProgramPage) => {
+  const appendPackedPage = (page: ProgramPage, options?: { allowBiosCarry?: boolean }) => {
+    if (page.type === "bios" && options?.allowBiosCarry) {
+      const units = estimateBiosStackUnits(page);
+      const activeBudget = getStackPageBudget(densityMode);
+      if (units > activeBudget) {
+        flushStackBuffer();
+        pages.push(page);
+        return;
+      }
+
+      if (stackBuffer.length > 0 && stackBuffer[0].billingLike) {
+        flushStackBuffer();
+      }
+      if (stackUsed > 0 && stackUsed + units > activeBudget) {
+        flushStackBuffer();
+      }
+
+      stackBuffer.push({
+        title: page.title,
+        body: buildBiosStackBody(page.people),
+        units,
+        billingLike: false,
+        originalPage: page
+      });
+      stackUsed += units;
+      return;
+    }
+
     const canStackPage = isStackablePage(page);
     if (!canStackPage) {
       flushStackBuffer();
@@ -1417,8 +1470,10 @@ function buildRenderablePagesFromModules(
       pages.push(...renderedPages);
       continue;
     }
-    for (const page of renderedPages) {
-      appendPackedPage(page);
+    for (let pageIndex = 0; pageIndex < renderedPages.length; pageIndex += 1) {
+      const page = renderedPages[pageIndex];
+      const allowBiosCarry = normalizedModuleType === "bios" && pageIndex === renderedPages.length - 1;
+      appendPackedPage(page, { allowBiosCarry });
     }
   }
   flushStackBuffer();
