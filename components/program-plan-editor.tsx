@@ -87,9 +87,6 @@ const addableModuleTypes = [
 function isDefaultIsolated(moduleType: string) {
   const isolated = new Set([
     "cover",
-    "cast_list",
-    "creative_team",
-    "production_team",
     "bios",
     "headshots_grid",
     "production_photos",
@@ -171,7 +168,16 @@ function ModuleSettings({
           <input
             type="checkbox"
             checked={Boolean(item.settings.role_list_grouping_enabled ?? true)}
-            onChange={(e) => setSetting("role_list_grouping_enabled", e.target.checked)}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              onUpdate({
+                ...item.settings,
+                role_list_grouping_enabled: enabled,
+                placement_mode: enabled ? "flow" : "isolated",
+                separate_page: !enabled,
+                keep_together: !enabled
+              });
+            }}
           />
           Allow grouping with other modules
         </label>
@@ -186,7 +192,16 @@ function ModuleSettings({
           <input
             type="checkbox"
             checked={Boolean(item.settings.role_list_grouping_enabled ?? true)}
-            onChange={(e) => setSetting("role_list_grouping_enabled", e.target.checked)}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              onUpdate({
+                ...item.settings,
+                role_list_grouping_enabled: enabled,
+                placement_mode: enabled ? "flow" : "isolated",
+                separate_page: !enabled,
+                keep_together: !enabled
+              });
+            }}
           />
           Allow grouping with other modules
         </label>

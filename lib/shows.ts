@@ -110,9 +110,6 @@ function normalizeModuleSettings(settings: Record<string, unknown> | undefined, 
   const next: Record<string, unknown> = { ...(settings ?? {}) };
   const defaultIsolated = new Set([
     "cover",
-    "cast_list",
-    "creative_team",
-    "production_team",
     "bios",
     "headshots_grid",
     "production_photos",

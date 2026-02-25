@@ -591,9 +591,6 @@ function moduleDefaultPlacementMode(moduleType: string): "flow" | "isolated" {
   const normalized = normalizeModuleType(moduleType);
   const isolated = new Set([
     "cover",
-    "cast_list",
-    "creative_team",
-    "production_team",
     "bios",
     "headshots_grid",
     "production_photos",
@@ -1336,7 +1333,7 @@ function buildRenderablePagesFromModules(
   const pages: ProgramPage[] = [];
   const visibleModules = modules.filter((module) => module.visible).sort((a, b) => a.module_order - b.module_order);
   let stackCounter = 0;
-  let stackBuffer: Array<{ title: string; body: string; units: number; originalPage: ProgramPage }> = [];
+  let stackBuffer: Array<{ title: string; body: string; units: number; originalPage: ProgramPage; billingLike: boolean }> = [];
   let stackUsed = 0;
 
   const flushStackBuffer = () => {
@@ -1372,21 +1369,19 @@ function buildRenderablePagesFromModules(
       return;
     }
 
-    // Billing/list pages use strict single-line layout and are sensitive to
-    // height estimation drift, so keep them on their own page.
-    if (isBillingStyledPage(page)) {
-      flushStackBuffer();
-      pages.push(page);
-      return;
-    }
-
+    const billingLike = isBillingStyledPage(page);
     const units = estimateStackUnits(page);
-    const activeBudget = getStackPageBudget(densityMode);
+    const activeBudget = billingLike ? getBillingStackBudget(densityMode) : getStackPageBudget(densityMode);
 
     if (units > activeBudget) {
       flushStackBuffer();
       pages.push(page);
       return;
+    }
+
+    // Never mix billing/list pages with regular flowing text in a single packed page.
+    if (stackBuffer.length > 0 && stackBuffer[0].billingLike !== billingLike) {
+      flushStackBuffer();
     }
 
     if (stackUsed > 0 && stackUsed + units > activeBudget) {
@@ -1398,6 +1393,7 @@ function buildRenderablePagesFromModules(
         title: page.title,
         body: page.body,
         units,
+        billingLike,
         originalPage: page
       });
       stackUsed += units;
@@ -1415,9 +1411,6 @@ function buildRenderablePagesFromModules(
       continue;
     }
 
-    const placementMode = getModulePlacementMode(module);
-    const separatePage = placementMode === "isolated";
-    const keepTogether = Boolean(module.settings.keep_together ?? separatePage);
     const normalizedModuleType = normalizeModuleType(module.module_type);
     const isRoleListModule =
       normalizedModuleType === "cast_list" ||
@@ -1427,6 +1420,16 @@ function buildRenderablePagesFromModules(
       module.settings.role_list_grouping_enabled === undefined
         ? true
         : Boolean(module.settings.role_list_grouping_enabled);
+    let placementMode = getModulePlacementMode(module);
+    let separatePage = placementMode === "isolated";
+    let keepTogether = Boolean(module.settings.keep_together ?? separatePage);
+    // Compatibility override: legacy saved separate_page=true should not keep
+    // role-list modules isolated when grouping is enabled.
+    if (isRoleListModule && roleListGroupingEnabled) {
+      placementMode = "flow";
+      separatePage = false;
+      keepTogether = false;
+    }
     const flowPackAllowed = !separatePage && !keepTogether && (!isRoleListModule || roleListGroupingEnabled);
     if (!flowPackAllowed) {
       flushStackBuffer();
