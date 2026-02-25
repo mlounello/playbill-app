@@ -614,11 +614,6 @@ function getModulePlacementMode(module: ProgramModuleRecord): "flow" | "isolated
   return moduleDefaultPlacementMode(module.module_type);
 }
 
-function isRoleListModuleType(moduleType: string) {
-  const normalized = normalizeModuleType(moduleType);
-  return normalized === "cast_list" || normalized === "creative_team" || normalized === "production_team";
-}
-
 function uniqueRoleNames(values: string[]) {
   const seen = new Set<string>();
   const ordered: string[] = [];
@@ -1423,10 +1418,16 @@ function buildRenderablePagesFromModules(
     const placementMode = getModulePlacementMode(module);
     const separatePage = placementMode === "isolated";
     const keepTogether = Boolean(module.settings.keep_together ?? separatePage);
-    // Role-list modules must always stay on their own page(s). They rely on
-    // strict line fitting and can clip when merged into leftover page space.
-    const forceIsolatedRoleList = isRoleListModuleType(module.module_type);
-    const flowPackAllowed = !separatePage && !keepTogether && !forceIsolatedRoleList;
+    const normalizedModuleType = normalizeModuleType(module.module_type);
+    const isRoleListModule =
+      normalizedModuleType === "cast_list" ||
+      normalizedModuleType === "creative_team" ||
+      normalizedModuleType === "production_team";
+    const roleListGroupingEnabled =
+      module.settings.role_list_grouping_enabled === undefined
+        ? true
+        : Boolean(module.settings.role_list_grouping_enabled);
+    const flowPackAllowed = !separatePage && !keepTogether && (!isRoleListModule || roleListGroupingEnabled);
     if (!flowPackAllowed) {
       flushStackBuffer();
       pages.push(...renderedPages);

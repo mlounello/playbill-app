@@ -167,6 +167,29 @@ function ModuleSettings({
             <option value="act">Group by act</option>
           </select>
         </label>
+        <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={Boolean(item.settings.role_list_grouping_enabled ?? true)}
+            onChange={(e) => setSetting("role_list_grouping_enabled", e.target.checked)}
+          />
+          Allow grouping with other modules
+        </label>
+      </div>
+    );
+  }
+
+  if (item.module_type === "creative_team" || item.module_type === "production_team") {
+    return (
+      <div className="module-settings-grid">
+        <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={Boolean(item.settings.role_list_grouping_enabled ?? true)}
+            onChange={(e) => setSetting("role_list_grouping_enabled", e.target.checked)}
+          />
+          Allow grouping with other modules
+        </label>
       </div>
     );
   }
