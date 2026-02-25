@@ -84,9 +84,6 @@ export default async function ShowWorkspacePage({
     error?: string;
     success?: string;
     personForRole?: string;
-    roleQuery?: string;
-    roleCategory?: string;
-    roleSaved?: string;
     roleError?: string;
     roleName?: string;
     submissionFilter?: string;
@@ -103,9 +100,6 @@ export default async function ShowWorkspacePage({
     error,
     success,
     personForRole,
-    roleQuery,
-    roleCategory,
-    roleSaved,
     roleError,
     roleName,
     submissionFilter,
@@ -349,21 +343,6 @@ export default async function ShowWorkspacePage({
       ? await getRoleLibraryData(show.id)
       : { roles: [], shows: [], selectedShowId: "" };
   const availableRoleTemplates = roleLibrary.roles.filter((role) => !role.is_hidden);
-  const activeRoleQuery = (roleQuery || "").trim().toLowerCase();
-  const activeRoleCategory = roleCategory || "all";
-  const filteredRoleAssignments =
-    activeTab === "people-roles"
-      ? roleAssignments.filter((assignment) => {
-          if (activeRoleCategory !== "all" && assignment.category !== activeRoleCategory) {
-            return false;
-          }
-          if (!activeRoleQuery) {
-            return true;
-          }
-          const haystack = `${assignment.person_name} ${assignment.role_name} ${assignment.category}`.toLowerCase();
-          return haystack.includes(activeRoleQuery);
-        })
-      : [];
   const roleAssignmentSummaryByPersonId = new Map<string, { count: number; summary: string }>();
   if (activeTab === "people-roles") {
     const grouped = new Map<string, string[]>();

@@ -1324,7 +1324,6 @@ function buildRenderablePagesFromModules(
 ) {
   const pages: ProgramPage[] = [];
   const visibleModules = modules.filter((module) => module.visible).sort((a, b) => a.module_order - b.module_order);
-  const stackBudget = getStackPageBudget(densityMode);
   let stackCounter = 0;
   let stackBuffer: Array<{ title: string; body: string; units: number; originalPage: ProgramPage }> = [];
   let stackUsed = 0;
@@ -1354,33 +1353,23 @@ function buildRenderablePagesFromModules(
     stackUsed = 0;
   };
 
-  for (let index = 0; index < visibleModules.length; index += 1) {
-    const module = visibleModules[index];
-    const renderedPages = renderModulePages(module, index, program, rosterPeople, cast, production, showRoles, densityMode);
-    if (renderedPages.length === 0) {
-      continue;
-    }
-
-    const placementMode = getModulePlacementMode(module);
-    const separatePage = placementMode === "isolated";
-    const keepTogether = Boolean(module.settings.keep_together ?? separatePage);
-    const canStackModule = !separatePage && !keepTogether && renderedPages.length === 1 && isStackablePage(renderedPages[0]);
-    if (!canStackModule) {
-      flushStackBuffer();
-      pages.push(...renderedPages);
-      continue;
-    }
-
-    const page = renderedPages[0];
-    const units = estimateStackUnits(page);
-    if (units > stackBudget) {
+  const appendPackedPage = (page: ProgramPage) => {
+    const canStackPage = isStackablePage(page);
+    if (!canStackPage) {
       flushStackBuffer();
       pages.push(page);
-      continue;
+      return;
     }
 
-    const isBillingPage = isBillingStyledPage(page);
-    const activeBudget = isBillingPage ? getBillingStackBudget(densityMode) : stackBudget;
+    const units = estimateStackUnits(page);
+    const defaultBudget = getStackPageBudget(densityMode);
+    const activeBudget = isBillingStyledPage(page) ? getBillingStackBudget(densityMode) : defaultBudget;
+
+    if (units > activeBudget) {
+      flushStackBuffer();
+      pages.push(page);
+      return;
+    }
 
     if (stackUsed > 0 && stackUsed + units > activeBudget) {
       flushStackBuffer();
@@ -1394,9 +1383,31 @@ function buildRenderablePagesFromModules(
         originalPage: page
       });
       stackUsed += units;
-    } else {
+      return;
+    }
+
+    flushStackBuffer();
+    pages.push(page);
+  };
+
+  for (let index = 0; index < visibleModules.length; index += 1) {
+    const module = visibleModules[index];
+    const renderedPages = renderModulePages(module, index, program, rosterPeople, cast, production, showRoles, densityMode);
+    if (renderedPages.length === 0) {
+      continue;
+    }
+
+    const placementMode = getModulePlacementMode(module);
+    const separatePage = placementMode === "isolated";
+    const keepTogether = Boolean(module.settings.keep_together ?? separatePage);
+    const flowPackAllowed = !separatePage && !keepTogether;
+    if (!flowPackAllowed) {
       flushStackBuffer();
-      pages.push(page);
+      pages.push(...renderedPages);
+      continue;
+    }
+    for (const page of renderedPages) {
+      appendPackedPage(page);
     }
   }
   flushStackBuffer();
@@ -2011,6 +2022,10 @@ export async function getProgramBySlug(
 
     if (pageSequence.length === 0) {
       pageSequence = buildRenderablePages(safeProgram, castPeople, productionPeople, appliedDensityMode);
+    }
+    const stackedPageCount = pageSequence.filter((page) => page.type === "stacked").length;
+    if (stackedPageCount > 0) {
+      optimizationSteps.push(`Flow-packed ${stackedPageCount} combined page${stackedPageCount === 1 ? "" : "s"}.`);
     }
 
     const getPaddingNeeded = (count: number) => (4 - (count % 4)) % 4;

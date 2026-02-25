@@ -14,11 +14,21 @@ export function GlobalLoadingOverlay() {
     try {
       const raw = window.sessionStorage.getItem("playbill:return-scroll");
       if (!raw) return;
-      const parsed = JSON.parse(raw) as { path?: string; y?: number; ts?: number };
+      const parsed = JSON.parse(raw) as { path?: string; y?: number; ts?: number; focusId?: string; focusName?: string };
       const samePath = parsed?.path === pathname;
       const fresh = typeof parsed?.ts === "number" ? Date.now() - parsed.ts < 90_000 : false;
       if (samePath && fresh && typeof parsed?.y === "number") {
         window.requestAnimationFrame(() => window.scrollTo({ top: parsed.y as number, behavior: "auto" }));
+      }
+      if (samePath && fresh && (parsed?.focusId || parsed?.focusName)) {
+        window.requestAnimationFrame(() => {
+          const byId = parsed.focusId ? (document.getElementById(parsed.focusId) as HTMLElement | null) : null;
+          const byName = !byId && parsed.focusName ? (document.querySelector(`[name="${parsed.focusName}"]`) as HTMLElement | null) : null;
+          const target = byId || byName;
+          if (target && typeof target.focus === "function") {
+            target.focus({ preventScroll: true });
+          }
+        });
       }
       window.sessionStorage.removeItem("playbill:return-scroll");
     } catch {
@@ -32,9 +42,15 @@ export function GlobalLoadingOverlay() {
       if (!form) return;
       if (form.dataset.preserveScroll === "true") {
         try {
+          const activeElement = document.activeElement as HTMLElement | null;
+          const focusId = activeElement?.id || "";
+          const focusName =
+            activeElement && "getAttribute" in activeElement
+              ? String(activeElement.getAttribute("name") ?? "")
+              : "";
           window.sessionStorage.setItem(
             "playbill:return-scroll",
-            JSON.stringify({ path: window.location.pathname, y: window.scrollY, ts: Date.now() })
+            JSON.stringify({ path: window.location.pathname, y: window.scrollY, ts: Date.now(), focusId, focusName })
           );
         } catch {
           // Ignore.
