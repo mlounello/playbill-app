@@ -41,7 +41,7 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
 
   if (page.type === "image") {
     return (
-      <article className="booklet-page">
+      <article className="booklet-page image-page">
         <h2 className="section-title playbill-title">{page.title}</h2>
         <img src={page.imageUrl} alt={page.title} className="full-page-image" />
       </article>

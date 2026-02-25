@@ -1070,7 +1070,26 @@ body.density-compact .admin-surface textarea {
 .full-page-image {
   width: 100%;
   height: 100%;
+  object-fit: contain;
+}
+
+.poster-image {
   object-fit: cover;
+}
+
+.image-page {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0.08in;
+}
+
+.image-page .section-title {
+  margin-bottom: 0;
+}
+
+.image-page .full-page-image {
+  align-self: stretch;
+  justify-self: stretch;
 }
 
 .poster-overlay {

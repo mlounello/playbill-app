@@ -1041,9 +1041,13 @@ export async function updateShowSponsorships(showId: string, formData: FormData)
     const updates: Record<string, string> = {
       actf_ad_image_url: sponsorshipImageUrl
     };
-    if (columnSet.has("sponsorships")) {
-      updates.sponsorships = sponsorships;
+    if (!columnSet.has("sponsorships")) {
+      withError(
+        `/app/shows/${showId}?tab=settings`,
+        "Sponsorship text column is missing. Run: alter table public.programs add column if not exists sponsorships text not null default '';"
+      );
     }
+    updates.sponsorships = sponsorships;
 
     const { error: programUpdateError } = await client
       .from("programs")
