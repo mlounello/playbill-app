@@ -254,12 +254,14 @@ export function ProgramPlanEditor({
   modules,
   onSubmitAction,
   previewModuleId,
-  getModulePreviewHref
+  previewBasePath,
+  paddingSimIds
 }: {
   modules: ShowModule[];
   onSubmitAction: (formData: FormData) => void;
   previewModuleId?: string;
-  getModulePreviewHref?: (moduleId: string) => string;
+  previewBasePath?: string;
+  paddingSimIds?: string[];
 }) {
   const [items, setItems] = useState<ModuleItem[]>(() => normalizeModules(modules));
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -316,6 +318,19 @@ export function ProgramPlanEditor({
 
   const isCustomModule = (moduleType: string) =>
     moduleType === "custom_text" || moduleType === "custom_image" || moduleType === "custom_pages";
+
+  const buildPreviewHref = (moduleId: string) => {
+    const params = new URLSearchParams();
+    params.set("tab", "program-plan");
+    params.set("modulePreviewId", moduleId);
+    if ((paddingSimIds ?? []).length > 0) {
+      params.set("paddingSim", (paddingSimIds ?? []).join(","));
+    }
+    if (previewBasePath && previewBasePath.includes("?")) {
+      return `${previewBasePath.split("?")[0]}?${params.toString()}`;
+    }
+    return `${previewBasePath ?? ""}?${params.toString()}`;
+  };
 
   return (
     <form action={onSubmitAction} className="card-list" data-pending-label="Saving program plan..." data-preserve-scroll="true">
@@ -405,10 +420,10 @@ export function ProgramPlanEditor({
                   Remove Section
                 </button>
               ) : null}
-              {getModulePreviewHref ? (
+              {previewBasePath ? (
                 <a
                   className="ghost-button"
-                  href={getModulePreviewHref(item.id)}
+                  href={buildPreviewHref(item.id)}
                   style={previewModuleId === item.id ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
                 >
                   {previewModuleId === item.id ? "Previewing" : "Preview this module"}
