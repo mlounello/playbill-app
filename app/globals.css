@@ -1052,6 +1052,42 @@ body.density-compact .admin-surface textarea {
   gap: 0.2in;
 }
 
+.flip-view-card {
+  perspective: 1400px;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.flip-view-card.flip-forward {
+  animation: flipForward 320ms ease-out;
+}
+
+.flip-view-card.flip-backward {
+  animation: flipBackward 320ms ease-out;
+}
+
+@keyframes flipForward {
+  0% {
+    opacity: 0.72;
+    transform: rotateY(-10deg) translateX(18px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: rotateY(0deg) translateX(0) scale(1);
+  }
+}
+
+@keyframes flipBackward {
+  0% {
+    opacity: 0.72;
+    transform: rotateY(10deg) translateX(-18px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: rotateY(0deg) translateX(0) scale(1);
+  }
+}
+
 .booklet-page {
   width: 5.5in;
   height: 8.5in;
