@@ -243,6 +243,22 @@ function normalizeSubmissionStatus(value: string): ShowSubmissionPerson["submiss
   return "pending";
 }
 
+function canTransitionSubmissionStatus(
+  from: ShowSubmissionPerson["submission_status"],
+  to: ShowSubmissionPerson["submission_status"]
+) {
+  if (from === to) return true;
+  const allowed: Record<ShowSubmissionPerson["submission_status"], ShowSubmissionPerson["submission_status"][]> = {
+    pending: ["draft", "submitted", "returned"],
+    draft: ["pending", "submitted", "returned"],
+    submitted: ["approved", "returned", "locked", "draft"],
+    returned: ["draft", "submitted", "approved"],
+    approved: ["locked", "returned"],
+    locked: []
+  };
+  return allowed[from].includes(to);
+}
+
 async function getShowProgramContext(showId: string) {
   const client = getSupabaseWriteClient();
   const { data: show } = await client.from("shows").select("id, title, slug, program_id").eq("id", showId).single();
@@ -2506,6 +2522,18 @@ async function updateSubmissionCore(args: {
   }
 
   const client = getSupabaseWriteClient();
+  const { data: requestRow } = await client
+    .from("submission_requests")
+    .select("status")
+    .eq("id", args.requestId)
+    .maybeSingle();
+  const currentRequestStatus = normalizeSubmissionStatus(String(requestRow?.status ?? "pending"));
+  if (!canTransitionSubmissionStatus(currentRequestStatus, args.status)) {
+    return {
+      ok: false as const,
+      message: `Invalid status change: ${currentRequestStatus} -> ${args.status}.`
+    };
+  }
   const peopleColumns = await getTableColumns(client, "people");
   const { data: person } = await client
     .from("people")

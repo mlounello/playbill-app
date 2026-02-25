@@ -52,6 +52,7 @@ import {
   updateSpecialNoteAssignments
 } from "@/lib/submissions";
 import {
+  getReminderDeliveryMode,
   getShowReminderSummary,
   setShowRemindersPaused,
   sendShowInvites,
@@ -171,6 +172,22 @@ export default async function ShowWorkspacePage({
   const activeSubmissionView = submissionView === "cards" ? "cards" : "table";
   const submissionViewProvided = typeof submissionView === "string";
   const submissionQueue = activeTab === "submissions" ? await getShowSubmissionQueue(show.id) : [];
+  const deliveryMode = activeTab === "overview" ? getReminderDeliveryMode() : null;
+  const isTaskComplete = (task: (typeof submissionQueue)[number]) =>
+    task.submission_status === "submitted" ||
+    task.submission_status === "approved" ||
+    task.submission_status === "locked" ||
+    (task.submission_type === "bio" && task.no_bio);
+  const getTaskNextStep = (task: (typeof submissionQueue)[number]) => {
+    if (task.submission_type === "bio" && task.no_bio) return "No bio requested";
+    if (task.submission_status === "pending") return "Submit initial draft";
+    if (task.submission_status === "draft") return "Submit for review";
+    if (task.submission_status === "submitted") return "Admin review needed";
+    if (task.submission_status === "returned") return "Needs edits and resubmission";
+    if (task.submission_status === "approved") return "Ready to lock";
+    if (task.submission_status === "locked") return "Done";
+    return "";
+  };
   const filteredSubmissions =
     activeTab === "submissions"
       ? submissionQueue
@@ -182,6 +199,7 @@ export default async function ShowWorkspacePage({
             if (activeSubmissionFilter === "needs_review") return task.submission_status === "submitted";
             if (activeSubmissionFilter === "bio_missing")
               return task.submission_type === "bio" && task.bio_char_count === 0 && !task.no_bio;
+            if (activeSubmissionFilter === "no_bio") return task.submission_type === "bio" && task.no_bio;
             if (activeSubmissionFilter === "headshot_missing")
               return task.submission_type === "bio" && !task.headshot_url.trim();
             if (activeSubmissionFilter === "over_limit") return isOverLimit;
@@ -214,6 +232,7 @@ export default async function ShowWorkspacePage({
       ? {
           missingBios: people.filter((person) => person.submission_type === "bio" && person.bio_char_count === 0 && !person.no_bio).length,
           missingHeadshots: people.filter((person) => person.submission_type === "bio" && !person.headshot_url.trim()).length,
+          skippedBios: people.filter((person) => person.submission_type === "bio" && person.no_bio).length,
           returnedForEdits: people.filter((person) => person.submission_status === "returned").length,
           overLimit: people.filter((person) =>
             person.submission_type === "bio"
@@ -225,6 +244,7 @@ export default async function ShowWorkspacePage({
       : {
           missingBios: 0,
           missingHeadshots: 0,
+          skippedBios: 0,
           returnedForEdits: 0,
           overLimit: 0,
           needsReview: 0
@@ -362,6 +382,7 @@ export default async function ShowWorkspacePage({
                   <span className="kpi-badge">{show.submission_submitted}/{show.submission_total} submitted</span>
                   <span className="kpi-badge">{reminderSummary.missing} outstanding</span>
                   <span className="kpi-badge">{show.reminders_paused ? "Reminders Paused" : "Reminders Active"}</span>
+                  {deliveryMode ? <span className="kpi-badge">{deliveryMode.label}</span> : null}
                 </div>
               </div>
               <article className="card stack-sm submissions-filter">
@@ -377,6 +398,10 @@ export default async function ShowWorkspacePage({
                   <div className="stat-item">
                     <div className="stat-label">Outstanding</div>
                     <div className="stat-value">{reminderSummary.missing}</div>
+                  </div>
+                  <div className="stat-item">
+                    <div className="stat-label">No Bio Requested</div>
+                    <div className="stat-value">{blockers.skippedBios}</div>
                   </div>
                   <div className="stat-item">
                     <div className="stat-label">Overdue</div>
@@ -406,7 +431,15 @@ export default async function ShowWorkspacePage({
                     <form action={sendInvitesAction} data-pending-label="Sending invites..." data-preserve-scroll="true">
                       <button type="submit">Send Invites</button>
                     </form>
-                    <form action={sendRemindersAction} data-pending-label="Sending reminders..." data-preserve-scroll="true">
+                    <form action={sendRemindersAction} data-pending-label="Sending reminders..." data-preserve-scroll="true" className="top-actions">
+                      <label>
+                        Reminder scope
+                        <select name="scope" defaultValue="all_open">
+                          <option value="all_open">All open requests</option>
+                          <option value="overdue_only">Overdue only</option>
+                          <option value="due_soon_7d">Due in 7 days</option>
+                        </select>
+                      </label>
                       <button type="submit" disabled={show.reminders_paused}>
                         {show.reminders_paused ? "Reminders Paused" : "Send Reminders Now"}
                       </button>
@@ -942,7 +975,7 @@ export default async function ShowWorkspacePage({
                 <strong>Submissions</strong>
                 <div className="kpi-inline">
                   <span className="kpi-badge">
-                    {submissionQueue.filter((task) => task.submission_status === "submitted" || task.submission_status === "approved" || task.submission_status === "locked").length}
+                    {submissionQueue.filter((task) => isTaskComplete(task)).length}
                     /{submissionQueue.length} complete
                   </span>
                 </div>
@@ -967,6 +1000,7 @@ export default async function ShowWorkspacePage({
                     ["pending", "Pending"],
                     ["needs_review", "Needs Review"],
                     ["bio_missing", "Bio Missing"],
+                    ["no_bio", "No Bio Requested"],
                     ["headshot_missing", "Headshot Missing"],
                     ["over_limit", "Over Limit"],
                     ["returned", "Returned"],
@@ -1034,6 +1068,7 @@ export default async function ShowWorkspacePage({
                             <th scope="col">Requirement</th>
                             <th scope="col">Status</th>
                             <th scope="col">Count</th>
+                            <th scope="col">Next Step</th>
                             <th scope="col">Updated</th>
                             <th scope="col">Actions</th>
                           </tr>
@@ -1058,6 +1093,7 @@ export default async function ShowWorkspacePage({
                                     ? `${task.bio_char_count} chars`
                                     : `${countWordsFromRichText(task.bio)} words`}
                                 </td>
+                                <td>{getTaskNextStep(task)}</td>
                                 <td>{task.submitted_at ? new Date(task.submitted_at).toLocaleDateString("en-US") : "No submission yet"}</td>
                                 <td>
                                   <div className="submission-actions">
@@ -1100,6 +1136,7 @@ export default async function ShowWorkspacePage({
                                   ? `${task.bio_char_count} chars`
                                   : `${countWordsFromRichText(task.bio)} words`}
                               </div>
+                              <div className="submission-meta">Next step: {getTaskNextStep(task)}</div>
                               <div className="submission-meta">
                                 Updated: {task.submitted_at ? new Date(task.submitted_at).toLocaleDateString("en-US") : "No submission yet"}
                               </div>

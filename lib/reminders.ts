@@ -13,6 +13,8 @@ type ReminderRecipient = {
   status: string;
 };
 
+type ReminderDispatchScope = "all_open" | "overdue_only" | "due_soon_7d";
+
 function withError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
   redirect(`${path}${path.includes("?") ? "&" : "?"}${qp.toString()}`);
@@ -56,6 +58,32 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
   }
 
   return { sent: true, reason: "sent" as const };
+}
+
+export function getReminderDeliveryMode() {
+  const disabledByEnv = /^(1|true|yes|on)$/i.test(String(process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim());
+  if (disabledByEnv) {
+    return {
+      mode: "test" as const,
+      label: "Email Test Mode (delivery disabled)",
+      isDelivering: false
+    };
+  }
+
+  const hasProvider = Boolean(process.env.RESEND_API_KEY && process.env.REMINDER_FROM_EMAIL);
+  if (!hasProvider) {
+    return {
+      mode: "unconfigured" as const,
+      label: "Email provider not configured",
+      isDelivering: false
+    };
+  }
+
+  return {
+    mode: "live" as const,
+    label: "Email delivery active",
+    isDelivering: true
+  };
 }
 
 async function getShowContext(showId: string) {
@@ -225,6 +253,7 @@ export async function sendShowInvites(showId: string) {
   if (recipients.length === 0) {
     withError(`/app/shows/${showId}?tab=overview`, "No recipients found.");
   }
+  const deliveryMode = getReminderDeliveryMode();
 
   let sent = 0;
   for (const item of recipients) {
@@ -244,12 +273,19 @@ export async function sendShowInvites(showId: string) {
     if (result.sent) sent += 1;
   }
 
-  withSuccess(`/app/shows/${showId}?tab=overview`, `Invites processed: ${sent}/${recipients.length} sent.`);
+  const baseMessage = `Invites processed: ${sent}/${recipients.length} sent.`;
+  withSuccess(
+    `/app/shows/${showId}?tab=overview`,
+    deliveryMode.isDelivering ? baseMessage : `${baseMessage} ${deliveryMode.label}.`
+  );
 }
 
-export async function sendShowRemindersNow(showId: string) {
+export async function sendShowRemindersNow(showId: string, formData?: FormData) {
   "use server";
   await requireRole(["owner", "admin", "editor"]);
+  const rawScope = String(formData?.get("scope") ?? "all_open");
+  const scope: ReminderDispatchScope =
+    rawScope === "overdue_only" || rawScope === "due_soon_7d" ? rawScope : "all_open";
   const context = await getShowContext(showId);
   if (!context) {
     withError("/app/shows", "Show not found.");
@@ -257,10 +293,15 @@ export async function sendShowRemindersNow(showId: string) {
   if (context.remindersPaused) {
     withSuccess(`/app/shows/${showId}?tab=overview`, "Reminders are currently paused for this show.");
   }
-  const summary = await runReminderDispatchForShow(showId, "manual");
+  const summary = await runReminderDispatchForShow(showId, "manual", scope);
+  const deliveryMode = getReminderDeliveryMode();
+  const scopeLabel =
+    scope === "overdue_only" ? "overdue only" : scope === "due_soon_7d" ? "due in 7 days" : "all open";
   withSuccess(
     `/app/shows/${showId}?tab=overview`,
-    `Reminders processed: ${summary.sent}/${summary.total}.`
+    deliveryMode.isDelivering
+      ? `Reminders (${scopeLabel}) processed: ${summary.sent}/${summary.total}.`
+      : `Reminders (${scopeLabel}) processed: ${summary.sent}/${summary.total}. ${deliveryMode.label}.`
   );
 }
 
@@ -302,7 +343,7 @@ async function wasReminderSentRecently(personId: string, days: number) {
   return (data ?? []).length > 0;
 }
 
-export async function runReminderDispatchForShow(showId: string, mode: "manual" | "cron") {
+export async function runReminderDispatchForShow(showId: string, mode: "manual" | "cron", scope: ReminderDispatchScope = "all_open") {
   const context = await getShowContext(showId);
   if (!context) {
     return { sent: 0, total: 0 };
@@ -310,12 +351,23 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
   if (context.remindersPaused) {
     return { sent: 0, total: 0 };
   }
-  const recipients = (await getReminderRecipients(showId)).filter((item) => shouldRemind(item.status));
+  const now = Date.now();
+  const recipients = (await getReminderRecipients(showId))
+    .filter((item) => shouldRemind(item.status))
+    .filter((item) => {
+      if (scope === "all_open") return true;
+      if (!item.dueDate) return false;
+      const dueTime = new Date(item.dueDate).getTime();
+      if (scope === "overdue_only") {
+        return dueTime < now;
+      }
+      const diffDays = Math.floor((dueTime - now) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays <= 7;
+    });
   let sent = 0;
 
   for (const item of recipients) {
     const due = item.dueDate ? new Date(item.dueDate).getTime() : null;
-    const now = Date.now();
     const diffDays = due ? Math.floor((due - now) / (1000 * 60 * 60 * 24)) : null;
     const isLastDay = diffDays !== null && diffDays <= 0;
     const shouldSendInCron = mode === "manual" || isLastDay || !(await wasReminderSentRecently(item.personId, 6));

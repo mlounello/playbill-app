@@ -29,6 +29,30 @@ function formatAuditValue(value: unknown) {
   }
 }
 
+function formatAuditFieldLabel(field: string) {
+  const map: Record<string, string> = {
+    bio: "Submission Body",
+    headshot_url: "Headshot URL",
+    submission_status: "Status",
+    no_bio: "No Bio Requested",
+    director_notes: "Director's Note",
+    dramaturgical_note: "Dramaturgical Note",
+    music_director_note: "Music Director's Note",
+    return_message: "Return Message"
+  };
+  return map[field] ?? field.replace(/_/g, " ");
+}
+
+function getStatusHint(status: string) {
+  if (status === "pending") return "Next step: save draft or submit.";
+  if (status === "draft") return "Next step: submit for review.";
+  if (status === "submitted") return "Next step: approve, return, or lock.";
+  if (status === "returned") return "Next step: contributor/admin edits then resubmit.";
+  if (status === "approved") return "Next step: lock when finalized.";
+  if (status === "locked") return "Locked submissions are read-only.";
+  return "";
+}
+
 function formatTextDiff(before: unknown, after: unknown) {
   if (typeof before !== "string" || typeof after !== "string") {
     return null;
@@ -139,6 +163,7 @@ export default async function ShowSubmissionReviewPage({
               <option value="locked">Locked</option>
             </select>
           </label>
+          <div className="meta-text">{getStatusHint(review.person.submission_status)}</div>
 
           <label>
             Reason / reviewer note
@@ -158,7 +183,7 @@ export default async function ShowSubmissionReviewPage({
               return (
                 <div key={entry.id} className="card card-soft">
                   <div>
-                    <strong>{entry.field}</strong> • {new Date(entry.changed_at).toLocaleString("en-US")}
+                    <strong>{formatAuditFieldLabel(entry.field)}</strong> • {new Date(entry.changed_at).toLocaleString("en-US")}
                   </div>
                   <div style={{ fontSize: "0.88rem" }}>Reason: {entry.reason || "n/a"}</div>
                   <div style={{ fontSize: "0.82rem" }}>
