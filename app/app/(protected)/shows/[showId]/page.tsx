@@ -42,6 +42,7 @@ import {
   bulkEditPeopleField,
   bulkEditSelectedPeople,
   countWordsFromRichText,
+  bulkApproveBios,
   importBiosFromCsv,
   getShowRoleAssignments,
   getShowSpecialNoteAssignments,
@@ -151,6 +152,7 @@ export default async function ShowWorkspacePage({
   const updateRoleAssignmentAction = updateRoleAssignment.bind(null, show.id);
   const removeRoleAssignmentAction = removeRoleAssignment.bind(null, show.id);
   const importBiosAction = importBiosFromCsv.bind(null, show.id);
+  const bulkApproveBiosAction = bulkApproveBios.bind(null, show.id);
   const archiveShowAction = archiveShow.bind(null, show.id);
   const restoreShowAction = restoreArchivedShow.bind(null, show.id);
   const deleteShowAction = deleteArchivedShow.bind(null, show.id);
@@ -989,6 +991,12 @@ export default async function ShowWorkspacePage({
                     <button type="submit">Import Bios CSV</button>
                   </form>
                 </details>
+                <form action={bulkApproveBiosAction} className="top-actions" data-pending-label="Bulk approving bios..." data-preserve-scroll="true">
+                  <button type="submit">Bulk Approve Eligible Bios</button>
+                  <span className="section-note">
+                    Approves bios with content (or marked No Bio) that are not already approved/locked.
+                  </span>
+                </form>
                 <div className="chip-row">
                   {[
                     ["all", "All"],

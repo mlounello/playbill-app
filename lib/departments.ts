@@ -38,7 +38,7 @@ function renderDepartmentBlock(department: DepartmentRecord) {
     sections.push(`<p>${department.contact_phone.trim()}</p>`);
   }
   const body = sections.length > 0 ? sections.join("") : "<p>Department details were not provided.</p>";
-  return `<section><h3>${department.name.trim()}</h3>${body}</section>`;
+  return `<section><h3 class="section-title playbill-title">${department.name.trim()}</h3>${body}</section>`;
 }
 
 export function buildDepartmentInfoHtml(departments: DepartmentRecord[]) {

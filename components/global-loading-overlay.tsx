@@ -8,9 +8,15 @@ export function GlobalLoadingOverlay() {
   const searchParams = useSearchParams();
   const [active, setActive] = useState(false);
   const [label, setLabel] = useState("Working...");
+  const submittingRef = useState<{ form: HTMLFormElement | null; startedAt: number }>(() => ({
+    form: null,
+    startedAt: 0
+  }))[0];
 
   useEffect(() => {
     setActive(false);
+    submittingRef.form = null;
+    submittingRef.startedAt = 0;
     try {
       const raw = window.sessionStorage.getItem("playbill:return-scroll");
       if (!raw) return;
@@ -34,7 +40,31 @@ export function GlobalLoadingOverlay() {
     } catch {
       // Ignore scroll restore errors.
     }
-  }, [pathname, searchParams]);
+  }, [pathname, searchParams, submittingRef]);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      const now = Date.now();
+      const form = submittingRef.form;
+      const startedAt = submittingRef.startedAt || now;
+      const elapsed = now - startedAt;
+
+      // If the submitting form was replaced during same-route refresh, clear overlay.
+      const disconnected = Boolean(form) && !document.contains(form);
+      // Fallback so the overlay never gets stuck indefinitely.
+      const timedOut = elapsed > 90_000;
+
+      if (disconnected || timedOut) {
+        setActive(false);
+        submittingRef.form = null;
+        submittingRef.startedAt = 0;
+      }
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, [active, submittingRef]);
 
   useEffect(() => {
     const onSubmit = (event: Event) => {
@@ -69,6 +99,8 @@ export function GlobalLoadingOverlay() {
       } else {
         setLabel(form.dataset.pendingLabel || "Submitting...");
       }
+      submittingRef.form = form;
+      submittingRef.startedAt = Date.now();
       setActive(true);
     };
 

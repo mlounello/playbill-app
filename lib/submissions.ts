@@ -3312,6 +3312,48 @@ export async function adminQuickStatus(showId: string, personId: string, status:
   redirect(`/app/shows/${showId}?tab=submissions`);
 }
 
+export async function bulkApproveBios(showId: string) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const queue = await getShowSubmissionQueue(showId);
+  const candidates = queue.filter(
+    (task) =>
+      task.submission_type === "bio" &&
+      task.submission_status !== "approved" &&
+      task.submission_status !== "locked" &&
+      (task.no_bio || task.bio_char_count > 0)
+  );
+
+  if (candidates.length === 0) {
+    redirect(`/app/shows/${showId}?tab=submissions&success=${encodeURIComponent("No eligible bios to approve.")}`);
+  }
+
+  let approved = 0;
+  let skipped = 0;
+  for (const task of candidates) {
+    const result = await updateSubmissionCore({
+      showId,
+      requestId: String(task.task_id ?? ""),
+      personId: task.person_id,
+      submissionType: "bio",
+      bio: task.bio,
+      headshotUrl: task.headshot_url,
+      status: "approved",
+      reason: "admin bulk approve bios",
+      skipBio: task.no_bio
+    });
+    if (result.ok) {
+      approved += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+
+  const message = `Bulk bio approval complete. Approved ${approved}${skipped > 0 ? `, skipped ${skipped}` : ""}.`;
+  redirect(`/app/shows/${showId}?tab=submissions&success=${encodeURIComponent(message)}`);
+}
+
 export async function importBiosFromCsv(showId: string, formData: FormData) {
   "use server";
 
