@@ -84,6 +84,21 @@ const addableModuleTypes = [
   "custom_pages"
 ];
 
+function isDefaultIsolated(moduleType: string) {
+  const isolated = new Set([
+    "cover",
+    "cast_list",
+    "creative_team",
+    "production_team",
+    "bios",
+    "headshots_grid",
+    "production_photos",
+    "custom_image",
+    "back_cover"
+  ]);
+  return isolated.has(moduleType);
+}
+
 function normalizeModules(modules: ShowModule[]): ModuleItem[] {
   return modules.map((mod) => ({
     id: mod.id,
@@ -268,6 +283,7 @@ export function ProgramPlanEditor({
           ...item,
           settings: {
             ...item.settings,
+            placement_mode: separate ? "isolated" : "flow",
             separate_page: separate,
             // Keep legacy flag aligned to avoid contradictory older records.
             keep_together: separate
@@ -288,7 +304,12 @@ export function ProgramPlanEditor({
         display_title: moduleTypeLabels[newModuleType] || newModuleType,
         visible: true,
         filler_eligible: false,
-        settings: {}
+        settings: {
+          placement_mode: isDefaultIsolated(newModuleType) ? "isolated" : "flow",
+          separate_page: isDefaultIsolated(newModuleType),
+          show_header: true,
+          allow_multiple_pages: newModuleType === "bios" || newModuleType === "custom_pages"
+        }
       }
     ]);
   };
@@ -427,7 +448,10 @@ export function ProgramPlanEditor({
                 <input
                   type="radio"
                   name={`page-behavior-${item.id}`}
-                  checked={!Boolean(item.settings.separate_page ?? true)}
+                  checked={
+                    String(item.settings.placement_mode ?? "").toLowerCase() === "flow" ||
+                    !Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type))
+                  }
                   onChange={() => setPageBehavior(index, "share")}
                 />
                 Can share page with other modules
@@ -436,7 +460,10 @@ export function ProgramPlanEditor({
                 <input
                   type="radio"
                   name={`page-behavior-${item.id}`}
-                  checked={Boolean(item.settings.separate_page ?? true)}
+                  checked={
+                    String(item.settings.placement_mode ?? "").toLowerCase() === "isolated" ||
+                    Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type))
+                  }
                   onChange={() => setPageBehavior(index, "standalone")}
                 />
                 Must remain by itself

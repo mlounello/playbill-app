@@ -39,6 +39,15 @@ function withError(path: string, message: string): never {
   redirect(`${path}?${qp.toString()}`);
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function monthToken(dateValue: string) {
   const date = new Date(`${dateValue}T00:00:00`);
   if (Number.isNaN(date.getTime())) {
@@ -96,14 +105,38 @@ export function buildSeasonCalendarHtml(events: SeasonEventRecord[]) {
   }
 
   const body = events
-    .map((event) => {
-      const badge = formatDateBadge(event.event_start_date, event.event_end_date);
+    .map((event, index) => {
+      const startMonth = monthToken(event.event_start_date);
+      const startDay = dayToken(event.event_start_date);
+      const endMonth = event.event_end_date ? monthToken(event.event_end_date) : "";
+      const endDay = event.event_end_date ? dayToken(event.event_end_date) : "";
+      const dayLabel =
+        event.event_end_date && endDay
+          ? startMonth === endMonth
+            ? `${startDay}-${endDay}`
+            : `${startDay}-${endDay}`
+          : startDay;
       const detailLine = [event.location.trim(), event.time_text.trim()].filter(Boolean).join(" at ");
-      return `<section><h3>${badge}</h3><p><strong>${event.title}</strong><br/>${detailLine || "Location & Time TBD"}</p></section>`;
+      const paletteClass = index % 2 === 0 ? "season-bg-accent" : "season-bg-highlight";
+      return `<div class="season-calendar-item">
+        <div class="season-date ${paletteClass}">
+          <span class="season-date-month">${startMonth}</span>
+          <span class="season-date-day">${escapeHtml(dayLabel || formatDateBadge(event.event_start_date, event.event_end_date))}</span>
+        </div>
+        <div class="season-body ${paletteClass}">
+          <p class="season-event-title">${escapeHtml(event.title)}</p>
+          <p class="season-event-meta">${escapeHtml(detailLine || "Location & Time TBD")}</p>
+        </div>
+      </div>`;
     })
     .join("");
 
-  return sanitizeRichText(`<h3>Upcoming Creative Arts Events</h3>${body}`);
+  return sanitizeRichText(
+    `<div class="season-calendar">
+      <h3 class="season-calendar-title">Upcoming Creative Arts Events</h3>
+      <div class="season-calendar-list">${body}</div>
+    </div>`
+  );
 }
 
 async function refreshSeasonCalendarForShow(showId: string) {

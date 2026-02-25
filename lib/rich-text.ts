@@ -13,7 +13,9 @@ const allowedTags = new Set([
   "blockquote",
   "h3",
   "h4",
-  "span"
+  "span",
+  "div",
+  "section"
 ]);
 
 const allowedClassNames = new Set([
@@ -32,7 +34,19 @@ const allowedClassNames = new Set([
   "bio-role-inline",
   "stacked-sections",
   "stacked-section",
-  "stacked-section-title"
+  "stacked-section-title",
+  "season-calendar",
+  "season-calendar-title",
+  "season-calendar-list",
+  "season-calendar-item",
+  "season-date",
+  "season-date-month",
+  "season-date-day",
+  "season-body",
+  "season-event-title",
+  "season-event-meta",
+  "season-bg-accent",
+  "season-bg-highlight"
 ]);
 
 function sanitizeAttributes(tagName: string, attrs: string) {

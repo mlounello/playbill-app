@@ -106,6 +106,40 @@ function normalizeModuleType(value: string) {
   return normalized;
 }
 
+function normalizeModuleSettings(settings: Record<string, unknown> | undefined, moduleType: string) {
+  const next: Record<string, unknown> = { ...(settings ?? {}) };
+  const defaultIsolated = new Set([
+    "cover",
+    "cast_list",
+    "creative_team",
+    "production_team",
+    "bios",
+    "headshots_grid",
+    "production_photos",
+    "custom_image",
+    "back_cover"
+  ]).has(normalizeModuleType(moduleType));
+
+  const placementRaw = String(next.placement_mode ?? "").trim().toLowerCase();
+  if (placementRaw === "flow" || placementRaw === "isolated") {
+    next.separate_page = placementRaw === "isolated";
+  } else if (next.separate_page !== undefined) {
+    next.placement_mode = Boolean(next.separate_page) ? "isolated" : "flow";
+  } else {
+    next.placement_mode = defaultIsolated ? "isolated" : "flow";
+    next.separate_page = defaultIsolated;
+  }
+
+  if (next.show_header === undefined) {
+    next.show_header = true;
+  }
+  if (next.allow_multiple_pages === undefined) {
+    next.allow_multiple_pages = normalizeModuleType(moduleType) === "bios" || normalizeModuleType(moduleType) === "custom_pages";
+  }
+
+  return next;
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -535,7 +569,7 @@ export async function updateShowModules(showId: string, formData: FormData) {
         module_order: index,
         visible: module.visible,
         filler_eligible: module.filler_eligible,
-        settings: module.settings ?? {}
+        settings: normalizeModuleSettings(module.settings, module.module_type)
       }))
     );
     if (insertError) {

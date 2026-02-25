@@ -618,6 +618,12 @@ button.tab-chip {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.form-row-3 {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .panel-grid {
   display: grid;
   gap: 0.75rem;
@@ -1117,6 +1123,93 @@ body.density-compact .admin-surface textarea {
   letter-spacing: 0.03em;
 }
 
+.season-calendar {
+  display: grid;
+  gap: 0.14in;
+}
+
+.season-calendar-title {
+  margin: 0 0 0.06in 0;
+  text-align: center;
+  font-family: var(--font-title);
+  text-transform: uppercase;
+  color: #00705a;
+  font-size: 26pt;
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+}
+
+.season-calendar-list {
+  display: grid;
+  gap: 0.06in;
+}
+
+.season-calendar-item {
+  display: grid;
+  grid-template-columns: 0.92in 1fr;
+  gap: 0.04in;
+  align-items: stretch;
+}
+
+.season-date,
+.season-body {
+  border-radius: 0.06in;
+  padding: 0.08in 0.09in;
+}
+
+.season-date {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.02in;
+  text-align: center;
+}
+
+.season-date-month {
+  font-family: var(--font-title);
+  font-size: 10pt;
+  line-height: 1;
+  letter-spacing: 0.05em;
+}
+
+.season-date-day {
+  font-family: var(--font-title);
+  font-size: 20pt;
+  line-height: 0.92;
+}
+
+.season-body {
+  display: grid;
+  gap: 0.03in;
+  align-content: center;
+}
+
+.season-event-title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 16pt;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.season-event-meta {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 10.5pt;
+  line-height: 1.2;
+}
+
+.season-bg-accent {
+  background: #006b54;
+  color: #ffffff;
+}
+
+.season-bg-highlight {
+  background: #f2c600;
+  color: #111111;
+}
+
 .folio {
   font-size: 0.85rem;
   text-align: center;
@@ -1362,6 +1455,10 @@ body.density-compact .admin-surface textarea {
   }
 
   .form-row-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row-3 {
     grid-template-columns: 1fr;
   }
 

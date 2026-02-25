@@ -1,6 +1,6 @@
 # Execution Status Tracker
 
-Last updated: 2026-02-25
+Last updated: 2026-02-25 (later session)
 
 This file tracks progress against the agreed execution plan (Phase 0 through Phase 8).
 
@@ -11,11 +11,11 @@ This file tracks progress against the agreed execution plan (Phase 0 through Pha
 | 0 | Baseline + Regression Repro | Done |
 | 1 | Data/Render Correctness First | Done |
 | 2 | Module Behavior Model Refactor | Mostly done |
-| 3 | Pagination/Stacking Engine Upgrade | Partially done |
+| 3 | Pagination/Stacking Engine Upgrade | Mostly done |
 | 4 | People & Roles UX Overhaul | Partially done |
-| 5 | Special Note Assignment System | Partially done |
+| 5 | Special Note Assignment System | Mostly done |
 | 6 | Editor/Preview Interaction Improvements | Partially done |
-| 7 | Visual/Brand Polish Pass | Partially done |
+| 7 | Visual/Brand Polish Pass | Mostly done |
 | 8 | Deep Cleanup + Debt Removal | Not started |
 
 ## Detailed Notes
@@ -45,29 +45,34 @@ This file tracks progress against the agreed execution plan (Phase 0 through Pha
   - Final edge-case verification for all toggle combinations across preview/export parity.
 
 ## Phase 3: Pagination/Stacking Engine Upgrade
-- Status: Partially done
+- Status: Mostly done
 - Completed:
   - Multiple pagination bugs fixed.
   - Bio split behavior improved.
+  - Added richer text-module pagination support when `allow_multiple_pages=true` so long note/section modules can continue across pages.
+  - Tightened stack budgets and flow packing behavior for safer print-fit (fewer clipped overflows).
 - Remaining:
-  - Deeper flow-packing logic so “flow” modules fill remaining page space better.
-  - Final no-illegal-split guarantees in all mixed-module cases.
+  - Final tuning against real full-show imports for edge cases with very dense mixed modules.
 
 ## Phase 4: People & Roles UX Overhaul
-- Status: Partially done
+- Status: Mostly done
 - Completed:
   - Significant improvements to role assignment editing and category handling.
   - Stability fixes for people/roles routes and saves.
+  - Consolidated management around the main people table + person edit modal with inline role add/edit/remove.
+  - Removed duplicate role-assignment management surface to reduce confusion.
 - Remaining:
-  - Fully consolidated one-table UX with inline multi-role assignment and cleaner editing model.
+  - Optional polish pass (column density, inline sorting/filter controls) after next live usage cycle.
 
 ## Phase 5: Special Note Assignment System
-- Status: Partially done
+- Status: Mostly done
 - Completed:
   - Special note save/read stability improved.
   - Submission-line behavior for notes improved.
+  - Added reusable special note template library flow (global/show scope) with create/archive actions.
+  - Added template selection directly in Special Note Assignments and persisted template metadata to submission request constraints/labels.
 - Remaining:
-  - Reusable `note_templates` model (global + show-specific), plus assignment UI flow.
+  - Optional expansion to fully custom note *types* beyond director/dramaturg/music (larger schema/render flow change).
 
 ## Phase 6: Editor/Preview Interaction Improvements
 - Status: Partially done
@@ -79,13 +84,13 @@ This file tracks progress against the agreed execution plan (Phase 0 through Pha
   - Further no-jump partial update behavior across admin forms.
 
 ## Phase 7: Visual/Brand Polish Pass
-- Status: Partially done
+- Status: Mostly done
 - Completed:
   - Broad style cleanup across major pages.
   - Better consistency in controls and loading feedback.
+  - Implemented styled Season Calendar rendering with branded boxed/date-badge visual treatment.
 - Remaining:
-  - Fully styled season schedule module matching target boxed visual design.
-  - Final spacing/typography/microcopy consistency pass.
+  - Final spacing/typography/microcopy consistency pass after next integrated QA round.
 
 ## Phase 8: Deep Cleanup + Debt Removal
 - Status: Not started
@@ -94,7 +99,7 @@ This file tracks progress against the agreed execution plan (Phase 0 through Pha
   - Logic path consolidation, test/lint/type gates, and cleanup report.
 
 ## Current Overall Estimate
-- Approximate completion against this 0–8 execution plan: 55% to 65%.
+- Approximate completion against this 0–8 execution plan: 72% to 82%.
 
 ## Update Rule
 - Update this file at the end of each implementation batch with:

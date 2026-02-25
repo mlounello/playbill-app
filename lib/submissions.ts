@@ -66,6 +66,33 @@ function inferSubmissionTypeFromRole(roleTitle: string): SubmissionType {
   return "bio";
 }
 
+function isSpecialNoteType(value: SubmissionType): value is Exclude<SubmissionType, "bio"> {
+  return value === "director_note" || value === "dramaturgical_note" || value === "music_director_note";
+}
+
+function defaultSpecialNoteTemplates(): SpecialNoteTemplateOption[] {
+  return [
+    {
+      id: "default:director_note",
+      name: "Director's Note",
+      request_type: "director_note",
+      scope: "global"
+    },
+    {
+      id: "default:dramaturgical_note",
+      name: "Dramaturgical Note",
+      request_type: "dramaturgical_note",
+      scope: "global"
+    },
+    {
+      id: "default:music_director_note",
+      name: "Music Director's Note",
+      request_type: "music_director_note",
+      scope: "global"
+    }
+  ];
+}
+
 const manualPersonSchema = z.object({
   fullName: z.string().min(1),
   roleTitle: z.string().min(1),
@@ -153,6 +180,13 @@ export type ShowRoleAssignment = {
   role_name: string;
   category: RoleCategory;
   role_template_id: string | null;
+};
+
+export type SpecialNoteTemplateOption = {
+  id: string;
+  name: string;
+  request_type: Exclude<SubmissionType, "bio">;
+  scope: "global" | "show";
 };
 
 function withError(path: string, message: string): never {
@@ -319,6 +353,54 @@ function filterToColumns(record: Record<string, unknown>, columns: Set<string>) 
     return record;
   }
   return Object.fromEntries(Object.entries(record).filter(([key]) => columns.has(key)));
+}
+
+async function listSpecialNoteTemplatesForShow(showId: string) {
+  const client = getSupabaseWriteClient();
+  const templatesTableColumns = await getTableColumns(client, "note_templates");
+  const defaults = defaultSpecialNoteTemplates();
+  if (templatesTableColumns.size === 0) {
+    return defaults;
+  }
+
+  const supportsScope = templatesTableColumns.has("scope");
+  const supportsShowId = templatesTableColumns.has("show_id");
+  const supportsArchived = templatesTableColumns.has("is_archived");
+
+  let query = client.from("note_templates").select("id, name, request_type, scope, show_id, is_archived");
+  if (supportsArchived) {
+    query = query.eq("is_archived", false);
+  }
+  const { data } = await query;
+  const rows = (data ?? []).filter((row) => {
+    const requestType = normalizeSubmissionType(String(row.request_type ?? ""));
+    if (!isSpecialNoteType(requestType)) {
+      return false;
+    }
+    const rowScope = supportsScope ? String(row.scope ?? "global").toLowerCase() : "global";
+    if (rowScope === "global") {
+      return true;
+    }
+    if (rowScope === "show" && supportsShowId) {
+      return String(row.show_id ?? "") === showId;
+    }
+    return false;
+  });
+
+  const customTemplates: SpecialNoteTemplateOption[] = rows.map((row) => {
+    const requestType = normalizeSubmissionType(String(row.request_type ?? ""));
+    return {
+      id: String(row.id ?? ""),
+      name: String(row.name ?? ""),
+      request_type: requestType === "bio" ? "director_note" : requestType,
+      scope:
+        supportsScope && String(row.scope ?? "global").toLowerCase() === "show"
+          ? "show"
+          : "global"
+    };
+  });
+
+  return [...defaults, ...customTemplates];
 }
 
 function rowHasColumn(row: Record<string, unknown>, column: string) {
@@ -728,7 +810,10 @@ export async function getShowSpecialNoteAssignments(showId: string) {
     return {
       directorPersonId: "",
       dramaturgPersonId: "",
-      musicDirectorPersonId: ""
+      musicDirectorPersonId: "",
+      directorTemplateId: "",
+      dramaturgTemplateId: "",
+      musicDirectorTemplateId: ""
     };
   }
 
@@ -743,20 +828,27 @@ export async function getShowSpecialNoteAssignments(showId: string) {
     return {
       directorPersonId: "",
       dramaturgPersonId: "",
-      musicDirectorPersonId: ""
+      musicDirectorPersonId: "",
+      directorTemplateId: "",
+      dramaturgTemplateId: "",
+      musicDirectorTemplateId: ""
     };
   }
 
   const { data: requests } = await client
     .from("submission_requests")
-    .select("show_role_id, request_type, created_at")
+    .select("show_role_id, request_type, created_at, constraints")
     .in("show_role_id", roleIds);
 
   const noteRequests = (requests ?? [])
     .map((row) => ({
       show_role_id: String(row.show_role_id ?? ""),
       request_type: normalizeSubmissionType(String(row.request_type ?? "bio")),
-      created_at: String(row.created_at ?? "")
+      created_at: String(row.created_at ?? ""),
+      template_id:
+        typeof (row.constraints as Record<string, unknown> | null)?.template_id === "string"
+          ? String((row.constraints as Record<string, unknown>).template_id ?? "")
+          : ""
     }))
     .filter((row) => row.request_type !== "bio")
     .sort((a, b) => {
@@ -768,19 +860,129 @@ export async function getShowSpecialNoteAssignments(showId: string) {
   let directorPersonId = "";
   let dramaturgPersonId = "";
   let musicDirectorPersonId = "";
+  let directorTemplateId = "";
+  let dramaturgTemplateId = "";
+  let musicDirectorTemplateId = "";
   for (const request of noteRequests) {
     const personId = roleById.get(request.show_role_id) ?? "";
     if (!personId) continue;
-    if (request.request_type === "director_note" && !directorPersonId) directorPersonId = personId;
-    if (request.request_type === "dramaturgical_note" && !dramaturgPersonId) dramaturgPersonId = personId;
-    if (request.request_type === "music_director_note" && !musicDirectorPersonId) musicDirectorPersonId = personId;
+    if (request.request_type === "director_note" && !directorPersonId) {
+      directorPersonId = personId;
+      directorTemplateId = request.template_id;
+    }
+    if (request.request_type === "dramaturgical_note" && !dramaturgPersonId) {
+      dramaturgPersonId = personId;
+      dramaturgTemplateId = request.template_id;
+    }
+    if (request.request_type === "music_director_note" && !musicDirectorPersonId) {
+      musicDirectorPersonId = personId;
+      musicDirectorTemplateId = request.template_id;
+    }
   }
 
   return {
     directorPersonId,
     dramaturgPersonId,
-    musicDirectorPersonId
+    musicDirectorPersonId,
+    directorTemplateId,
+    dramaturgTemplateId,
+    musicDirectorTemplateId
   };
+}
+
+export async function getShowSpecialNoteTemplates(showId: string) {
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    return defaultSpecialNoteTemplates();
+  }
+  return listSpecialNoteTemplatesForShow(showId);
+}
+
+export async function createSpecialNoteTemplate(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const name = String(formData.get("templateName") ?? "").trim();
+  const requestType = normalizeSubmissionType(String(formData.get("templateType") ?? ""));
+  const scopeRaw = String(formData.get("templateScope") ?? "show").trim().toLowerCase();
+  const scope = scopeRaw === "global" ? "global" : "show";
+  if (!name) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Template name is required.");
+  }
+  if (!isSpecialNoteType(requestType)) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Template type must be a special note type.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const tableColumns = await getTableColumns(client, "note_templates");
+  if (tableColumns.size === 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "note_templates table is not available. Run latest schema SQL.");
+  }
+
+  const payload = filterToColumns(
+    {
+      name,
+      request_type: requestType,
+      scope,
+      show_id: scope === "show" ? showId : null,
+      is_archived: false
+    },
+    tableColumns
+  );
+
+  const { error } = await client.from("note_templates").insert(payload);
+  if (error) {
+    withError(`/app/shows/${showId}?tab=people-roles`, error.message);
+  }
+
+  redirect(
+    `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
+      `Special note template created: ${name}`
+    )}`
+  );
+}
+
+export async function archiveSpecialNoteTemplate(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const templateId = String(formData.get("templateId") ?? "").trim();
+  if (!templateId) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Template id is required.");
+  }
+  if (templateId.startsWith("default:")) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Default templates cannot be removed.");
+  }
+
+  const client = getSupabaseWriteClient();
+  const tableColumns = await getTableColumns(client, "note_templates");
+  if (tableColumns.size === 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "note_templates table is not available.");
+  }
+
+  const updatePayload = filterToColumns(
+    {
+      is_archived: true,
+      updated_at: new Date().toISOString()
+    },
+    tableColumns
+  );
+  const { error } = await client.from("note_templates").update(updatePayload).eq("id", templateId);
+  if (error) {
+    withError(`/app/shows/${showId}?tab=people-roles`, error.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Special note template archived.")}`);
 }
 
 export async function addPeopleToShow(showId: string, formData: FormData) {
@@ -1927,6 +2129,9 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
   const directorPersonId = String(formData.get("directorPersonId") ?? "").trim();
   const dramaturgPersonId = String(formData.get("dramaturgPersonId") ?? "").trim();
   const musicDirectorPersonId = String(formData.get("musicDirectorPersonId") ?? "").trim();
+  const directorTemplateId = String(formData.get("directorTemplateId") ?? "").trim();
+  const dramaturgTemplateId = String(formData.get("dramaturgTemplateId") ?? "").trim();
+  const musicDirectorTemplateId = String(formData.get("musicDirectorTemplateId") ?? "").trim();
 
   const selected = [directorPersonId, dramaturgPersonId, musicDirectorPersonId].filter(Boolean);
   const unique = new Set(selected);
@@ -1970,6 +2175,8 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     rolesByPersonId.set(role.person_id, list);
   }
   const showRolesColumns = await getTableColumns(client, "show_roles");
+  const noteTemplates = await listSpecialNoteTemplatesForShow(showId);
+  const noteTemplateById = new Map(noteTemplates.map((template) => [template.id, template]));
   const castBillingValues = await client
     .from("show_roles")
     .select("billing_order, category")
@@ -2055,6 +2262,11 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     { type: "dramaturgical_note", personId: dramaturgPersonId },
     { type: "music_director_note", personId: musicDirectorPersonId }
   ];
+  const templateByType: Record<string, string> = {
+    director_note: directorTemplateId,
+    dramaturgical_note: dramaturgTemplateId,
+    music_director_note: musicDirectorTemplateId
+  };
 
   for (const assignment of requestedAssignments) {
     const selectedRoleId = assignment.personId ? getPreferredRoleIdForPerson(assignment.personId) : "";
@@ -2064,11 +2276,22 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     }
 
     if (selectedRoleId) {
+      const selectedTemplateId = templateByType[assignment.type] || `default:${assignment.type}`;
+      const templateCandidate = noteTemplateById.get(selectedTemplateId);
+      const template =
+        templateCandidate && templateCandidate.request_type === assignment.type
+          ? templateCandidate
+          : noteTemplateById.get(`default:${assignment.type}`);
+      const requestLabel = template?.name?.trim() ? `${template.name.trim()} Submission` : `${getSubmissionTypeLabel(assignment.type)} Submission`;
       await client.from("submission_requests").insert({
         show_role_id: selectedRoleId,
         request_type: assignment.type,
-        label: `${getSubmissionTypeLabel(assignment.type)} Submission`,
-        constraints: getSubmissionConstraints(assignment.type),
+        label: requestLabel,
+        constraints: {
+          ...getSubmissionConstraints(assignment.type),
+          template_id: template?.id ?? "",
+          template_name: template?.name ?? getSubmissionTypeLabel(assignment.type)
+        },
         status: "pending"
       });
     }
@@ -2094,7 +2317,10 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     afterValue: {
       directorPersonId: directorPersonId || null,
       dramaturgPersonId: dramaturgPersonId || null,
-      musicDirectorPersonId: musicDirectorPersonId || null
+      musicDirectorPersonId: musicDirectorPersonId || null,
+      directorTemplateId: directorTemplateId || null,
+      dramaturgTemplateId: dramaturgTemplateId || null,
+      musicDirectorTemplateId: musicDirectorTemplateId || null
     },
     reason: assignmentLabel
   });

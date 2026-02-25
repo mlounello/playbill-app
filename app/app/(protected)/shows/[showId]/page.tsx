@@ -34,6 +34,7 @@ import {
   BIO_CHAR_LIMIT_DEFAULT,
   SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
   addRoleAssignmentToPerson,
+  archiveSpecialNoteTemplate,
   addPeopleToShow,
   adminQuickStatus,
   adminReturnSubmission,
@@ -43,11 +44,13 @@ import {
   importBiosFromCsv,
   getShowRoleAssignments,
   getShowSpecialNoteAssignments,
+  getShowSpecialNoteTemplates,
   getShowSubmissionQueue,
   removeRoleAssignment,
   resyncShowSubmissionRequests,
   getShowSubmissionPeople,
   updateRoleAssignment,
+  createSpecialNoteTemplate,
   updatePersonProfile,
   updateSpecialNoteAssignments
 } from "@/lib/submissions";
@@ -130,12 +133,22 @@ export default async function ShowWorkspacePage({
   const specialNoteAssignments =
     activeTab === "people-roles"
       ? await getShowSpecialNoteAssignments(show.id)
-      : { directorPersonId: "", dramaturgPersonId: "", musicDirectorPersonId: "" };
+      : {
+          directorPersonId: "",
+          dramaturgPersonId: "",
+          musicDirectorPersonId: "",
+          directorTemplateId: "",
+          dramaturgTemplateId: "",
+          musicDirectorTemplateId: ""
+        };
+  const specialNoteTemplates = activeTab === "people-roles" ? await getShowSpecialNoteTemplates(show.id) : [];
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
   const updatePersonProfileAction = updatePersonProfile.bind(null, show.id);
   const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
+  const createSpecialNoteTemplateAction = createSpecialNoteTemplate.bind(null, show.id);
+  const archiveSpecialNoteTemplateAction = archiveSpecialNoteTemplate.bind(null, show.id);
   const resyncSubmissionRequestsAction = resyncShowSubmissionRequests.bind(null, show.id);
   const addRoleAssignmentAction = addRoleAssignmentToPerson.bind(null, show.id);
   const updateRoleAssignmentAction = updateRoleAssignment.bind(null, show.id);
@@ -327,6 +340,9 @@ export default async function ShowWorkspacePage({
   const currentDirectorNotePersonId = specialNoteAssignments.directorPersonId;
   const currentDramaturgNotePersonId = specialNoteAssignments.dramaturgPersonId;
   const currentMusicDirectorNotePersonId = specialNoteAssignments.musicDirectorPersonId;
+  const currentDirectorTemplateId = specialNoteAssignments.directorTemplateId || "default:director_note";
+  const currentDramaturgTemplateId = specialNoteAssignments.dramaturgTemplateId || "default:dramaturgical_note";
+  const currentMusicDirectorTemplateId = specialNoteAssignments.musicDirectorTemplateId || "default:music_director_note";
   const roleAssignments = activeTab === "people-roles" ? await getShowRoleAssignments(show.id) : [];
   const roleLibrary =
     activeTab === "people-roles"
@@ -645,42 +661,142 @@ export default async function ShowWorkspacePage({
                 <p className="section-note">
                   Assign who should submit Director, Dramaturgical, and Music Director notes. This updates submission requirements automatically.
                 </p>
-                <form action={updateSpecialNotesAction} className="form-row-3" data-pending-label="Saving special note assignments..." data-preserve-scroll="true">
-                  <label>
-                    Director&apos;s Note
-                    <select name="directorPersonId" defaultValue={currentDirectorNotePersonId}>
-                      <option value="">Unassigned</option>
-                      {specialNotePeople.map((person) => (
-                        <option key={`director-${person.id}`} value={person.id}>
-                          {person.full_name} - {person.role_title}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Dramaturgical Note
-                    <select name="dramaturgPersonId" defaultValue={currentDramaturgNotePersonId}>
-                      <option value="">Unassigned</option>
-                      {specialNotePeople.map((person) => (
-                        <option key={`dramaturg-${person.id}`} value={person.id}>
-                          {person.full_name} - {person.role_title}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Music Director&apos;s Note
-                    <select name="musicDirectorPersonId" defaultValue={currentMusicDirectorNotePersonId}>
-                      <option value="">Unassigned</option>
-                      {specialNotePeople.map((person) => (
-                        <option key={`music-${person.id}`} value={person.id}>
-                          {person.full_name} - {person.role_title}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                <form action={updateSpecialNotesAction} className="grid" style={{ gap: "0.75rem" }} data-pending-label="Saving special note assignments..." data-preserve-scroll="true">
+                  <div className="form-row-2">
+                    <label>
+                      Director Note Template
+                      <select name="directorTemplateId" defaultValue={currentDirectorTemplateId}>
+                        {specialNoteTemplates
+                          .filter((template) => template.request_type === "director_note")
+                          .map((template) => (
+                            <option key={`director-template-${template.id}`} value={template.id}>
+                              {template.name} {template.scope === "show" ? "(show)" : "(global)"}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Director&apos;s Note Person
+                      <select name="directorPersonId" defaultValue={currentDirectorNotePersonId}>
+                        <option value="">Unassigned</option>
+                        {specialNotePeople.map((person) => (
+                          <option key={`director-${person.id}`} value={person.id}>
+                            {person.full_name} - {person.role_title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="form-row-2">
+                    <label>
+                      Dramaturgical Template
+                      <select name="dramaturgTemplateId" defaultValue={currentDramaturgTemplateId}>
+                        {specialNoteTemplates
+                          .filter((template) => template.request_type === "dramaturgical_note")
+                          .map((template) => (
+                            <option key={`dramaturg-template-${template.id}`} value={template.id}>
+                              {template.name} {template.scope === "show" ? "(show)" : "(global)"}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Dramaturgical Note Person
+                      <select name="dramaturgPersonId" defaultValue={currentDramaturgNotePersonId}>
+                        <option value="">Unassigned</option>
+                        {specialNotePeople.map((person) => (
+                          <option key={`dramaturg-${person.id}`} value={person.id}>
+                            {person.full_name} - {person.role_title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="form-row-2">
+                    <label>
+                      Music Director Template
+                      <select name="musicDirectorTemplateId" defaultValue={currentMusicDirectorTemplateId}>
+                        {specialNoteTemplates
+                          .filter((template) => template.request_type === "music_director_note")
+                          .map((template) => (
+                            <option key={`music-template-${template.id}`} value={template.id}>
+                              {template.name} {template.scope === "show" ? "(show)" : "(global)"}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Music Director&apos;s Note Person
+                      <select name="musicDirectorPersonId" defaultValue={currentMusicDirectorNotePersonId}>
+                        <option value="">Unassigned</option>
+                        {specialNotePeople.map((person) => (
+                          <option key={`music-${person.id}`} value={person.id}>
+                            {person.full_name} - {person.role_title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   <button type="submit">Save Special Note Assignments</button>
                 </form>
+                <details>
+                  <summary><strong>Manage Special Note Templates</strong></summary>
+                  <div className="stack-sm" style={{ marginTop: "0.5rem" }}>
+                    <form action={createSpecialNoteTemplateAction} className="form-row-3" data-pending-label="Creating note template..." data-preserve-scroll="true">
+                      <label>
+                        Template name
+                        <input name="templateName" placeholder="e.g. Director's Context Note" required />
+                      </label>
+                      <label>
+                        Note type
+                        <select name="templateType" defaultValue="director_note">
+                          <option value="director_note">Director Note</option>
+                          <option value="dramaturgical_note">Dramaturgical Note</option>
+                          <option value="music_director_note">Music Director Note</option>
+                        </select>
+                      </label>
+                      <label>
+                        Scope
+                        <select name="templateScope" defaultValue="show">
+                          <option value="show">Show-only</option>
+                          <option value="global">Global</option>
+                        </select>
+                      </label>
+                      <button type="submit">Create Template</button>
+                    </form>
+                    <div className="table-frame">
+                      <table className="simple-table">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Scope</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {specialNoteTemplates.map((template) => (
+                            <tr key={`special-template-row-${template.id}`}>
+                              <td>{template.name}</td>
+                              <td>{template.request_type}</td>
+                              <td>{template.scope}</td>
+                              <td>
+                                {template.id.startsWith("default:") ? (
+                                  <span className="meta-text">Default</span>
+                                ) : (
+                                  <form action={archiveSpecialNoteTemplateAction} data-pending-label="Archiving note template..." data-preserve-scroll="true">
+                                    <input type="hidden" name="templateId" value={template.id} />
+                                    <button type="submit">Archive</button>
+                                  </form>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </details>
                 <form action={resyncSubmissionRequestsAction} className="top-actions" data-pending-label="Resyncing submission requests..." data-preserve-scroll="true">
                   <button type="submit">Resync Submission Requests</button>
                   <span className="section-note">
@@ -826,6 +942,7 @@ export default async function ShowWorkspacePage({
                 onSubmitAction={bulkEditSelectedPeopleAction}
                 onEditAction={updatePersonProfileAction}
                 onAddRoleAction={addRoleAssignmentAction}
+                onUpdateRoleAction={updateRoleAssignmentAction}
                 onRemoveRoleAction={removeRoleAssignmentAction}
                 personRoles={roleAssignments}
                 roleTemplates={availableRoleTemplates.map((template) => ({
@@ -836,138 +953,10 @@ export default async function ShowWorkspacePage({
                 roleError={roleError}
                 roleErrorRoleName={roleName}
                 highlightedPersonId={personForRole || ""}
-                roleManageBasePath={`/app/shows/${show.id}?tab=people-roles`}
               />
               <p className="section-note">
-                Tip: if someone has more than one role, click <strong>Manage Roles</strong> in their row. Role/category edits are handled in Role Assignments.
+                Tip: if someone has more than one role, click <strong>Edit</strong> in their row and manage all role assignments in that modal.
               </p>
-
-              <article className="card stack-sm" id="role-assignments">
-                <strong>Role Assignments</strong>
-                <p className="section-note">
-                  Use this section for role/category changes and multi-role setup. Use "Current People" above for person identity fields (name/email/submission type).
-                </p>
-                <form method="get" className="form-row-2" data-preserve-scroll="true">
-                  <input type="hidden" name="tab" value="people-roles" />
-                  {personForRole ? <input type="hidden" name="personForRole" value={personForRole} /> : null}
-                  <label>
-                    Search roles
-                    <input name="roleQuery" defaultValue={activeRoleQuery} placeholder="Person or role name" />
-                  </label>
-                  <label>
-                    Category
-                    <select name="roleCategory" defaultValue={activeRoleCategory}>
-                      <option value="all">All</option>
-                      <option value="cast">cast</option>
-                      <option value="creative">creative</option>
-                      <option value="production">production</option>
-                    </select>
-                  </label>
-                  <button type="submit">Apply Role Filters</button>
-                </form>
-                <form
-                  action={addRoleAssignmentAction}
-                  className="form-row-2"
-                  data-pending-label="Adding role assignment..."
-                  data-preserve-scroll="true"
-                >
-                  <label>
-                    Person
-                    <select name="personId" required defaultValue={personForRole || ""}>
-                      <option value="" disabled>
-                        Select person
-                      </option>
-                      {people.map((person) => (
-                        <option key={`role-person-${person.id}`} value={person.id}>
-                          {person.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Role template (optional)
-                    <select name="roleTemplateId" defaultValue="">
-                      <option value="">None</option>
-                      {availableRoleTemplates.map((template) => (
-                        <option key={`template-${template.id}`} value={template.id}>
-                          {template.name} ({template.category})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Custom role name
-                    <input name="roleName" placeholder="Used when no template selected" />
-                  </label>
-                  <label>
-                    Category fallback
-                    <select name="roleCategory" defaultValue="production">
-                      <option value="cast">cast</option>
-                      <option value="creative">creative</option>
-                      <option value="production">production</option>
-                    </select>
-                  </label>
-                  <button type="submit">Add Role Assignment</button>
-                </form>
-                {roleError === "duplicate" ? (
-                  <div className="meta-text danger-title">
-                    Role already assigned to this person{roleName ? `: ${roleName}` : ""}.
-                  </div>
-                ) : null}
-
-                {filteredRoleAssignments.length === 0 ? (
-                  <div className="meta-text">
-                    {roleAssignments.length === 0 ? "No role assignments yet." : "No role assignments match the current filters."}
-                  </div>
-                ) : (
-                  <div className="role-assignments-list">
-                    {filteredRoleAssignments.map((assignment) => (
-                      <form
-                        key={assignment.id}
-                        action={updateRoleAssignmentAction}
-                        className="role-assignment-row"
-                        data-pending-label="Saving role assignment..."
-                        data-row-pending="true"
-                        data-preserve-scroll="true"
-                      >
-                        <input type="hidden" name="roleId" value={assignment.id} />
-                        <label className="role-assign-person">
-                          Person
-                          <input value={assignment.person_name} readOnly />
-                        </label>
-                        <label>
-                          Template
-                          <select name="roleTemplateId" defaultValue={assignment.role_template_id ?? ""}>
-                            <option value="">None</option>
-                            {availableRoleTemplates.map((template) => (
-                              <option key={`template-edit-${assignment.id}-${template.id}`} value={template.id}>
-                                {template.name} ({template.category})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Role name
-                          <input name="roleName" defaultValue={assignment.role_name} required />
-                        </label>
-                        <label>
-                          Category
-                          <select name="roleCategory" defaultValue={assignment.category}>
-                            <option value="cast">cast</option>
-                            <option value="creative">creative</option>
-                            <option value="production">production</option>
-                          </select>
-                        </label>
-                        <div className="stack-sm">
-                          <button type="submit">Save</button>
-                          {roleSaved === assignment.id ? <span className="meta-text">Saved</span> : null}
-                          <span className="meta-text row-pending-indicator">Saving...</span>
-                        </div>
-                      </form>
-                    ))}
-                  </div>
-                )}
-              </article>
             </section>
           ) : null}
 

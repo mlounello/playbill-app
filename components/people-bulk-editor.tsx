@@ -32,25 +32,25 @@ export function PeopleBulkEditor({
   onSubmitAction,
   onEditAction,
   onAddRoleAction,
+  onUpdateRoleAction,
   onRemoveRoleAction,
   personRoles,
   roleTemplates,
   roleError,
   roleErrorRoleName,
-  highlightedPersonId,
-  roleManageBasePath
+  highlightedPersonId
 }: {
   people: PersonRow[];
   onSubmitAction: (formData: FormData) => void;
   onEditAction: (formData: FormData) => void;
   onAddRoleAction: (formData: FormData) => void;
+  onUpdateRoleAction: (formData: FormData) => void;
   onRemoveRoleAction: (formData: FormData) => void;
   personRoles: PersonRoleRow[];
   roleTemplates: RoleTemplateOption[];
   roleError?: string;
   roleErrorRoleName?: string;
   highlightedPersonId?: string;
-  roleManageBasePath?: string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
@@ -201,11 +201,6 @@ export function PeopleBulkEditor({
                         >
                           Edit
                         </button>
-                        {roleManageBasePath ? (
-                          <a className="ghost-button" href={`${roleManageBasePath}&personForRole=${encodeURIComponent(person.id)}#role-assignments`}>
-                            Manage Roles
-                          </a>
-                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -332,11 +327,11 @@ export function PeopleBulkEditor({
               </div>
               <div className="people-field-row">
                 <label className="people-field-toggle">Role and category</label>
-                <input value="Edit roles below in Role Assignments" disabled />
+                <input value="Edit roles below in this modal" disabled />
                 <input type="hidden" name="roleTitle" value="" />
                 <input type="hidden" name="teamType" value="production" />
               </div>
-              <div className="meta-text">Use the Role Assignments section for multi-role and category changes.</div>
+              <div className="meta-text">Roles are managed below in this person editor.</div>
               <div className="people-field-row">
                 <label className="people-field-toggle">Email</label>
                 <input name="email" type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} required />
@@ -368,10 +363,37 @@ export function PeopleBulkEditor({
                   <div className="meta-text">No roles assigned yet.</div>
                   ) : (
                     editPersonRoles.map((role) => (
-                      <div key={role.id} className="row-between">
-                        <div className="meta-text">
-                          {role.role_name} ({role.category})
-                        </div>
+                      <div key={role.id} className="stack-sm">
+                        <form action={onUpdateRoleAction} data-row-pending="true" data-preserve-scroll="true" className="person-role-add-form">
+                          <input type="hidden" name="roleId" value={role.id} />
+                          <label>
+                            Template
+                            <select name="roleTemplateId" defaultValue={role.role_template_id ?? ""}>
+                              <option value="">None</option>
+                              {roleTemplates.map((template) => (
+                                <option key={`role-edit-template-${role.id}-${template.id}`} value={template.id}>
+                                  {template.name} ({template.category})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Role name
+                            <input name="roleName" defaultValue={role.role_name} required />
+                          </label>
+                          <label>
+                            Category
+                            <select name="roleCategory" defaultValue={role.category}>
+                              <option value="cast">cast</option>
+                              <option value="creative">creative</option>
+                              <option value="production">production</option>
+                            </select>
+                          </label>
+                          <div className="row-wrap">
+                            <button type="submit" className="ghost-button">Save Role</button>
+                            <span className="meta-text row-pending-indicator">Saving...</span>
+                          </div>
+                        </form>
                         <form action={onRemoveRoleAction} data-row-pending="true" data-preserve-scroll="true" className="person-role-remove-form">
                           <input type="hidden" name="roleId" value={role.id} />
                           <button type="submit" className="ghost-button">Remove Role</button>

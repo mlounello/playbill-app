@@ -587,6 +587,33 @@ function normalizeModuleType(value: string) {
   return normalized;
 }
 
+function moduleDefaultPlacementMode(moduleType: string): "flow" | "isolated" {
+  const normalized = normalizeModuleType(moduleType);
+  const isolated = new Set([
+    "cover",
+    "cast_list",
+    "creative_team",
+    "production_team",
+    "bios",
+    "headshots_grid",
+    "production_photos",
+    "custom_image",
+    "back_cover"
+  ]);
+  return isolated.has(normalized) ? "isolated" : "flow";
+}
+
+function getModulePlacementMode(module: ProgramModuleRecord): "flow" | "isolated" {
+  const placementRaw = String(module.settings.placement_mode ?? "").trim().toLowerCase();
+  if (placementRaw === "flow" || placementRaw === "isolated") {
+    return placementRaw;
+  }
+  if (module.settings.separate_page !== undefined) {
+    return Boolean(module.settings.separate_page) ? "isolated" : "flow";
+  }
+  return moduleDefaultPlacementMode(module.module_type);
+}
+
 function uniqueRoleNames(values: string[]) {
   const seen = new Set<string>();
   const ordered: string[] = [];
@@ -817,6 +844,92 @@ function estimateRichTextLines(html: string) {
   return charLines + paragraphBlocks * 2 + headingBlocks * 2 + listBlocks * 3 + hardBreaks;
 }
 
+function splitRichTextIntoBlocks(html: string) {
+  const trimmed = html.trim();
+  if (!trimmed) {
+    return [] as string[];
+  }
+
+  const semanticMatches = trimmed.match(/<(p|h3|h4|li|blockquote)[^>]*>[\s\S]*?<\/\1>/gi);
+  if (semanticMatches && semanticMatches.length > 1) {
+    return semanticMatches.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  }
+
+  const breakSplit = trimmed
+    .split(/(?:<br\s*\/?>\s*){2,}/gi)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (breakSplit.length > 1) {
+    return breakSplit.map((entry) => (entry.startsWith("<") ? entry : `<p>${escapeHtml(entry)}</p>`));
+  }
+
+  return [trimmed];
+}
+
+function getTextPageBudget(densityMode: DensityMode) {
+  if (densityMode === "compact") {
+    return 980;
+  }
+  if (densityMode === "loose") {
+    return 780;
+  }
+  return 880;
+}
+
+function paginateTextModulePages(params: {
+  idBase: string;
+  title: string;
+  body: string;
+  densityMode: DensityMode;
+  allowMultiplePages: boolean;
+}) {
+  const safeBody = sanitizeRichText(params.body);
+  if (!richTextHasContent(safeBody)) {
+    return [] as ProgramPage[];
+  }
+
+  if (!params.allowMultiplePages) {
+    return [{ id: params.idBase, type: "text", title: params.title, body: safeBody }] satisfies ProgramPage[];
+  }
+
+  const blocks = splitRichTextIntoBlocks(safeBody);
+  if (blocks.length <= 1) {
+    return [{ id: params.idBase, type: "text", title: params.title, body: safeBody }] satisfies ProgramPage[];
+  }
+
+  const pageBudget = Math.max(520, getTextPageBudget(params.densityMode) - (params.title.trim() ? 44 : 0));
+  const pages: ProgramPage[] = [];
+  let currentBlocks: string[] = [];
+  let currentUnits = 0;
+
+  for (const block of blocks) {
+    const blockUnits = Math.max(42, Math.round(estimateRichTextLines(block) * 10.5));
+    if (currentBlocks.length > 0 && currentUnits + blockUnits > pageBudget) {
+      pages.push({
+        id: `${params.idBase}-${pages.length + 1}`,
+        type: "text",
+        title: pages.length === 0 ? params.title : `${params.title} (cont.)`,
+        body: currentBlocks.join("")
+      });
+      currentBlocks = [];
+      currentUnits = 0;
+    }
+    currentBlocks.push(block);
+    currentUnits += blockUnits;
+  }
+
+  if (currentBlocks.length > 0) {
+    pages.push({
+      id: `${params.idBase}-${pages.length + 1}`,
+      type: "text",
+      title: pages.length === 0 ? params.title : `${params.title} (cont.)`,
+      body: currentBlocks.join("")
+    });
+  }
+
+  return pages.length > 0 ? pages : ([{ id: params.idBase, type: "text", title: params.title, body: safeBody }] satisfies ProgramPage[]);
+}
+
 function estimateStackUnits(page: ProgramPage) {
   if (page.type === "text" || page.type === "filler") {
     const textBody = page.body;
@@ -830,12 +943,12 @@ function estimateStackUnits(page: ProgramPage) {
 
 function getStackPageBudget(densityMode: DensityMode) {
   if (densityMode === "compact") {
-    return 980;
+    return 860;
   }
   if (densityMode === "loose") {
-    return 800;
+    return 700;
   }
-  return 900;
+  return 780;
 }
 
 function getBillingStackBudget(densityMode: DensityMode) {
@@ -906,6 +1019,7 @@ function renderModulePages(
         body
       }
     ] satisfies ProgramPage[];
+  const allowMultiplePages = Boolean(module.settings.allow_multiple_pages ?? false);
 
   if (normalizedType === "cover") {
     if (!hasPoster) {
@@ -930,7 +1044,7 @@ function renderModulePages(
         "Production Info is enabled, but no venue/date/schedule data is available yet. Update Show Settings: Poster + Performance Schedule."
       );
     }
-    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+    return paginateTextModulePages({ idBase, title, body, densityMode, allowMultiplePages });
   }
 
   if (normalizedType === "cast_list") {
@@ -981,10 +1095,10 @@ function renderModulePages(
   if (normalizedType === "bios") {
     const pages: ProgramPage[] = [];
     const scope = getSettingString(module.settings, "scope");
-    const allowMultiplePages = Boolean(module.settings.allow_multiple_pages ?? true);
+    const allowMultipleBioPages = Boolean(module.settings.allow_multiple_pages ?? true);
     if (scope !== "production" && cast.length > 0) {
       const castPages = paginateBios(`${title}: Cast`, `${idBase}-cast`, castWithBios, densityMode);
-      if (allowMultiplePages) {
+      if (allowMultipleBioPages) {
         pages.push(...castPages);
       } else if (castPages.length > 0) {
         pages.push(castPages[0]);
@@ -992,7 +1106,7 @@ function renderModulePages(
     }
     if (scope !== "cast" && production.length > 0) {
       const productionPages = paginateBios(`${title}: Production Team`, `${idBase}-production`, productionWithBios, densityMode);
-      if (allowMultiplePages) {
+      if (allowMultipleBioPages) {
         pages.push(...productionPages);
       } else if (productionPages.length > 0) {
         pages.push(productionPages[0]);
@@ -1005,28 +1119,46 @@ function renderModulePages(
     if (!hasDirectorNote) {
       return emptyPlaceholder(title, "Director's note module is enabled, but no note content has been submitted yet.");
     }
-    return [{ id: idBase, type: "text", title, body: program.director_notes }] satisfies ProgramPage[];
+    return paginateTextModulePages({
+      idBase,
+      title,
+      body: program.director_notes,
+      densityMode,
+      allowMultiplePages
+    });
   }
 
   if (normalizedType === "dramaturgical_note") {
     if (!hasDramaturgicalNote) {
       return emptyPlaceholder(title, "Dramaturgical note module is enabled, but no note content has been submitted yet.");
     }
-    return [{ id: idBase, type: "text", title, body: program.dramaturgical_note }] satisfies ProgramPage[];
+    return paginateTextModulePages({
+      idBase,
+      title,
+      body: program.dramaturgical_note,
+      densityMode,
+      allowMultiplePages
+    });
   }
 
   if (normalizedType === "music_director_note") {
     if (!hasMusicDirectorNote) {
       return emptyPlaceholder(title, "Music director note module is enabled, but no note content has been submitted yet.");
     }
-    return [{ id: idBase, type: "text", title, body: program.music_director_note }] satisfies ProgramPage[];
+    return paginateTextModulePages({
+      idBase,
+      title,
+      body: program.music_director_note,
+      densityMode,
+      allowMultiplePages
+    });
   }
 
   if (normalizedType === "acts_scenes" || normalizedType === "songs") {
     if (!hasActsSongs) {
       return [] as ProgramPage[];
     }
-    return [{ id: idBase, type: "text", title, body: program.acts_songs }] satisfies ProgramPage[];
+    return paginateTextModulePages({ idBase, title, body: program.acts_songs, densityMode, allowMultiplePages });
   }
 
   if (normalizedType === "headshots_grid") {
@@ -1059,14 +1191,26 @@ function renderModulePages(
     if (!hasSpecialThanks) {
       return emptyPlaceholder(title, "Special Thanks module is enabled, but no Special Thanks content was added yet.");
     }
-    return [{ id: idBase, type: "text", title, body: program.special_thanks }] satisfies ProgramPage[];
+    return paginateTextModulePages({
+      idBase,
+      title,
+      body: program.special_thanks,
+      densityMode,
+      allowMultiplePages
+    });
   }
 
   if (normalizedType === "acknowledgements") {
     if (!hasAcknowledgements) {
       return emptyPlaceholder(title, "Acknowledgements module is enabled, but no acknowledgements content was added yet.");
     }
-    return [{ id: idBase, type: "text", title, body: program.acknowledgements }] satisfies ProgramPage[];
+    return paginateTextModulePages({
+      idBase,
+      title,
+      body: program.acknowledgements,
+      densityMode,
+      allowMultiplePages
+    });
   }
 
   if (normalizedType === "back_cover") {
@@ -1080,7 +1224,13 @@ function renderModulePages(
 
     if (mode === "auto") {
       if (hasSeasonCalendar) {
-        return [{ id: idBase, type: "text", title, body: program.season_calendar }] satisfies ProgramPage[];
+        return paginateTextModulePages({
+          idBase,
+          title,
+          body: program.season_calendar,
+          densityMode,
+          allowMultiplePages
+        });
       }
       if (hasActfImage) {
         return [{ id: idBase, type: "image", title, imageUrl: program.actf_ad_image_url }] satisfies ProgramPage[];
@@ -1089,7 +1239,13 @@ function renderModulePages(
     }
 
     if (hasSeasonCalendar) {
-      return [{ id: idBase, type: "text", title, body: program.season_calendar }] satisfies ProgramPage[];
+      return paginateTextModulePages({
+        idBase,
+        title,
+        body: program.season_calendar,
+        densityMode,
+        allowMultiplePages
+      });
     }
     return [] as ProgramPage[];
   }
@@ -1099,7 +1255,13 @@ function renderModulePages(
   }
 
   if (normalizedType === "department_info" && hasDepartmentInfo) {
-    return [{ id: idBase, type: "text", title, body: program.department_info }] satisfies ProgramPage[];
+    return paginateTextModulePages({
+      idBase,
+      title,
+      body: program.department_info,
+      densityMode,
+      allowMultiplePages
+    });
   }
 
   if (normalizedType === "custom_pages") {
@@ -1119,7 +1281,7 @@ function renderModulePages(
     if (!richTextHasContent(body)) {
       return [] as ProgramPage[];
     }
-    return [{ id: idBase, type: "text", title, body }] satisfies ProgramPage[];
+    return paginateTextModulePages({ idBase, title, body, densityMode, allowMultiplePages });
   }
 
   if (normalizedType === "custom_image") {
@@ -1199,8 +1361,9 @@ function buildRenderablePagesFromModules(
       continue;
     }
 
-    const separatePage = Boolean(module.settings.separate_page ?? true);
-    const keepTogether = Boolean(module.settings.keep_together ?? false);
+    const placementMode = getModulePlacementMode(module);
+    const separatePage = placementMode === "isolated";
+    const keepTogether = Boolean(module.settings.keep_together ?? separatePage);
     const canStackModule = !separatePage && !keepTogether && renderedPages.length === 1 && isStackablePage(renderedPages[0]);
     if (!canStackModule) {
       flushStackBuffer();

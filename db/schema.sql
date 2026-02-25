@@ -205,6 +205,18 @@ create table if not exists public.role_templates (
   unique(name, category, scope, show_id)
 );
 
+create table if not exists public.note_templates (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  name text not null,
+  request_type text not null,
+  scope text not null default 'global',
+  show_id uuid references public.shows (id) on delete cascade,
+  is_archived boolean not null default false,
+  unique(name, request_type, scope, show_id)
+);
+
 do $$
 begin
   if not exists (
@@ -293,6 +305,7 @@ alter table public.departments enable row level security;
 alter table public.show_departments enable row level security;
 alter table public.show_roles enable row level security;
 alter table public.role_templates enable row level security;
+alter table public.note_templates enable row level security;
 alter table public.submission_requests enable row level security;
 alter table public.submissions enable row level security;
 alter table public.assets enable row level security;
@@ -357,6 +370,13 @@ create policy "authenticated manage show_roles" on public.show_roles
 
 drop policy if exists "authenticated manage role_templates" on public.role_templates;
 create policy "authenticated manage role_templates" on public.role_templates
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "authenticated manage note_templates" on public.note_templates;
+create policy "authenticated manage note_templates" on public.note_templates
   for all
   to authenticated
   using (true)
