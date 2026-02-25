@@ -256,17 +256,13 @@ export function PublicProgramViewer({
       </article>
 
       {current ? (
-        <article
-          key={`flip-step-${stepIndex}`}
-          className={`card flip-view-card flip-${flipDirection}`}
-          aria-label={`View ${stepIndex + 1} content`}
-        >
+        <article key={`flip-step-${stepIndex}`} className="card" aria-label={`View ${stepIndex + 1} content`}>
           <div
-            className="sheet-grid"
+            className={`sheet-grid flip-view-sheet flip-${flipDirection}`}
             style={
               current.kind === "single"
                 ? { gap: "0.3in", gridTemplateColumns: "5.5in", justifyContent: "center" }
-                : { gap: "0.3in" }
+                : { gap: "0.3in", gridTemplateColumns: "5.5in 5.5in", justifyContent: "center" }
             }
           >
             <div>

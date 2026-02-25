@@ -1052,24 +1052,24 @@ body.density-compact .admin-surface textarea {
   gap: 0.2in;
 }
 
-.flip-view-card {
+.flip-view-sheet {
   perspective: 1400px;
   transform-style: preserve-3d;
   backface-visibility: hidden;
 }
 
-.flip-view-card.flip-forward {
-  animation: flipForward 320ms ease-out;
+.flip-view-sheet.flip-forward {
+  animation: flipForward 520ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-.flip-view-card.flip-backward {
-  animation: flipBackward 320ms ease-out;
+.flip-view-sheet.flip-backward {
+  animation: flipBackward 520ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 @keyframes flipForward {
   0% {
-    opacity: 0.72;
-    transform: rotateY(-10deg) translateX(18px) scale(0.99);
+    opacity: 0.45;
+    transform: rotateY(-16deg) translateX(26px) scale(0.96);
   }
   100% {
     opacity: 1;
@@ -1079,8 +1079,8 @@ body.density-compact .admin-surface textarea {
 
 @keyframes flipBackward {
   0% {
-    opacity: 0.72;
-    transform: rotateY(10deg) translateX(-18px) scale(0.99);
+    opacity: 0.45;
+    transform: rotateY(16deg) translateX(-26px) scale(0.96);
   }
   100% {
     opacity: 1;
