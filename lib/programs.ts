@@ -1017,7 +1017,8 @@ function renderModulePages(
   const hasActsSongs = richTextHasContent(program.acts_songs);
   const hasDepartmentInfo = richTextHasContent(program.department_info);
   const hasAcknowledgements = richTextHasContent(program.acknowledgements);
-  const hasSponsorships = richTextHasContent(program.sponsorships);
+  const sponsorshipBody = richTextHasContent(program.sponsorships) ? program.sponsorships : program.acknowledgements;
+  const hasSponsorships = richTextHasContent(sponsorshipBody);
   const hasSpecialThanks = richTextHasContent(program.special_thanks);
   const hasSeasonCalendar = richTextHasContent(program.season_calendar);
   const hasActfImage = Boolean(program.actf_ad_image_url.trim());
@@ -1191,12 +1192,18 @@ function renderModulePages(
   }
 
   if (normalizedType === "sponsors") {
+    if (!hasActfImage && !hasSponsorships) {
+      return emptyPlaceholder(
+        title,
+        "Sponsors module is enabled, but no sponsorship text/image content is available yet in Show Settings."
+      );
+    }
     const pages: ProgramPage[] = [];
     if (hasActfImage) {
       pages.push({ id: `${idBase}-image`, type: "image", title, imageUrl: program.actf_ad_image_url });
     }
     if (hasSponsorships) {
-      pages.push({ id: `${idBase}-text`, type: "text", title, body: program.sponsorships });
+      pages.push({ id: `${idBase}-text`, type: "text", title, body: sponsorshipBody });
     }
     return pages;
   }

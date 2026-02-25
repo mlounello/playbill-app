@@ -87,7 +87,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   department_info: ["department_info"],
   headshots_grid: ["production_photos"],
   production_photos: ["production_photos"],
-  sponsors: [],
+  sponsors: ["sponsorships"],
   acknowledgements: ["acknowledgements"],
   special_thanks: ["special_thanks"],
   back_cover: ["season_calendar"],

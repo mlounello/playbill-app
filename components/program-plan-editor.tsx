@@ -51,7 +51,7 @@ const moduleTokenMap: Record<string, string[]> = {
   songs: ["acts_songs"],
   department_info: ["department_info"],
   headshots_grid: ["production_photos"],
-  sponsors: ["acknowledgements"],
+  sponsors: ["sponsorships"],
   acknowledgements: ["acknowledgements"],
   special_thanks: ["special_thanks"],
   back_cover: ["season_calendar"],
