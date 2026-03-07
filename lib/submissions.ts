@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getCurrentUserWithProfile, requireRole } from "@/lib/auth";
 import { sanitizeRichText } from "@/lib/rich-text";
-import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 
 export const BIO_CHAR_LIMIT_DEFAULT = 375;
 export const SPECIAL_NOTE_WORD_LIMIT_DEFAULT = 400;
@@ -296,12 +296,13 @@ function canTransitionSubmissionStatus(
 }
 
 async function getShowProgramContext(showId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: show } = await client.from("shows").select("id, title, slug, program_id").eq("id", showId).single();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show } = await db.from("shows").select("id, title, slug, program_id").eq("id", showId).single();
   if (!show?.program_id) {
     return null;
   }
-  const { data: program } = await client.from("programs").select("id, slug").eq("id", show.program_id).single();
+  const { data: program } = await db.from("programs").select("id, slug").eq("id", show.program_id).single();
   if (!program) {
     return null;
   }
@@ -323,9 +324,10 @@ async function writeAuditLog(params: {
   reason?: string;
 }) {
   const current = await getCurrentUserWithProfile();
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
 
-  await client.from("audit_log").insert({
+  await db.from("audit_log").insert({
     entity: params.entity,
     entity_id: params.entityId,
     field: params.field,
@@ -336,11 +338,12 @@ async function writeAuditLog(params: {
   });
 }
 
-async function getTableColumns(client: ReturnType<typeof getSupabaseWriteClient>, tableName: string) {
-  const { data, error } = await client
+async function getTableColumns(_db: unknown, tableName: string) {
+  const metaClient = getSupabaseWriteClientRaw();
+  const { data, error } = await metaClient
     .from("information_schema.columns")
     .select("column_name")
-    .eq("table_schema", "public")
+    .eq("table_schema", APP_SCHEMA)
     .eq("table_name", tableName);
 
   if (error || !data) {
@@ -358,8 +361,9 @@ function filterToColumns(record: Record<string, unknown>, columns: Set<string>) 
 }
 
 async function listSpecialNoteTemplatesForShow(showId: string) {
-  const client = getSupabaseWriteClient();
-  const templatesTableColumns = await getTableColumns(client, "note_templates");
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const templatesTableColumns = await getTableColumns(db, "note_templates");
   const defaults = defaultSpecialNoteTemplates();
   if (templatesTableColumns.size === 0) {
     return defaults;
@@ -369,7 +373,7 @@ async function listSpecialNoteTemplatesForShow(showId: string) {
   const supportsShowId = templatesTableColumns.has("show_id");
   const supportsArchived = templatesTableColumns.has("is_archived");
 
-  let query = client.from("note_templates").select("id, name, request_type, scope, show_id, is_archived");
+  let query = db.from("note_templates").select("id, name, request_type, scope, show_id, is_archived");
   if (supportsArchived) {
     query = query.eq("is_archived", false);
   }
@@ -639,14 +643,15 @@ export async function getShowSubmissionPeople(showId: string) {
     return [] as ShowSubmissionPerson[];
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: peopleRows } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: peopleRows } = await db
     .from("people")
     .select("*")
     .eq("program_id", context.program_id)
     .order("team_type", { ascending: true })
     .order("full_name", { ascending: true });
-  const { data: roleRows } = await client
+  const { data: roleRows } = await db
     .from("show_roles")
     .select("person_id, role_name, category, billing_order")
     .eq("show_id", showId);
@@ -707,8 +712,9 @@ export async function getShowSubmissionQueue(showId: string) {
     return [] as ShowSubmissionQueueItem[];
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: peopleRows } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: peopleRows } = await db
     .from("people")
     .select("*")
     .eq("program_id", context.program_id);
@@ -716,7 +722,7 @@ export async function getShowSubmissionQueue(showId: string) {
     (peopleRows ?? []).map((row) => [String(row.id), row as Record<string, unknown>])
   );
 
-  const { data: roles } = await client
+  const { data: roles } = await db
     .from("show_roles")
     .select("id, person_id, category")
     .eq("show_id", showId);
@@ -726,11 +732,11 @@ export async function getShowSubmissionQueue(showId: string) {
     return [] as ShowSubmissionQueueItem[];
   }
 
-  const { data: requests } = await client
+  const { data: requests } = await db
     .from("submission_requests")
     .select("id, show_role_id, request_type, status")
     .in("show_role_id", roleIds);
-  const { data: program } = await client
+  const { data: program } = await db
     .from("programs")
     .select("director_notes, dramaturgical_note, music_director_note")
     .eq("id", context.program_id)
@@ -819,8 +825,9 @@ export async function getShowSpecialNoteAssignments(showId: string) {
     };
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: roles } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: roles } = await db
     .from("show_roles")
     .select("id, person_id")
     .eq("show_id", showId);
@@ -837,7 +844,7 @@ export async function getShowSpecialNoteAssignments(showId: string) {
     };
   }
 
-  const { data: requests } = await client
+  const { data: requests } = await db
     .from("submission_requests")
     .select("show_role_id, request_type, created_at, constraints")
     .in("show_role_id", roleIds);
@@ -920,8 +927,9 @@ export async function createSpecialNoteTemplate(showId: string, formData: FormDa
     withError(`/app/shows/${showId}?tab=people-roles`, "Template type must be a special note type.");
   }
 
-  const client = getSupabaseWriteClient();
-  const tableColumns = await getTableColumns(client, "note_templates");
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const tableColumns = await getTableColumns(db, "note_templates");
   if (tableColumns.size === 0) {
     withError(`/app/shows/${showId}?tab=people-roles`, "note_templates table is not available. Run latest schema SQL.");
   }
@@ -937,7 +945,7 @@ export async function createSpecialNoteTemplate(showId: string, formData: FormDa
     tableColumns
   );
 
-  const { error } = await client.from("note_templates").insert(payload);
+  const { error } = await db.from("note_templates").insert(payload);
   if (error) {
     withError(`/app/shows/${showId}?tab=people-roles`, error.message);
   }
@@ -966,8 +974,9 @@ export async function archiveSpecialNoteTemplate(showId: string, formData: FormD
     withError(`/app/shows/${showId}?tab=people-roles`, "Default templates cannot be removed.");
   }
 
-  const client = getSupabaseWriteClient();
-  const tableColumns = await getTableColumns(client, "note_templates");
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const tableColumns = await getTableColumns(db, "note_templates");
   if (tableColumns.size === 0) {
     withError(`/app/shows/${showId}?tab=people-roles`, "note_templates table is not available.");
   }
@@ -979,7 +988,7 @@ export async function archiveSpecialNoteTemplate(showId: string, formData: FormD
     },
     tableColumns
   );
-  const { error } = await client.from("note_templates").update(updatePayload).eq("id", templateId);
+  const { error } = await db.from("note_templates").update(updatePayload).eq("id", templateId);
   if (error) {
     withError(`/app/shows/${showId}?tab=people-roles`, error.message);
   }
@@ -1040,9 +1049,10 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     withError("/app/shows", "Show was not found.");
   }
 
-  const client = getSupabaseWriteClient();
-  const peopleColumns = await getTableColumns(client, "people");
-  const { data: existingPeopleRows } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const peopleColumns = await getTableColumns(db, "people");
+  const { data: existingPeopleRows } = await db
     .from("people")
     .select("id, full_name, email, team_type")
     .eq("program_id", context.program_id);
@@ -1079,7 +1089,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
 
   let insertedPeople: Array<{ id: string; full_name: string; email: string; team_type: "cast" | "production" }> = [];
   if (insertRows.length > 0) {
-    const { data, error: insertError } = await client
+    const { data, error: insertError } = await db
       .from("people")
       .insert(insertRows)
       .select("id, full_name, email, team_type");
@@ -1102,17 +1112,17 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
   for (const email of castEmails) {
     const personId = personIdByEmail.get(email);
     if (!personId) continue;
-    await client
+    await db
       .from("people")
       .update(filterToColumns({ team_type: "cast" }, peopleColumns))
       .eq("id", personId);
   }
 
-  const { data: existingRoleRows } = await client
+  const { data: existingRoleRows } = await db
     .from("show_roles")
     .select("id, person_id, role_name, category, billing_order")
     .eq("show_id", showId);
-  const showRolesColumns = await getTableColumns(client, "show_roles");
+  const showRolesColumns = await getTableColumns(db, "show_roles");
   const existingRoleKeys = new Set(
     (existingRoleRows ?? []).map(
       (row) => `${String(row.person_id ?? "")}|${String(row.role_name ?? "").trim().toLowerCase()}|${String(row.category ?? "").trim().toLowerCase()}`
@@ -1136,7 +1146,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
   };
   let roleTemplates: RoleTemplateRow[] = [];
   try {
-    const { data } = await client
+    const { data } = await db
       .from("role_templates")
       .select("id, name, category, scope, show_id, is_hidden");
     roleTemplates = (data ?? [])
@@ -1193,7 +1203,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     };
 
     try {
-      const { data: inserted } = await client.from("role_templates").insert(insertPayload).select("id").maybeSingle();
+      const { data: inserted } = await db.from("role_templates").insert(insertPayload).select("id").maybeSingle();
       if (inserted?.id) {
         const templateId = String(inserted.id);
         roleTemplates.push({
@@ -1213,14 +1223,14 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     }
 
     const query = scope === "show_only"
-      ? await client
+      ? await db
           .from("role_templates")
           .select("id, category")
           .eq("name", insertPayload.name)
           .eq("scope", "show_only")
           .eq("show_id", showId)
           .maybeSingle()
-      : await client
+      : await db
           .from("role_templates")
           .select("id, category")
           .eq("name", insertPayload.name)
@@ -1272,20 +1282,20 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
   }
 
   if (newRoleRows.length > 0) {
-    await client.from("show_roles").insert(newRoleRows);
+    await db.from("show_roles").insert(newRoleRows);
   }
 
   // Ensure exactly one bio request per person (not per role).
   const personIds = [...new Set(records.map((record) => personIdByEmail.get(normalizeEmail(record.email)) ?? "").filter(Boolean))];
   if (personIds.length > 0) {
-    const { data: allRolesForPeople } = await client
+    const { data: allRolesForPeople } = await db
       .from("show_roles")
       .select("id, person_id, category, billing_order")
       .eq("show_id", showId)
       .in("person_id", personIds);
     const roleIds = (allRolesForPeople ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
     const { data: existingBioRequests } = roleIds.length
-      ? await client
+      ? await db
           .from("submission_requests")
           .select("id, show_role_id, request_type")
           .in("show_role_id", roleIds)
@@ -1327,7 +1337,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
       });
     }
     if (rowsToInsert.length > 0) {
-      await client.from("submission_requests").insert(rowsToInsert);
+      await db.from("submission_requests").insert(rowsToInsert);
     }
   }
 
@@ -1379,8 +1389,9 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
     withError("/app/shows", "Show was not found.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: peopleRows } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: peopleRows } = await db
     .from("people")
     .select("id, full_name, role_title, team_type, email, submission_type")
     .eq("program_id", context.program_id);
@@ -1539,17 +1550,17 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
       continue;
     }
 
-    const { error: updateError } = await client.from("people").update(peopleUpdate).eq("id", person.id);
+    const { error: updateError } = await db.from("people").update(peopleUpdate).eq("id", person.id);
     if (updateError) {
       invalid.push(line);
       continue;
     }
 
     if (nextRoleName !== null) {
-      await client.from("show_roles").update({ role_name: nextRoleName }).eq("show_id", showId).eq("person_id", person.id);
+      await db.from("show_roles").update({ role_name: nextRoleName }).eq("show_id", showId).eq("person_id", person.id);
     }
     if (nextRoleCategory !== null) {
-      await client
+      await db
         .from("show_roles")
         .update({ category: nextRoleCategory })
         .eq("show_id", showId)
@@ -1557,14 +1568,14 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
     }
     if (updates.has("submission_type")) {
       const nextType = normalizeSubmissionType(String(updates.get("submission_type") ?? "bio"));
-      const { data: roleRow } = await client
+      const { data: roleRow } = await db
         .from("show_roles")
         .select("id")
         .eq("show_id", showId)
         .eq("person_id", person.id)
         .maybeSingle();
       if (roleRow?.id) {
-        await client
+        await db
           .from("submission_requests")
           .update({
             request_type: nextType,
@@ -1646,8 +1657,9 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
     withError("/app/shows", "Show was not found.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: peopleRows } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: peopleRows } = await db
     .from("people")
     .select("id, full_name, role_title, team_type, email, submission_type")
     .eq("program_id", context.program_id)
@@ -1696,30 +1708,30 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
       continue;
     }
 
-    const { error: updateError } = await client.from("people").update(peopleUpdate).eq("id", person.id);
+    const { error: updateError } = await db.from("people").update(peopleUpdate).eq("id", person.id);
     if (updateError) {
       continue;
     }
 
     if (enableRoleTitle) {
-      await client.from("show_roles").update({ role_name: roleTitle }).eq("show_id", showId).eq("person_id", person.id);
+      await db.from("show_roles").update({ role_name: roleTitle }).eq("show_id", showId).eq("person_id", person.id);
     }
     if (enableTeamType) {
-      await client
+      await db
         .from("show_roles")
         .update({ category: teamType === "cast" ? "cast" : teamType === "creative" ? "creative" : "production" })
         .eq("show_id", showId)
         .eq("person_id", person.id);
     }
     if (enableSubmissionType) {
-      const { data: roleRow } = await client
+      const { data: roleRow } = await db
         .from("show_roles")
         .select("id")
         .eq("show_id", showId)
         .eq("person_id", person.id)
         .maybeSingle();
       if (roleRow?.id) {
-        await client
+        await db
           .from("submission_requests")
           .update({
             request_type: submissionType,
@@ -1775,8 +1787,9 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
     withError("/app/shows", "Show was not found.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: personRow } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: personRow } = await db
     .from("people")
     .select("id, full_name, role_title, team_type, email, submission_type")
     .eq("program_id", context.program_id)
@@ -1810,21 +1823,21 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
   }
 
   if (Object.keys(peopleUpdate).length > 0) {
-    const { error: updateError } = await client.from("people").update(peopleUpdate).eq("id", current.id);
+    const { error: updateError } = await db.from("people").update(peopleUpdate).eq("id", current.id);
     if (updateError) {
       withError(`/app/shows/${showId}?tab=people-roles`, updateError.message || "Could not update person.");
     }
   }
 
   if (current.submission_type !== submissionType) {
-    const { data: roleRow } = await client
+    const { data: roleRow } = await db
       .from("show_roles")
       .select("id")
       .eq("show_id", showId)
       .eq("person_id", current.id)
       .maybeSingle();
     if (roleRow?.id) {
-      await client
+      await db
         .from("submission_requests")
         .update({
           request_type: submissionType,
@@ -1854,8 +1867,9 @@ export async function getShowRoleAssignments(showId: string) {
     return [] as ShowRoleAssignment[];
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: roles } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: roles } = await db
     .from("show_roles")
     .select("id, person_id, role_name, category, role_template_id, billing_order, bio_order")
     .eq("show_id", showId)
@@ -1868,7 +1882,7 @@ export async function getShowRoleAssignments(showId: string) {
   }
 
   const personIds = [...new Set(roles.map((row) => String(row.person_id ?? "")).filter(Boolean))];
-  const { data: peopleRows } = await client
+  const { data: peopleRows } = await db
     .from("people")
     .select("id, full_name")
     .eq("program_id", context.program_id)
@@ -1903,8 +1917,9 @@ export async function reorderRoleListOrder(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Invalid role order payload.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: roles } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: roles } = await db
     .from("show_roles")
     .select("id, category")
     .eq("show_id", showId);
@@ -1935,7 +1950,7 @@ export async function reorderRoleListOrder(showId: string, formData: FormData) {
 
   for (let idx = 0; idx < categoryBuckets.cast.length; idx += 1) {
     const roleId = categoryBuckets.cast[idx];
-    await client
+    await db
       .from("show_roles")
       .update({ billing_order: idx + 1 })
       .eq("show_id", showId)
@@ -1943,7 +1958,7 @@ export async function reorderRoleListOrder(showId: string, formData: FormData) {
   }
   for (let idx = 0; idx < categoryBuckets.creative.length; idx += 1) {
     const roleId = categoryBuckets.creative[idx];
-    await client
+    await db
       .from("show_roles")
       .update({ bio_order: idx + 1 })
       .eq("show_id", showId)
@@ -1951,7 +1966,7 @@ export async function reorderRoleListOrder(showId: string, formData: FormData) {
   }
   for (let idx = 0; idx < categoryBuckets.production.length; idx += 1) {
     const roleId = categoryBuckets.production[idx];
-    await client
+    await db
       .from("show_roles")
       .update({ bio_order: idx + 1 })
       .eq("show_id", showId)
@@ -1980,9 +1995,10 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
     withError("/app/shows", "Show was not found.");
   }
 
-  const client = getSupabaseWriteClient();
-  const showRolesColumns = await getTableColumns(client, "show_roles");
-  const { data: personRow } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const showRolesColumns = await getTableColumns(db, "show_roles");
+  const { data: personRow } = await db
     .from("people")
     .select("id, program_id")
     .eq("id", personId)
@@ -1996,7 +2012,7 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
   let category: RoleCategory = typedCategory;
   let resolvedTemplateId: string | null = null;
   if (roleTemplateId) {
-    const { data: template } = await client
+    const { data: template } = await db
       .from("role_templates")
       .select("id, name, category")
       .eq("id", roleTemplateId)
@@ -2012,7 +2028,7 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
     withError(`/app/shows/${showId}?tab=people-roles`, "Role is required.");
   }
 
-  const { data: existing } = await client
+  const { data: existing } = await db
     .from("show_roles")
     .select("id")
     .eq("show_id", showId)
@@ -2032,7 +2048,7 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
     redirect(`/app/shows/${showId}?${params.toString()}`);
   }
 
-  const { data: castMax } = await client
+  const { data: castMax } = await db
     .from("show_roles")
     .select("billing_order")
     .eq("show_id", showId)
@@ -2052,7 +2068,7 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
     },
     showRolesColumns
   );
-  const { error: insertError } = await client.from("show_roles").insert(insertRow);
+  const { error: insertError } = await db.from("show_roles").insert(insertRow);
   if (insertError) {
     withError(`/app/shows/${showId}?tab=people-roles`, insertError.message);
   }
@@ -2073,9 +2089,10 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment id is required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const showRolesColumns = await getTableColumns(client, "show_roles");
-  const { data: existingRole } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const showRolesColumns = await getTableColumns(db, "show_roles");
+  const { data: existingRole } = await db
     .from("show_roles")
     .select("id, show_id")
     .eq("id", roleId)
@@ -2089,7 +2106,7 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
   let category: RoleCategory = typedCategory;
   let resolvedTemplateId: string | null = roleTemplateId || null;
   if (roleTemplateId) {
-    const { data: template } = await client
+    const { data: template } = await db
       .from("role_templates")
       .select("id, name, category")
       .eq("id", roleTemplateId)
@@ -2119,7 +2136,7 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
     showRolesColumns
   );
 
-  const { error: updateError } = await client.from("show_roles").update(updateRow).eq("id", roleId).eq("show_id", showId);
+  const { error: updateError } = await db.from("show_roles").update(updateRow).eq("id", roleId).eq("show_id", showId);
   if (updateError) {
     withError(`/app/shows/${showId}?tab=people-roles`, updateError.message);
   }
@@ -2139,8 +2156,9 @@ export async function removeRoleAssignment(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment id is required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: existingRole } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: existingRole } = await db
     .from("show_roles")
     .select("id, person_id")
     .eq("id", roleId)
@@ -2151,7 +2169,7 @@ export async function removeRoleAssignment(showId: string, formData: FormData) {
   }
 
   const personId = String(existingRole.person_id ?? "");
-  const { data: roleRequests } = await client
+  const { data: roleRequests } = await db
     .from("submission_requests")
     .select("id, request_type")
     .eq("show_role_id", roleId);
@@ -2161,7 +2179,7 @@ export async function removeRoleAssignment(showId: string, formData: FormData) {
     .filter(Boolean);
 
   if (bioRequestIds.length > 0) {
-    const { data: otherRoles } = await client
+    const { data: otherRoles } = await db
       .from("show_roles")
       .select("id")
       .eq("show_id", showId)
@@ -2178,18 +2196,18 @@ export async function removeRoleAssignment(showId: string, formData: FormData) {
       );
     }
 
-    await client
+    await db
       .from("submission_requests")
       .update({ show_role_id: replacementRoleId, updated_at: new Date().toISOString() })
       .in("id", bioRequestIds);
   }
 
-  await client
+  await db
     .from("submission_requests")
     .delete()
     .eq("show_role_id", roleId);
 
-  const { error } = await client.from("show_roles").delete().eq("id", roleId).eq("show_id", showId);
+  const { error } = await db.from("show_roles").delete().eq("id", roleId).eq("show_id", showId);
   if (error) {
     withError(`/app/shows/${showId}?tab=people-roles`, error.message);
   }
@@ -2220,8 +2238,9 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     withError(`/app/shows/${showId}?tab=people-roles`, "Each special note assignment must be a different person.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: peopleRows } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: peopleRows } = await db
     .from("people")
     .select("id, full_name, role_title, team_type")
     .eq("program_id", context.program_id);
@@ -2239,7 +2258,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     }
   }
 
-  const { data: roleRows } = await client
+  const { data: roleRows } = await db
     .from("show_roles")
     .select("id, person_id, category")
     .eq("show_id", showId);
@@ -2255,10 +2274,10 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     list.push({ id: role.id, category: role.category });
     rolesByPersonId.set(role.person_id, list);
   }
-  const showRolesColumns = await getTableColumns(client, "show_roles");
+  const showRolesColumns = await getTableColumns(db, "show_roles");
   const noteTemplates = await listSpecialNoteTemplatesForShow(showId);
   const noteTemplateById = new Map(noteTemplates.map((template) => [template.id, template]));
-  const castBillingValues = await client
+  const castBillingValues = await db
     .from("show_roles")
     .select("billing_order, category")
     .eq("show_id", showId);
@@ -2288,7 +2307,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
       },
       showRolesColumns
     );
-    const { data: insertedRole } = await client.from("show_roles").insert(roleInsert).select("id").maybeSingle();
+    const { data: insertedRole } = await db.from("show_roles").insert(roleInsert).select("id").maybeSingle();
     if (insertedRole?.id) {
       const insertedCategory = inferredCategory as RoleCategory;
       roles.push({ id: String(insertedRole.id), person_id: selectedId, category: insertedCategory });
@@ -2298,7 +2317,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     }
   }
 
-  const { data: existingRequests } = await client
+  const { data: existingRequests } = await db
     .from("submission_requests")
     .select("id, show_role_id, request_type")
     .in("show_role_id", roles.map((role) => role.id));
@@ -2328,7 +2347,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     const roleRequests = requestsByRoleId.get(role.id) ?? [];
     const hasBio = roleRequests.some((item) => item.request_type === "bio");
     if (!hasBio) {
-      await client.from("submission_requests").insert({
+      await db.from("submission_requests").insert({
         show_role_id: role.id,
         request_type: "bio",
         label: `${getSubmissionTypeLabel("bio")} Submission`,
@@ -2353,7 +2372,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     const selectedRoleId = assignment.personId ? getPreferredRoleIdForPerson(assignment.personId) : "";
     const existingOfType = requests.filter((item) => item.request_type === assignment.type).map((item) => item.id);
     if (existingOfType.length > 0) {
-      await client.from("submission_requests").delete().in("id", existingOfType);
+      await db.from("submission_requests").delete().in("id", existingOfType);
     }
 
     if (selectedRoleId) {
@@ -2364,7 +2383,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
           ? templateCandidate
           : noteTemplateById.get(`default:${assignment.type}`);
       const requestLabel = template?.name?.trim() ? `${template.name.trim()} Submission` : `${getSubmissionTypeLabel(assignment.type)} Submission`;
-      await client.from("submission_requests").insert({
+      await db.from("submission_requests").insert({
         show_role_id: selectedRoleId,
         request_type: assignment.type,
         label: requestLabel,
@@ -2423,10 +2442,11 @@ export async function resyncShowSubmissionRequests(showId: string) {
     withError("/app/shows", "Show was not found.");
   }
 
-  const client = getSupabaseWriteClient();
-  const showRolesColumns = await getTableColumns(client, "show_roles");
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const showRolesColumns = await getTableColumns(db, "show_roles");
 
-  const { data: peopleRows } = await client
+  const { data: peopleRows } = await db
     .from("people")
     .select("id, role_title, team_type")
     .eq("program_id", context.program_id);
@@ -2436,7 +2456,7 @@ export async function resyncShowSubmissionRequests(showId: string) {
     team_type: String(row.team_type ?? "") === "cast" ? "cast" : "production"
   }));
 
-  const { data: roleRows } = await client
+  const { data: roleRows } = await db
     .from("show_roles")
     .select("id, person_id, category, billing_order")
     .eq("show_id", showId);
@@ -2476,7 +2496,7 @@ export async function resyncShowSubmissionRequests(showId: string) {
       },
       showRolesColumns
     );
-    const { data: inserted } = await client.from("show_roles").insert(roleInsert).select("id").maybeSingle();
+    const { data: inserted } = await db.from("show_roles").insert(roleInsert).select("id").maybeSingle();
     if (inserted?.id) {
       const createdRole = { id: String(inserted.id), category: inferredCategory as RoleCategory, billing_order: null };
       const list = rolesByPerson.get(person.id) ?? [];
@@ -2488,7 +2508,7 @@ export async function resyncShowSubmissionRequests(showId: string) {
 
   const roleIds = [...new Set(Array.from(rolesByPerson.values()).flat().map((role) => role.id))];
   const { data: requestRows } = roleIds.length
-    ? await client
+    ? await db
         .from("submission_requests")
         .select("id, show_role_id, request_type")
         .in("show_role_id", roleIds)
@@ -2522,7 +2542,7 @@ export async function resyncShowSubmissionRequests(showId: string) {
       .filter((request) => request.request_type === "bio");
 
     if (personBioRequests.length === 0) {
-      await client.from("submission_requests").insert({
+      await db.from("submission_requests").insert({
         show_role_id: primaryRoleId,
         request_type: "bio",
         label: `${getSubmissionTypeLabel("bio")} Submission`,
@@ -2535,7 +2555,7 @@ export async function resyncShowSubmissionRequests(showId: string) {
 
     const keep = personBioRequests[0];
     for (const duplicate of personBioRequests.slice(1)) {
-      await client.from("submission_requests").delete().eq("id", duplicate.id);
+      await db.from("submission_requests").delete().eq("id", duplicate.id);
       removedDuplicateBioRequests += 1;
     }
     if (keep && keep.id && requestsByRoleId.get(primaryRoleId)?.every((req) => req.id !== keep.id)) {
@@ -2556,8 +2576,9 @@ export async function getContributorTasksForCurrentUser() {
     return [] as ContributorTaskSummary[];
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: peopleRows } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: peopleRows } = await db
     .from("people")
     .select("id, full_name, role_title, program_id, submission_status, submitted_at, email, submission_type")
     .ilike("email", current.user.email);
@@ -2578,7 +2599,7 @@ export async function getContributorTasksForCurrentUser() {
       }
     ])
   );
-  const { data: roles } = await client
+  const { data: roles } = await db
     .from("show_roles")
     .select("id, show_id, person_id")
     .in("person_id", personIds);
@@ -2598,7 +2619,7 @@ export async function getContributorTasksForCurrentUser() {
     ])
   );
 
-  const { data: requests } = await client
+  const { data: requests } = await db
     .from("submission_requests")
     .select("id, show_role_id, due_date, status, request_type")
     .in("show_role_id", roleIds);
@@ -2610,14 +2631,14 @@ export async function getContributorTasksForCurrentUser() {
   }
 
   const showIds = [...new Set(roleRows.map((row) => String(row.show_id ?? "")).filter(Boolean))];
-  const { data: shows } = await client
+  const { data: shows } = await db
     .from("shows")
     .select("id, title, slug, program_id")
     .in("id", showIds);
   const programIds = [...new Set((shows ?? []).map((show) => String(show.program_id ?? "")).filter(Boolean))];
   const { data: programs } =
     programIds.length > 0
-      ? await client.from("programs").select("id, slug").in("id", programIds)
+      ? await db.from("programs").select("id, slug").in("id", programIds)
       : { data: [] as Array<Record<string, unknown>> };
 
   const showByProgramId = new Map<string, { id: string; title: string; slug: string }>();
@@ -2689,15 +2710,16 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     return null;
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: roles } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: roles } = await db
     .from("show_roles")
     .select("id, person_id, show_id")
     .eq("show_id", showId);
   const roleRows = roles ?? [];
   const roleById = new Map(roleRows.map((row) => [String(row.id), String(row.person_id ?? "")]));
 
-  const { data: requestById } = await client
+  const { data: requestById } = await db
     .from("submission_requests")
     .select("id, show_role_id, request_type, status, due_date")
     .eq("id", taskId)
@@ -2722,7 +2744,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     if (!roleForPerson?.id) {
       return null;
     }
-    const { data: bioRequest } = await client
+    const { data: bioRequest } = await db
       .from("submission_requests")
       .select("id, request_type, status, due_date")
       .eq("show_role_id", String(roleForPerson.id))
@@ -2737,7 +2759,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     resolvedDueDate = bioRequest.due_date ? String(bioRequest.due_date) : null;
   }
 
-  const { data: person } = await client
+  const { data: person } = await db
     .from("people")
     .select("*")
     .eq("id", resolvedPersonId)
@@ -2752,7 +2774,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     return null;
   }
 
-  const { data: returnMessageAudit } = await client
+  const { data: returnMessageAudit } = await db
     .from("audit_log")
     .select("reason, changed_at, after_value")
     .eq("entity", "people")
@@ -2765,7 +2787,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
   if (resolvedRequestType !== "bio") {
     const programField = getProgramFieldForSubmissionType(resolvedRequestType);
     if (programField) {
-      const { data: program } = await client
+      const { data: program } = await db
         .from("programs")
         .select(programField)
         .eq("id", context.program_id)
@@ -2828,8 +2850,9 @@ async function updateSubmissionCore(args: {
     return { ok: false as const, message: "Show not found." };
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: requestRow } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: requestRow } = await db
     .from("submission_requests")
     .select("status")
     .eq("id", args.requestId)
@@ -2841,8 +2864,8 @@ async function updateSubmissionCore(args: {
       message: `Invalid status change: ${currentRequestStatus} -> ${args.status}.`
     };
   }
-  const peopleColumns = await getTableColumns(client, "people");
-  const { data: person } = await client
+  const peopleColumns = await getTableColumns(db, "people");
+  const { data: person } = await db
     .from("people")
     .select("*")
     .eq("id", args.personId)
@@ -2881,7 +2904,7 @@ async function updateSubmissionCore(args: {
   const submittedAt = args.status === "submitted" || args.status === "approved" || args.status === "locked" ? nowIso : null;
 
   if (isBioType) {
-    const { error: updateError } = await client
+    const { error: updateError } = await db
       .from("people")
       .update(
         filterToColumns(
@@ -2920,14 +2943,14 @@ async function updateSubmissionCore(args: {
   if (programField) {
     let beforeValue: string | null = null;
     if (!isBioType) {
-      const { data: existingProgram } = await client
+      const { data: existingProgram } = await db
         .from("programs")
         .select(programField)
         .eq("id", context.program_id)
         .maybeSingle();
       beforeValue = String((existingProgram as Record<string, unknown> | null)?.[programField] ?? "");
     }
-    const { error: programUpdateError } = await client
+    const { error: programUpdateError } = await db
       .from("programs")
       .update({ [programField]: cleanBio })
       .eq("id", context.program_id);
@@ -2944,7 +2967,7 @@ async function updateSubmissionCore(args: {
     });
   }
 
-  const { error: requestUpdateError } = await client
+  const { error: requestUpdateError } = await db
     .from("submission_requests")
     .update({
       status: args.status,
@@ -2955,13 +2978,13 @@ async function updateSubmissionCore(args: {
     return { ok: false as const, message: requestUpdateError.message };
   }
 
-  const { data: existingSubmission } = await client
+  const { data: existingSubmission } = await db
     .from("submissions")
     .select("id")
     .eq("request_id", args.requestId)
     .maybeSingle();
   if (existingSubmission?.id) {
-    await client
+    await db
       .from("submissions")
       .update({
         plain_text: stripRichTextToPlain(cleanBio),
@@ -2970,7 +2993,7 @@ async function updateSubmissionCore(args: {
       })
       .eq("id", String(existingSubmission.id));
   } else {
-    await client.from("submissions").insert({
+    await db.from("submissions").insert({
       request_id: args.requestId,
       plain_text: stripRichTextToPlain(cleanBio),
       status: args.status
@@ -2992,8 +3015,9 @@ async function updateSubmissionCore(args: {
 }
 
 async function getBioRequestForPerson(showId: string, personId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: role } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: role } = await db
     .from("show_roles")
     .select("id")
     .eq("show_id", showId)
@@ -3002,7 +3026,7 @@ async function getBioRequestForPerson(showId: string, personId: string) {
   if (!role?.id) {
     return null;
   }
-  const { data: request } = await client
+  const { data: request } = await db
     .from("submission_requests")
     .select("id, request_type")
     .eq("show_role_id", String(role.id))
@@ -3018,8 +3042,9 @@ async function getBioRequestForPerson(showId: string, personId: string) {
 }
 
 async function resolveSubmissionTaskForShow(showId: string, identifier: string) {
-  const client = getSupabaseWriteClient();
-  const { data: roles } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: roles } = await db
     .from("show_roles")
     .select("id, person_id")
     .eq("show_id", showId);
@@ -3030,7 +3055,7 @@ async function resolveSubmissionTaskForShow(showId: string, identifier: string) 
     return null;
   }
 
-  const { data: requestById } = await client
+  const { data: requestById } = await db
     .from("submission_requests")
     .select("id, show_role_id, request_type, status")
     .eq("id", identifier)
@@ -3049,7 +3074,7 @@ async function resolveSubmissionTaskForShow(showId: string, identifier: string) 
   if (!bioRequest) {
     return null;
   }
-  const { data: requestRow } = await client
+  const { data: requestRow } = await db
     .from("submission_requests")
     .select("status")
     .eq("id", bioRequest.requestId)
@@ -3113,8 +3138,9 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
     return null;
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: person } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: person } = await db
     .from("people")
     .select("*")
     .eq("id", resolvedTask.person_id)
@@ -3124,7 +3150,7 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
     return null;
   }
 
-  const { data: historyRows } = await client
+  const { data: historyRows } = await db
     .from("audit_log")
     .select("id, field, before_value, after_value, reason, changed_at, changed_by")
     .eq("entity", "people")
@@ -3135,7 +3161,7 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
   const changedByIds = [...new Set((historyRows ?? []).map((row) => String(row.changed_by ?? "")).filter(Boolean))];
   const { data: profileRows } =
     changedByIds.length > 0
-      ? await client.from("user_profiles").select("user_id, email").in("user_id", changedByIds)
+      ? await db.from("user_profiles").select("user_id, email").in("user_id", changedByIds)
       : { data: [] as Array<{ user_id: string; email: string }> };
   const emailByUserId = new Map<string, string>();
   for (const profile of profileRows ?? []) {
@@ -3146,7 +3172,7 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
   if (resolvedTask.request_type !== "bio") {
     const programField = getProgramFieldForSubmissionType(resolvedTask.request_type);
     if (programField) {
-      const { data: program } = await client
+      const { data: program } = await db
         .from("programs")
         .select(programField)
         .eq("id", context.program_id)
@@ -3384,9 +3410,10 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
     withError("/app/shows", "Show was not found.");
   }
 
-  const client = getSupabaseWriteClient();
-  const peopleColumns = await getTableColumns(client, "people");
-  const { data: peopleRows } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const peopleColumns = await getTableColumns(db, "people");
+  const { data: peopleRows } = await db
     .from("people")
     .select("id, full_name, role_title, email, bio, submission_status")
     .eq("program_id", context.program_id);
@@ -3465,7 +3492,7 @@ export async function importBiosFromCsv(showId: string, formData: FormData) {
       continue;
     }
 
-    const { error: updateError } = await client
+    const { error: updateError } = await db
       .from("people")
       .update(
         filterToColumns(

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { sanitizeRichText } from "@/lib/rich-text";
-import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 export type SeasonRecord = {
   id: string;
@@ -140,8 +140,9 @@ export function buildSeasonCalendarHtml(events: SeasonEventRecord[]) {
 }
 
 async function refreshSeasonCalendarForShow(showId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id, season_id, start_date, end_date")
     .eq("id", showId)
@@ -154,7 +155,7 @@ async function refreshSeasonCalendarForShow(showId: string) {
   }
 
   if (!show.season_id) {
-    const { error: clearError } = await client
+    const { error: clearError } = await db
       .from("programs")
       .update({ season_calendar: "" })
       .eq("id", String(show.program_id));
@@ -164,7 +165,7 @@ async function refreshSeasonCalendarForShow(showId: string) {
     return;
   }
 
-  const { data: events, error: eventsError } = await client
+  const { data: events, error: eventsError } = await db
     .from("season_events")
     .select("id, season_id, title, location, event_start_date, event_end_date, time_text, sort_order")
     .eq("season_id", String(show.season_id))
@@ -185,7 +186,7 @@ async function refreshSeasonCalendarForShow(showId: string) {
   }) as SeasonEventRecord[];
 
   const calendarHtml = buildSeasonCalendarHtml(upcoming);
-  const { error: updateError } = await client
+  const { error: updateError } = await db
     .from("programs")
     .update({ season_calendar: calendarHtml })
     .eq("id", String(show.program_id));
@@ -195,8 +196,9 @@ async function refreshSeasonCalendarForShow(showId: string) {
 }
 
 async function refreshSeasonCalendarsForSeason(seasonId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: shows, error } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: shows, error } = await db
     .from("shows")
     .select("id")
     .eq("season_id", seasonId);
@@ -224,8 +226,9 @@ export async function getSeasonLibraryData(selectedSeasonId = ""): Promise<Seaso
   }
 
   try {
-    const client = getSupabaseWriteClient();
-    const { data: seasons } = await client.from("seasons").select("id, name").order("name", { ascending: true });
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data: seasons } = await db.from("seasons").select("id, name").order("name", { ascending: true });
     const allSeasons = (seasons ?? []).map((season) => ({
       id: String(season.id),
       name: String(season.name ?? "")
@@ -234,7 +237,7 @@ export async function getSeasonLibraryData(selectedSeasonId = ""): Promise<Seaso
     const selectedSeasonName = allSeasons.find((season) => season.id === resolvedSeasonId)?.name ?? "";
 
     const { data: events } = resolvedSeasonId
-      ? await client
+      ? await db
           .from("season_events")
           .select("id, season_id, title, location, event_start_date, event_end_date, time_text, sort_order")
           .eq("season_id", resolvedSeasonId)
@@ -243,7 +246,7 @@ export async function getSeasonLibraryData(selectedSeasonId = ""): Promise<Seaso
       : { data: [] as Array<Record<string, unknown>> };
 
     const { count } = resolvedSeasonId
-      ? await client
+      ? await db
           .from("shows")
           .select("id", { count: "exact", head: true })
           .eq("season_id", resolvedSeasonId)
@@ -283,14 +286,15 @@ export async function getSeasonModuleData(showId: string): Promise<SeasonModuleD
   }
 
   try {
-    const client = getSupabaseWriteClient();
-    const { data: seasons } = await client.from("seasons").select("id, name").order("name", { ascending: true });
-    const { data: show } = await client.from("shows").select("season_id").eq("id", showId).maybeSingle();
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data: seasons } = await db.from("seasons").select("id, name").order("name", { ascending: true });
+    const { data: show } = await db.from("shows").select("season_id").eq("id", showId).maybeSingle();
     const selectedSeasonId = show?.season_id ? String(show.season_id) : "";
     const selectedSeasonName =
       (seasons ?? []).find((season) => String(season.id) === selectedSeasonId)?.name?.toString() ?? "";
     const { data: events } = selectedSeasonId
-      ? await client
+      ? await db
           .from("season_events")
           .select("id, season_id, title, location, event_start_date, event_end_date, time_text, sort_order")
           .eq("season_id", selectedSeasonId)
@@ -335,8 +339,9 @@ export async function createSeasonLibraryEntry(formData: FormData) {
     withError("/app/seasons", "Season name is required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data, error } = await client.from("seasons").insert({ name }).select("id").single();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data, error } = await db.from("seasons").insert({ name }).select("id").single();
   if (error || !data?.id) {
     withError("/app/seasons", error?.message ?? "Could not create season.");
   }
@@ -363,8 +368,9 @@ export async function updateSeasonLibraryEntry(formData: FormData) {
     withError("/app/seasons", "Season id and name are required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db
     .from("seasons")
     .update({ name, updated_at: new Date().toISOString() })
     .eq("id", seasonId);
@@ -391,8 +397,9 @@ export async function deleteSeasonLibraryEntry(formData: FormData) {
     withError("/app/seasons", "Season id is required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client.from("seasons").delete().eq("id", seasonId);
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db.from("seasons").delete().eq("id", seasonId);
   if (error) {
     const qp = new URLSearchParams({ seasonId, error: error.message });
     redirect(`/app/seasons?${qp.toString()}`);
@@ -427,7 +434,8 @@ export async function upsertSeasonLibraryEvent(formData: FormData) {
     redirect(`/app/seasons?${qp.toString()}`);
   }
 
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
   const payload = {
     season_id: seasonId,
     title,
@@ -440,13 +448,13 @@ export async function upsertSeasonLibraryEvent(formData: FormData) {
   };
 
   if (eventId) {
-    const { error } = await client.from("season_events").update(payload).eq("id", eventId);
+    const { error } = await db.from("season_events").update(payload).eq("id", eventId);
     if (error) {
       const qp = new URLSearchParams({ seasonId, error: error.message });
       redirect(`/app/seasons?${qp.toString()}`);
     }
   } else {
-    const { error } = await client.from("season_events").insert(payload);
+    const { error } = await db.from("season_events").insert(payload);
     if (error) {
       const qp = new URLSearchParams({ seasonId, error: error.message });
       redirect(`/app/seasons?${qp.toString()}`);
@@ -485,8 +493,9 @@ export async function deleteSeasonLibraryEvent(formData: FormData) {
     withError("/app/seasons", "Season id and event id are required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client.from("season_events").delete().eq("id", eventId);
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db.from("season_events").delete().eq("id", eventId);
   if (error) {
     const qp = new URLSearchParams({ seasonId, error: error.message });
     redirect(`/app/seasons?${qp.toString()}`);
@@ -520,13 +529,14 @@ export async function createSeason(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=settings`, "Season name is required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: season, error } = await client.from("seasons").insert({ name }).select("id").single();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: season, error } = await db.from("seasons").insert({ name }).select("id").single();
   if (error || !season) {
     withError(`/app/shows/${showId}?tab=settings`, error?.message ?? "Could not create season.");
   }
 
-  const { error: showUpdateError } = await client
+  const { error: showUpdateError } = await db
     .from("shows")
     .update({ season_id: String(season.id), updated_at: new Date().toISOString() })
     .eq("id", showId);
@@ -553,8 +563,9 @@ export async function assignSeasonToShow(showId: string, formData: FormData) {
   }
 
   const seasonId = String(formData.get("seasonId") ?? "").trim();
-  const client = getSupabaseWriteClient();
-  const { error: showUpdateError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error: showUpdateError } = await db
     .from("shows")
     .update({ season_id: seasonId || null, updated_at: new Date().toISOString() })
     .eq("id", showId);
@@ -600,7 +611,8 @@ export async function upsertSeasonEvent(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=settings`, "Event title and start date are required.");
   }
 
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
   const payload = {
     season_id: seasonId,
     title,
@@ -613,12 +625,12 @@ export async function upsertSeasonEvent(showId: string, formData: FormData) {
   };
 
   if (eventId) {
-    const { error } = await client.from("season_events").update(payload).eq("id", eventId);
+    const { error } = await db.from("season_events").update(payload).eq("id", eventId);
     if (error) {
       withError(`/app/shows/${showId}?tab=settings`, error.message);
     }
   } else {
-    const { error } = await client.from("season_events").insert(payload);
+    const { error } = await db.from("season_events").insert(payload);
     if (error) {
       withError(`/app/shows/${showId}?tab=settings`, error.message);
     }
@@ -651,8 +663,9 @@ export async function deleteSeasonEvent(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=settings`, "Event id is required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client.from("season_events").delete().eq("id", eventId);
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db.from("season_events").delete().eq("id", eventId);
   if (error) {
     withError(`/app/shows/${showId}?tab=settings`, error.message);
   }

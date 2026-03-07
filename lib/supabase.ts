@@ -1,7 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
+export const APP_SCHEMA = process.env.APP_SCHEMA || "app_playbill";
+export const APP_ID = process.env.APP_ID || "playbill";
+
 export function getMissingSupabaseEnvVars() {
-  const required = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+  const required = [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY"
+  ];
   return required.filter((name) => !process.env[name]);
 }
 
@@ -15,11 +22,25 @@ function requireEnv(name: string) {
 
 export function getSupabaseWriteClient() {
   return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-    auth: { persistSession: false }
+    auth: { persistSession: false },
+    db: { schema: APP_SCHEMA }
   });
 }
 
 export function getSupabaseReadClient() {
+  return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
+    auth: { persistSession: false },
+    db: { schema: APP_SCHEMA }
+  });
+}
+
+export function getSupabaseWriteClientRaw() {
+  return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false }
+  });
+}
+
+export function getSupabaseReadClientRaw() {
   return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
     auth: { persistSession: false }
   });

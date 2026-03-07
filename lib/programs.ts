@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { buildDepartmentInfoHtml } from "@/lib/departments";
 import { buildSeasonCalendarHtml } from "@/lib/seasons";
-import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
 
@@ -259,11 +259,12 @@ function redirectWithError(path: string, message: string): never {
   redirect(`${path}?${qp.toString()}`);
 }
 
-async function getTableColumns(client: ReturnType<typeof getSupabaseWriteClient>, tableName: string) {
-  const { data, error } = await client
+async function getTableColumns(_db: unknown, tableName: string) {
+  const metaClient = getSupabaseWriteClientRaw();
+  const { data, error } = await metaClient
     .from("information_schema.columns")
     .select("column_name")
-    .eq("table_schema", "public")
+    .eq("table_schema", APP_SCHEMA)
     .eq("table_name", tableName);
 
   if (error || !data) {
@@ -1588,7 +1589,8 @@ export async function createProgram(formData: FormData) {
     redirectWithError("/programs/new", `Supabase is not configured: ${missingEnv.join(", ")}`);
   }
 
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
 
   const baseSlug = slugify(parsed.title);
   const slug = `${baseSlug}-${Date.now().toString().slice(-5)}`;
@@ -1639,7 +1641,7 @@ export async function createProgram(formData: FormData) {
   const billingHtml = sanitizeRichText(parsed.billingPage);
   const resolvedBilling = richTextHasContent(billingHtml) ? billingHtml : generateAutoBilling(rosterPeople);
 
-  const programsColumns = await getTableColumns(client, "programs");
+  const programsColumns = await getTableColumns(db, "programs");
   const rawProgramInsert: Record<string, unknown> = {
     title: parsed.title,
     slug,
@@ -1665,13 +1667,13 @@ export async function createProgram(formData: FormData) {
 
   const programInsert = filterToColumns(rawProgramInsert, programsColumns);
 
-  const { data: program, error: programError } = await client.from("programs").insert(programInsert).select("id, slug").single();
+  const { data: program, error: programError } = await db.from("programs").insert(programInsert).select("id, slug").single();
 
   if (programError || !program) {
     redirectWithError("/programs/new", programError?.message ?? "Could not create program.");
   }
 
-  const peopleColumns = await getTableColumns(client, "people");
+  const peopleColumns = await getTableColumns(db, "people");
   const mergedPeopleRows = mergeRosterWithExisting(rosterPeople, []);
   const peopleRows = mergedPeopleRows.map((person) =>
     filterToColumns(
@@ -1691,7 +1693,7 @@ export async function createProgram(formData: FormData) {
   );
 
   if (peopleRows.length > 0) {
-    const { error: peopleError } = await client.from("people").insert(peopleRows);
+    const { error: peopleError } = await db.from("people").insert(peopleRows);
     if (peopleError) {
       redirectWithError("/programs/new", peopleError.message);
     }
@@ -1882,15 +1884,16 @@ export async function getProgramBySlug(
   }
 ) {
   try {
-    // Use server write client for deterministic renderer reads across RLS policies.
-    const client = getSupabaseWriteClient();
+    // Use server write db for deterministic renderer reads across RLS policies.
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
 
-    const { data: program, error } = await client.from("programs").select("*").eq("slug", slug).single();
+    const { data: program, error } = await db.from("programs").select("*").eq("slug", slug).single();
     if (error || !program) {
       return null;
     }
 
-    const { data: people, error: peopleError } = await client.from("people").select("*").eq("program_id", program.id);
+    const { data: people, error: peopleError } = await db.from("people").select("*").eq("program_id", program.id);
     if (peopleError) {
       throw new Error(peopleError.message);
     }
@@ -1944,7 +1947,7 @@ export async function getProgramBySlug(
     let normalizedModules: ProgramModuleRecord[] = [];
     let showRoleAssignments: ShowRoleRecord[] = [];
     let modulePreviewPage: ProgramPage | null = null;
-    const { data: show } = await client
+    const { data: show } = await db
       .from("shows")
       .select("id, season_id, start_date, end_date")
       .eq("program_id", String(program.id))
@@ -1952,7 +1955,7 @@ export async function getProgramBySlug(
 
     if (show?.id) {
       try {
-        const { data: roleRows } = await client
+        const { data: roleRows } = await db
           .from("show_roles")
           .select("id, person_id, role_name, category, billing_order, bio_order")
           .eq("show_id", String(show.id));
@@ -1975,7 +1978,7 @@ export async function getProgramBySlug(
 
       try {
         if (show.season_id) {
-          const { data: events } = await client
+          const { data: events } = await db
             .from("season_events")
             .select("id, season_id, title, location, event_start_date, event_end_date, time_text, sort_order")
             .eq("season_id", String(show.season_id))
@@ -2009,14 +2012,14 @@ export async function getProgramBySlug(
       }
 
       try {
-        const { data: bindings } = await client
+        const { data: bindings } = await db
           .from("show_departments")
           .select("department_id, sort_order")
           .eq("show_id", String(show.id))
           .order("sort_order", { ascending: true });
         const departmentIds = (bindings ?? []).map((row) => String(row.department_id ?? "")).filter(Boolean);
         if (departmentIds.length > 0) {
-          const { data: departments } = await client
+          const { data: departments } = await db
             .from("departments")
             .select("id, name, description, website, contact_email, contact_phone")
             .in("id", departmentIds);
@@ -2039,14 +2042,14 @@ export async function getProgramBySlug(
         // Keep existing program.department_info if department tables are not available yet.
       }
 
-      const { data: styleRow } = await client
+      const { data: styleRow } = await db
         .from("show_style_settings")
         .select("density_mode")
         .eq("show_id", String(show.id))
         .maybeSingle();
       appliedDensityMode = normalizeDensityMode(styleRow?.density_mode);
 
-      const { data: modules } = await client
+      const { data: modules } = await db
         .from("program_modules")
         .select("id, module_type, display_title, module_order, visible, filler_eligible, settings")
         .eq("show_id", String(show.id))
@@ -2221,8 +2224,9 @@ export async function getProgramsList() {
       return [] as ProgramSummary[];
     }
 
-    const client = getSupabaseWriteClient();
-    const { data, error } = await client
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data, error } = await db
       .from("programs")
       .select("id, slug, title, show_dates, created_at")
       .order("created_at", { ascending: false });
@@ -2273,8 +2277,9 @@ export async function getProgramWorkspaceList() {
       }));
     }
 
-    const client = getSupabaseWriteClient();
-    const { data: peopleRows } = await client.from("people").select("program_id, submission_status");
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data: peopleRows } = await db.from("people").select("program_id, submission_status");
 
     const summaryByProgram = new Map<string, { total: number; submitted: number }>();
     for (const row of peopleRows ?? []) {
@@ -2346,9 +2351,10 @@ export async function updateProgram(slug: string, formData: FormData) {
     redirectWithError(`/programs/${slug}/edit`, `Supabase is not configured: ${missingEnv.join(", ")}`);
   }
 
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
 
-  const { data: existingProgram, error: existingProgramError } = await client
+  const { data: existingProgram, error: existingProgramError } = await db
     .from("programs")
     .select("id, slug, acts_songs, department_info, season_calendar, poster_image_url, show_dates, performance_schedule")
     .eq("slug", slug)
@@ -2357,13 +2363,13 @@ export async function updateProgram(slug: string, formData: FormData) {
     redirectWithError("/programs", "Program not found.");
   }
 
-  const { data: linkedShow } = await client
+  const { data: linkedShow } = await db
     .from("shows")
     .select("id")
     .eq("program_id", existingProgram.id)
     .maybeSingle();
 
-  const { data: existingPeopleRows } = await client.from("people").select("*").eq("program_id", existingProgram.id);
+  const { data: existingPeopleRows } = await db.from("people").select("*").eq("program_id", existingProgram.id);
   const existingPeople = normalizeExistingPeopleRows((existingPeopleRows ?? []) as Record<string, unknown>[]);
 
   const layoutOrderRaw = parsed.layoutOrder?.trim() ?? "";
@@ -2438,7 +2444,7 @@ export async function updateProgram(slug: string, formData: FormData) {
   const resolvedDepartmentInfo = linkedShow ? String(existingProgram.department_info ?? "") : sanitizeRichText(parsed.departmentInfo);
   const resolvedSeasonCalendar = linkedShow ? String(existingProgram.season_calendar ?? "") : sanitizeRichText(parsed.seasonCalendar);
 
-  const programsColumns = await getTableColumns(client, "programs");
+  const programsColumns = await getTableColumns(db, "programs");
   const programUpdate = filterToColumns(
     {
       title: parsed.title,
@@ -2464,17 +2470,17 @@ export async function updateProgram(slug: string, formData: FormData) {
     programsColumns
   );
 
-  const { error: programUpdateError } = await client.from("programs").update(programUpdate).eq("id", existingProgram.id);
+  const { error: programUpdateError } = await db.from("programs").update(programUpdate).eq("id", existingProgram.id);
   if (programUpdateError) {
     redirectWithError(`/programs/${slug}/edit`, programUpdateError.message);
   }
 
-  const { error: deletePeopleError } = await client.from("people").delete().eq("program_id", existingProgram.id);
+  const { error: deletePeopleError } = await db.from("people").delete().eq("program_id", existingProgram.id);
   if (deletePeopleError) {
     redirectWithError(`/programs/${slug}/edit`, deletePeopleError.message);
   }
 
-  const peopleColumns = await getTableColumns(client, "people");
+  const peopleColumns = await getTableColumns(db, "people");
   if (mergedPeople.length > 0) {
     const peopleRows = mergedPeople.map((person) =>
       filterToColumns(
@@ -2492,7 +2498,7 @@ export async function updateProgram(slug: string, formData: FormData) {
         peopleColumns
       )
     );
-    const { error: peopleInsertError } = await client.from("people").insert(peopleRows);
+    const { error: peopleInsertError } = await db.from("people").insert(peopleRows);
     if (peopleInsertError) {
       redirectWithError(`/programs/${slug}/edit`, peopleInsertError.message);
     }
@@ -2531,14 +2537,15 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
     redirectWithError(`/programs/${slug}/submit`, `Supabase is not configured: ${missingEnv.join(", ")}`);
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: program, error: programError } = await client.from("programs").select("id, slug").eq("slug", slug).single();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: program, error: programError } = await db.from("programs").select("id, slug").eq("slug", slug).single();
 
   if (programError || !program) {
     redirectWithError(`/programs/${slug}/submit`, "Program not found.");
   }
 
-  const { data: targetPerson, error: personError } = await client
+  const { data: targetPerson, error: personError } = await db
     .from("people")
     .select("*")
     .eq("id", parsed.personId)
@@ -2562,7 +2569,7 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
     redirectWithError(`/programs/${slug}/submit`, "Email does not match roster record.");
   }
 
-  const peopleColumns = await getTableColumns(client, "people");
+  const peopleColumns = await getTableColumns(db, "people");
   const updatePayload = filterToColumns(
     {
       bio: cleanBio,
@@ -2573,7 +2580,7 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
     peopleColumns
   );
 
-  const { error: updateError } = await client.from("people").update(updatePayload).eq("id", targetPerson.id);
+  const { error: updateError } = await db.from("people").update(updatePayload).eq("id", targetPerson.id);
   if (updateError) {
     redirectWithError(`/programs/${slug}/submit`, updateError.message);
   }

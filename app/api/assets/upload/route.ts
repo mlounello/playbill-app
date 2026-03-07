@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { resolvePlatformRoleForUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -50,19 +51,15 @@ export async function POST(request: Request) {
     }
 
     const admin = getSupabaseWriteClient();
-    const { data: profile } = await admin
-      .from("user_profiles")
-      .select("platform_role")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    const role = String(profile?.platform_role ?? "contributor");
+    const db = admin.schema(APP_SCHEMA);
+    const role = await resolvePlatformRoleForUser({ supabase, userId: user.id, email: user.email });
 
-    const { data: show } = await admin.from("shows").select("id, program_id").eq("id", showId).maybeSingle();
+    const { data: show } = await db.from("shows").select("id, program_id").eq("id", showId).maybeSingle();
     if (!show?.program_id) {
       return NextResponse.json({ ok: false, error: "Show not found." }, { status: 404 });
     }
 
-    const { data: person } = await admin
+    const { data: person } = await db
       .from("people")
       .select("id, email, program_id")
       .eq("id", personId)
@@ -97,12 +94,12 @@ export async function POST(request: Request) {
     const { data: publicUrlData } = admin.storage.from(bucket).getPublicUrl(path);
     const publicUrl = String(publicUrlData.publicUrl ?? "");
 
-    const { error: peopleError } = await admin.from("people").update({ headshot_url: publicUrl }).eq("id", personId);
+    const { error: peopleError } = await db.from("people").update({ headshot_url: publicUrl }).eq("id", personId);
     if (peopleError) {
       return NextResponse.json({ ok: false, error: peopleError.message }, { status: 500 });
     }
 
-    await admin.from("assets").insert({
+    await db.from("assets").insert({
       show_id: showId,
       person_id: personId,
       asset_type: assetType,

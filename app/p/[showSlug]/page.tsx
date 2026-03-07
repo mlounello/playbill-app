@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PublicProgramViewer } from "@/components/public-program-viewer";
 import { getProgramBySlug } from "@/lib/programs";
-import { getSupabaseReadClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseReadClient } from "@/lib/supabase";
 
 export default async function PublicProgramPage({
   params,
@@ -13,9 +13,10 @@ export default async function PublicProgramPage({
 }) {
   const { showSlug } = await params;
   const { view } = await searchParams;
-  const client = getSupabaseReadClient();
+  const supabase = getSupabaseReadClient();
+  const db = supabase.schema(APP_SCHEMA);
 
-  let { data: show } = await client
+  let { data: show } = await db
     .from("shows")
     .select("program_id, slug, is_published")
     .eq("slug", showSlug)
@@ -24,9 +25,9 @@ export default async function PublicProgramPage({
 
   // Backward-compatibility: accept old links that use program slug instead of show slug.
   if (!show?.program_id) {
-    const { data: programBySlug } = await client.from("programs").select("id").eq("slug", showSlug).maybeSingle();
+    const { data: programBySlug } = await db.from("programs").select("id").eq("slug", showSlug).maybeSingle();
     if (programBySlug?.id) {
-      const { data: showByProgram } = await client
+      const { data: showByProgram } = await db
         .from("shows")
         .select("program_id, slug, is_published")
         .eq("program_id", programBySlug.id)
@@ -40,7 +41,7 @@ export default async function PublicProgramPage({
     notFound();
   }
 
-  const { data: programRow } = await client.from("programs").select("slug").eq("id", show.program_id).maybeSingle();
+  const { data: programRow } = await db.from("programs").select("slug").eq("id", show.program_id).maybeSingle();
   const programSlug = String(programRow?.slug ?? "");
   const canonicalShowSlug = String(show.slug ?? showSlug);
   const program = programSlug ? await getProgramBySlug(programSlug) : null;

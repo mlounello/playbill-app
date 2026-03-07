@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { sanitizeRichText } from "@/lib/rich-text";
-import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 export type DepartmentRecord = {
   id: string;
@@ -49,8 +49,9 @@ export function buildDepartmentInfoHtml(departments: DepartmentRecord[]) {
 }
 
 async function refreshDepartmentInfoForShow(showId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id")
     .eq("id", showId)
@@ -59,7 +60,7 @@ async function refreshDepartmentInfoForShow(showId: string) {
     return;
   }
 
-  const { data: selectedRows } = await client
+  const { data: selectedRows } = await db
     .from("show_departments")
     .select("department_id, sort_order")
     .eq("show_id", showId)
@@ -69,7 +70,7 @@ async function refreshDepartmentInfoForShow(showId: string) {
     .filter(Boolean);
 
   const { data: departments } = selectedDepartmentIds.length
-    ? await client
+    ? await db
         .from("departments")
         .select("id, name, description, website, contact_email, contact_phone")
         .in("id", selectedDepartmentIds)
@@ -88,13 +89,14 @@ async function refreshDepartmentInfoForShow(showId: string) {
     .sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER));
 
   const departmentInfoHtml = buildDepartmentInfoHtml(selected);
-  await client.from("programs").update({ department_info: departmentInfoHtml }).eq("id", String(show.program_id));
-  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  await db.from("programs").update({ department_info: departmentInfoHtml }).eq("id", String(show.program_id));
+  await db.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
 }
 
 async function refreshDepartmentInfoForDepartment(departmentId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: bindings } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: bindings } = await db
     .from("show_departments")
     .select("show_id")
     .eq("department_id", departmentId);
@@ -111,8 +113,9 @@ export async function getDepartmentRepository() {
   }
 
   try {
-    const client = getSupabaseWriteClient();
-    const { data, error } = await client
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data, error } = await db
       .from("departments")
       .select("id, name, description, website, contact_email, contact_phone")
       .order("name", { ascending: true });
@@ -143,8 +146,9 @@ export async function getShowDepartmentSelection(showId: string) {
   }
 
   try {
-    const client = getSupabaseWriteClient();
-    const { data, error } = await client
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data, error } = await db
       .from("show_departments")
       .select("department_id, sort_order")
       .eq("show_id", showId)
@@ -182,8 +186,9 @@ export async function createDepartment(formData: FormData) {
     withError(`/app/shows/${showId}?tab=settings`, "Website must begin with http:// or https://");
   }
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client.from("departments").insert({
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db.from("departments").insert({
     name,
     description: sanitizeRichText(String(formData.get("description") ?? "")),
     website,
@@ -216,8 +221,9 @@ export async function createProducingProfile(formData: FormData) {
     withError("/app/producing-profiles", "Website must begin with http:// or https://");
   }
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client.from("departments").insert({
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db.from("departments").insert({
     name,
     description: sanitizeRichText(String(formData.get("description") ?? "")),
     website,
@@ -250,8 +256,9 @@ export async function updateProducingProfile(formData: FormData) {
     withError("/app/producing-profiles", "Website must begin with http:// or https://");
   }
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db
     .from("departments")
     .update({
       name,
@@ -284,8 +291,9 @@ export async function deleteProducingProfile(formData: FormData) {
   }
 
   await refreshDepartmentInfoForDepartment(id);
-  const client = getSupabaseWriteClient();
-  const { error } = await client.from("departments").delete().eq("id", id);
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db.from("departments").delete().eq("id", id);
   if (error) {
     withError("/app/producing-profiles", error.message);
   }
@@ -307,8 +315,9 @@ export async function updateShowDepartments(showId: string, formData: FormData) 
     .map((value) => String(value).trim())
     .filter(Boolean);
 
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id")
     .eq("id", showId)
@@ -317,13 +326,13 @@ export async function updateShowDepartments(showId: string, formData: FormData) 
     withError("/app/shows", "Show not found.");
   }
 
-  const { error: deleteError } = await client.from("show_departments").delete().eq("show_id", showId);
+  const { error: deleteError } = await db.from("show_departments").delete().eq("show_id", showId);
   if (deleteError) {
     withError(`/app/shows/${showId}?tab=settings`, deleteError.message);
   }
 
   if (selectedDepartmentIds.length > 0) {
-    const { error: insertError } = await client.from("show_departments").insert(
+    const { error: insertError } = await db.from("show_departments").insert(
       selectedDepartmentIds.map((departmentId, index) => ({
         show_id: showId,
         department_id: departmentId,

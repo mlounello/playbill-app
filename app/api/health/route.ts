@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { getMissingSupabaseEnvVars } from "@/lib/supabase";
+import { APP_SCHEMA, getMissingSupabaseEnvVars } from "@/lib/supabase";
 
 export async function GET() {
   const missing = getMissingSupabaseEnvVars();
@@ -31,13 +31,15 @@ export async function GET() {
 
   try {
     const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-      auth: { persistSession: false }
+      auth: { persistSession: false },
+      db: { schema: APP_SCHEMA }
     });
+    const db = client.schema(APP_SCHEMA);
 
     const [programsCheck, showsCheck, peopleCheck] = await Promise.all([
-      client.from("programs").select("id", { count: "exact", head: true }),
-      client.from("shows").select("id", { count: "exact", head: true }),
-      client.from("people").select("id", { count: "exact", head: true })
+      db.from("programs").select("id", { count: "exact", head: true }),
+      db.from("shows").select("id", { count: "exact", head: true }),
+      db.from("people").select("id", { count: "exact", head: true })
     ]);
 
     if (programsCheck.error || showsCheck.error || peopleCheck.error) {

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
-import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 export type RoleCategory = "cast" | "creative" | "production";
 export type RoleScope = "global" | "show_only";
@@ -116,13 +116,14 @@ function dedupeRoleTemplateRows(rows: RoleTemplateImportRow[]) {
 }
 
 async function upsertRoleTemplates(rows: RoleTemplateImportRow[]) {
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
   let created = 0;
   let reactivated = 0;
   let failed = 0;
 
   for (const row of rows) {
-    const existingQuery = client
+    const existingQuery = db
       .from("role_templates")
       .select("id, is_hidden")
       .eq("name", row.name)
@@ -136,7 +137,7 @@ async function upsertRoleTemplates(rows: RoleTemplateImportRow[]) {
       : null;
 
     if (existing?.id) {
-      await client
+      await db
         .from("role_templates")
         .update({
           is_hidden: false,
@@ -147,7 +148,7 @@ async function upsertRoleTemplates(rows: RoleTemplateImportRow[]) {
       continue;
     }
 
-    const { error } = await client.from("role_templates").insert({
+    const { error } = await db.from("role_templates").insert({
       name: row.name,
       category: row.category,
       scope: row.scope,
@@ -172,15 +173,16 @@ export async function getRoleLibraryData(selectedShowId = ""): Promise<RoleLibra
   }
 
   try {
-    const client = getSupabaseWriteClient();
-    const { data: showRows } = await client.from("shows").select("id, title").order("title", { ascending: true });
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data: showRows } = await db.from("shows").select("id, title").order("title", { ascending: true });
     const shows = (showRows ?? []).map((row) => ({
       id: String(row.id),
       title: String(row.title ?? "Untitled Show")
     }));
 
     const resolvedShowId = selectedShowId || "";
-    const { data: roleRows } = await client
+    const { data: roleRows } = await db
       .from("role_templates")
       .select("id, name, category, scope, show_id, is_hidden, created_at")
       .order("is_hidden", { ascending: true })
@@ -231,7 +233,8 @@ export async function createRoleTemplate(formData: FormData) {
     withError("/app/roles", "Show is required for show-only roles.");
   }
 
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
   const payload = {
     name,
     category,
@@ -242,7 +245,7 @@ export async function createRoleTemplate(formData: FormData) {
   };
 
   const existingScoped = scope === "show_only"
-    ? await client
+    ? await db
         .from("role_templates")
         .select("id")
         .eq("name", name)
@@ -250,7 +253,7 @@ export async function createRoleTemplate(formData: FormData) {
         .eq("scope", scope)
         .eq("show_id", showId)
         .maybeSingle()
-    : await client
+    : await db
         .from("role_templates")
         .select("id")
         .eq("name", name)
@@ -261,11 +264,11 @@ export async function createRoleTemplate(formData: FormData) {
 
   if (existingScoped.data?.id) {
     const existingId = String(existingScoped.data.id);
-    await client.from("role_templates").update(payload).eq("id", existingId);
+    await db.from("role_templates").update(payload).eq("id", existingId);
     withSuccess("/app/roles", "Role already existed and was reactivated.");
   }
 
-  const { error } = await client.from("role_templates").insert(payload);
+  const { error } = await db.from("role_templates").insert(payload);
   if (error) {
     withError("/app/roles", error.message);
   }
@@ -291,8 +294,9 @@ export async function updateRoleTemplate(formData: FormData) {
     withError("/app/roles", "Show is required for show-only roles.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db
     .from("role_templates")
     .update({
       name,
@@ -320,9 +324,10 @@ export async function deleteRoleTemplate(formData: FormData) {
     withError("/app/roles", "Role id is required.");
   }
 
-  const client = getSupabaseWriteClient();
-  await client.from("show_roles").update({ role_template_id: null }).eq("role_template_id", id);
-  const { error } = await client.from("role_templates").delete().eq("id", id);
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  await db.from("show_roles").update({ role_template_id: null }).eq("role_template_id", id);
+  const { error } = await db.from("role_templates").delete().eq("id", id);
 
   if (error) {
     withError("/app/roles", error.message);
@@ -337,8 +342,9 @@ export async function hideShowOnlyCastRoleTemplatesForShow(showId: string) {
     return;
   }
 
-  const client = getSupabaseWriteClient();
-  await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  await db
     .from("role_templates")
     .update({ is_hidden: true, updated_at: new Date().toISOString() })
     .eq("show_id", showId)
@@ -360,8 +366,9 @@ export async function importRolesFromPaste(formData: FormData) {
     withError("/app/roles", "Paste rows are required.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: shows } = await client.from("shows").select("id, title, slug");
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: shows } = await db.from("shows").select("id, title, slug");
   const showByAnyKey = new Map<string, string>();
   const showRowsNormalized = (shows ?? []).map((show) => ({
     id: String(show.id ?? ""),

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { hideShowOnlyCastRoleTemplatesForShow } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/rich-text";
-import { getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 
 export type ShowSummary = {
   id: string;
@@ -297,14 +297,15 @@ export async function createShow(formData: FormData) {
     withError("/app/shows/new", "Please fill in the required fields.");
   }
 
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
   const slugBase = parsed.slug ? slugify(parsed.slug) : slugify(parsed.title);
   const slug = `${slugBase}-${Date.now().toString().slice(-4)}`;
 
   const showDates = formatShowDates(parsed.startDate, parsed.endDate);
   const sanitizedActsAndSongs = sanitizeRichText(parsed.actsAndSongs ?? "");
 
-  const { data: program, error: programError } = await client
+  const { data: program, error: programError } = await db
     .from("programs")
     .insert({
       title: parsed.title,
@@ -320,7 +321,7 @@ export async function createShow(formData: FormData) {
     withError("/app/shows/new", programError?.message ?? "Could not create base program.");
   }
 
-  const { data: show, error: showError } = await client
+  const { data: show, error: showError } = await db
     .from("shows")
     .insert({
       title: parsed.title,
@@ -339,7 +340,7 @@ export async function createShow(formData: FormData) {
     withError("/app/shows/new", showError?.message ?? "Could not create show.");
   }
 
-  await client.from("show_style_settings").upsert({
+  await db.from("show_style_settings").upsert({
     show_id: show.id,
     title_font: "Oswald",
     body_font: "Merriweather",
@@ -372,7 +373,7 @@ export async function createShow(formData: FormData) {
     "back_cover"
   ];
 
-  await client.from("program_modules").insert(
+  await db.from("program_modules").insert(
     defaultModules.map((module, index) => ({
       show_id: show.id,
       module_type: module,
@@ -393,16 +394,17 @@ export async function getShowsForDashboard() {
   }
 
   try {
-    const client = getSupabaseWriteClient();
-    const { data: shows } = await client
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data: shows } = await db
       .from("shows")
       .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at, reminders_paused")
       .order("created_at", { ascending: false });
 
-    const { data: programs } = await client
+    const { data: programs } = await db
       .from("programs")
       .select("*");
-    const { data: people } = await client.from("people").select("program_id, submission_status");
+    const { data: people } = await db.from("people").select("program_id, submission_status");
 
     const programSlugById = new Map<string, string>();
     for (const p of programs ?? []) {
@@ -463,8 +465,9 @@ export async function getShowById(showId: string) {
   }
 
   try {
-    const client = getSupabaseWriteClient();
-    const { data: show, error } = await client
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data: show, error } = await db
       .from("shows")
       .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at, reminders_paused")
       .eq("id", showId)
@@ -475,13 +478,13 @@ export async function getShowById(showId: string) {
     }
 
     const programId = String(show.program_id ?? "");
-    const { data: program } = await client
+    const { data: program } = await db
       .from("programs")
       .select("*")
       .eq("id", programId)
       .single();
-    const { data: people } = await client.from("people").select("submission_status").eq("program_id", programId);
-    const { data: modules } = await client
+    const { data: people } = await db.from("people").select("submission_status").eq("program_id", programId);
+    const { data: modules } = await db
       .from("program_modules")
       .select("id, module_type, display_title, module_order, visible, filler_eligible, settings")
       .eq("show_id", showId)
@@ -547,8 +550,9 @@ export async function updateShowModules(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=program-plan`, "Invalid module payload.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id")
     .eq("id", showId)
@@ -558,13 +562,13 @@ export async function updateShowModules(showId: string, formData: FormData) {
     withError("/app/shows", "Show not found.");
   }
 
-  const { error: deleteError } = await client.from("program_modules").delete().eq("show_id", showId);
+  const { error: deleteError } = await db.from("program_modules").delete().eq("show_id", showId);
   if (deleteError) {
     withError(`/app/shows/${showId}?tab=program-plan`, deleteError.message);
   }
 
   if (modules.length > 0) {
-    const { error: insertError } = await client.from("program_modules").insert(
+    const { error: insertError } = await db.from("program_modules").insert(
       modules.map((module, index) => ({
         show_id: showId,
         module_type: module.module_type,
@@ -582,7 +586,7 @@ export async function updateShowModules(showId: string, formData: FormData) {
 
   const layoutTokens = buildProgramLayoutTokens(modules);
   if (show.program_id) {
-    await client.from("programs").update({ layout_order: layoutTokens }).eq("id", show.program_id);
+    await db.from("programs").update({ layout_order: layoutTokens }).eq("id", show.program_id);
   }
 
   const qp = new URLSearchParams({
@@ -609,8 +613,9 @@ export async function reorderShowModules(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=preview`, "Invalid reorder payload.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: modules, error: modulesError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: modules, error: modulesError } = await db
     .from("program_modules")
     .select("id")
     .eq("show_id", showId)
@@ -633,7 +638,7 @@ export async function reorderShowModules(showId: string, formData: FormData) {
   }
 
   for (let index = 0; index < orderedIds.length; index += 1) {
-    const { error: updateError } = await client
+    const { error: updateError } = await db
       .from("program_modules")
       .update({ module_order: index })
       .eq("show_id", showId)
@@ -656,13 +661,14 @@ export async function archiveShow(showId: string) {
     withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client.from("shows").select("id").eq("id", showId).single();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db.from("shows").select("id").eq("id", showId).single();
   if (showError || !show) {
     withError("/app/shows", "Show not found.");
   }
 
-  const { error: updateError } = await client
+  const { error: updateError } = await db
     .from("shows")
     .update({
       status: "archived",
@@ -691,13 +697,14 @@ export async function restoreArchivedShow(showId: string) {
     withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client.from("shows").select("id").eq("id", showId).single();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db.from("shows").select("id").eq("id", showId).single();
   if (showError || !show) {
     withError("/app/shows", "Show not found.");
   }
 
-  const { error: updateError } = await client
+  const { error: updateError } = await db
     .from("shows")
     .update({
       status: "draft",
@@ -722,8 +729,9 @@ export async function deleteArchivedShow(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, slug, status, program_id")
     .eq("id", showId)
@@ -746,13 +754,13 @@ export async function deleteArchivedShow(showId: string, formData: FormData) {
   }
 
   if (show.program_id) {
-    const { error: programDeleteError } = await client.from("programs").delete().eq("id", show.program_id);
+    const { error: programDeleteError } = await db.from("programs").delete().eq("id", show.program_id);
     if (programDeleteError) {
       withError(`/app/shows/${showId}?tab=settings`, `Could not remove program data: ${programDeleteError.message}`);
     }
   }
 
-  const { error: showDeleteError } = await client.from("shows").delete().eq("id", showId);
+  const { error: showDeleteError } = await db.from("shows").delete().eq("id", showId);
   if (showDeleteError) {
     withError(`/app/shows/${showId}?tab=settings`, showDeleteError.message);
   }
@@ -767,8 +775,9 @@ export async function getShowExports(showId: string) {
   }
 
   try {
-    const client = getSupabaseWriteClient();
-    const { data } = await client
+    const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+    const { data } = await db
       .from("exports")
       .select("id, export_type, status, file_path, created_at, completed_at")
       .eq("show_id", showId)
@@ -789,8 +798,9 @@ export async function getShowExports(showId: string) {
 }
 
 async function getShowAndProgram(showId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, slug, program_id")
     .eq("id", showId)
@@ -799,7 +809,7 @@ async function getShowAndProgram(showId: string) {
     return null;
   }
 
-  const { data: program, error: programError } = await client
+  const { data: program, error: programError } = await db
     .from("programs")
     .select("id, slug")
     .eq("id", show.program_id)
@@ -835,8 +845,9 @@ export async function requestShowExport(showId: string, formData: FormData) {
     withError("/app/shows", "Show not found.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: created, error: createError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: created, error: createError } = await db
     .from("exports")
     .insert({
       show_id: showId,
@@ -855,7 +866,7 @@ export async function requestShowExport(showId: string, formData: FormData) {
 
   const filePath = `/api/exports/${created.id}/download`;
 
-  const { error: completeError } = await client
+  const { error: completeError } = await db
     .from("exports")
     .update({
       status: "done",
@@ -883,8 +894,9 @@ export async function setShowPublished(showId: string, formData: FormData) {
   const intent = String(formData.get("intent") ?? "publish");
   const shouldPublish = intent === "publish";
 
-  const client = getSupabaseWriteClient();
-  const { error } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db
     .from("shows")
     .update({
       is_published: shouldPublish,
@@ -914,9 +926,10 @@ export async function updateShowActsAndSongs(showId: string, formData: FormData)
   }
 
   const actsAndSongs = sanitizeRichText(String(formData.get("actsAndSongs") ?? ""));
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
 
-  const { data: show, error: showError } = await client
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id")
     .eq("id", showId)
@@ -926,7 +939,7 @@ export async function updateShowActsAndSongs(showId: string, formData: FormData)
     withError("/app/shows", "Show not found.");
   }
 
-  const { error: showUpdateError } = await client
+  const { error: showUpdateError } = await db
     .from("shows")
     .update({
       updated_at: new Date().toISOString()
@@ -938,7 +951,7 @@ export async function updateShowActsAndSongs(showId: string, formData: FormData)
   }
 
   if (show.program_id) {
-    const { error: programUpdateError } = await client
+    const { error: programUpdateError } = await db
       .from("programs")
       .update({ acts_songs: actsAndSongs })
       .eq("id", show.program_id);
@@ -961,8 +974,9 @@ export async function updateShowAcknowledgements(showId: string, formData: FormD
 
   const acknowledgements = sanitizeRichText(String(formData.get("acknowledgements") ?? ""));
   const specialThanks = sanitizeRichText(String(formData.get("specialThanks") ?? ""));
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id")
     .eq("id", showId)
@@ -973,17 +987,18 @@ export async function updateShowAcknowledgements(showId: string, formData: FormD
   }
 
   if (show.program_id) {
-    const { data: columnsData } = await client
+    const metaClient = getSupabaseWriteClientRaw();
+    const { data: columnsData } = await metaClient
       .from("information_schema.columns")
       .select("column_name")
-      .eq("table_schema", "public")
+      .eq("table_schema", APP_SCHEMA)
       .eq("table_name", "programs");
     const columnSet = new Set((columnsData ?? []).map((item) => String((item as { column_name?: unknown }).column_name ?? "")));
     const updates: Record<string, string> = { acknowledgements };
     if (columnSet.has("special_thanks")) {
       updates.special_thanks = specialThanks;
     }
-    const { error: programUpdateError } = await client
+    const { error: programUpdateError } = await db
       .from("programs")
       .update(updates)
       .eq("id", show.program_id);
@@ -992,7 +1007,7 @@ export async function updateShowAcknowledgements(showId: string, formData: FormD
     }
   }
 
-  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  await db.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Acknowledgements and Special Thanks updated.")}`);
 }
 
@@ -1017,8 +1032,9 @@ export async function updateShowSponsorships(showId: string, formData: FormData)
     }
   })();
 
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id")
     .eq("id", showId)
@@ -1029,7 +1045,7 @@ export async function updateShowSponsorships(showId: string, formData: FormData)
   }
 
   if (show.program_id) {
-    const { error: programUpdateError } = await client
+    const { error: programUpdateError } = await db
       .from("programs")
       .update({
         actf_ad_image_url: sponsorshipImageUrl,
@@ -1047,7 +1063,7 @@ export async function updateShowSponsorships(showId: string, formData: FormData)
     }
   }
 
-  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  await db.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Sponsorships updated.")}`);
 }
 
@@ -1060,8 +1076,9 @@ export async function updateShowPresentation(showId: string, formData: FormData)
     withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id")
     .eq("id", showId)
@@ -1085,7 +1102,7 @@ export async function updateShowPresentation(showId: string, formData: FormData)
   })();
 
   if (show.program_id) {
-    const { error: programError } = await client
+    const { error: programError } = await db
       .from("programs")
       .update({
         poster_image_url: posterImageUrl,
@@ -1098,7 +1115,7 @@ export async function updateShowPresentation(showId: string, formData: FormData)
     }
   }
 
-  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  await db.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Poster and performance schedule updated.")}`);
 }
 
@@ -1112,8 +1129,9 @@ export async function updateShowSeasonCalendar(showId: string, formData: FormDat
   }
 
   const seasonCalendar = sanitizeRichText(String(formData.get("seasonCalendar") ?? ""));
-  const client = getSupabaseWriteClient();
-  const { data: show, error: showError } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show, error: showError } = await db
     .from("shows")
     .select("id, program_id")
     .eq("id", showId)
@@ -1124,7 +1142,7 @@ export async function updateShowSeasonCalendar(showId: string, formData: FormDat
   }
 
   if (show.program_id) {
-    const { error: programUpdateError } = await client
+    const { error: programUpdateError } = await db
       .from("programs")
       .update({ season_calendar: seasonCalendar })
       .eq("id", show.program_id);
@@ -1133,6 +1151,6 @@ export async function updateShowSeasonCalendar(showId: string, formData: FormDat
     }
   }
 
-  await client.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
+  await db.from("shows").update({ updated_at: new Date().toISOString() }).eq("id", showId);
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Season Calendar updated from show setup.")}`);
 }

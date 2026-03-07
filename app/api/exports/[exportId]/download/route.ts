@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { resolvePlatformRoleForUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { buildExportPageMap, generateExportBinary, toPageMapCsv } from "@/lib/export-runtime";
 import { getProgramBySlug } from "@/lib/programs";
-import { getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -16,22 +17,18 @@ export async function GET(
   const {
     data: { user }
   } = await supabase.auth.getUser();
-  if (!user) {
+  if (!user || !user.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const adminClient = getSupabaseWriteClient();
-  const { data: profile } = await adminClient
-    .from("user_profiles")
-    .select("platform_role")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const role = String(profile?.platform_role ?? "contributor");
+  const supabaseAdmin = getSupabaseWriteClient();
+  const db = supabaseAdmin.schema(APP_SCHEMA);
+  const role = await resolvePlatformRoleForUser({ supabase, userId: user.id, email: user.email });
   if (!["owner", "admin", "editor"].includes(role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: exportRow } = await adminClient
+  const { data: exportRow } = await db
     .from("exports")
     .select("id, show_id, export_type")
     .eq("id", exportId)
@@ -40,7 +37,7 @@ export async function GET(
     return NextResponse.json({ error: "Export not found" }, { status: 404 });
   }
 
-  const { data: show } = await adminClient
+  const { data: show } = await db
     .from("shows")
     .select("id, title, program_id")
     .eq("id", exportRow.show_id)
@@ -49,7 +46,7 @@ export async function GET(
     return NextResponse.json({ error: "Show not found" }, { status: 404 });
   }
 
-  const { data: programRow } = await adminClient
+  const { data: programRow } = await db
     .from("programs")
     .select("slug")
     .eq("id", show.program_id)

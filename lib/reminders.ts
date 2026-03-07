@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
-import { getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
 type ReminderRecipient = {
   personId: string;
@@ -87,8 +87,9 @@ export function getReminderDeliveryMode() {
 }
 
 async function getShowContext(showId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: show } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show } = await db
     .from("shows")
     .select("id, title, slug, reminders_paused")
     .eq("id", showId)
@@ -96,7 +97,7 @@ async function getShowContext(showId: string) {
   if (!show) {
     return null;
   }
-  const { data: program } = await client.from("programs").select("slug").eq("slug", show.slug).maybeSingle();
+  const { data: program } = await db.from("programs").select("slug").eq("slug", show.slug).maybeSingle();
   return {
     id: String(show.id),
     title: String(show.title ?? "Show"),
@@ -107,14 +108,15 @@ async function getShowContext(showId: string) {
 }
 
 async function getReminderRecipients(showId: string) {
-  const client = getSupabaseWriteClient();
-  const { data: roles } = await client.from("show_roles").select("id, person_id").eq("show_id", showId);
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: roles } = await db.from("show_roles").select("id, person_id").eq("show_id", showId);
   const roleIds = (roles ?? []).map((row) => String(row.id));
   if (roleIds.length === 0) {
     return [] as ReminderRecipient[];
   }
 
-  const { data: requests } = await client
+  const { data: requests } = await db
     .from("submission_requests")
     .select("id, show_role_id, due_date, status, request_type")
     .in("show_role_id", roleIds);
@@ -126,7 +128,7 @@ async function getReminderRecipients(showId: string) {
   }
 
   const personIds = [...new Set((roles ?? []).map((row) => String(row.person_id)).filter(Boolean))];
-  const { data: people } = await client
+  const { data: people } = await db
     .from("people")
     .select("id, full_name, role_title, email")
     .in("id", personIds);
@@ -184,8 +186,9 @@ async function writeReminderAudit(params: {
   reason: string;
   payload: Record<string, unknown>;
 }) {
-  const client = getSupabaseWriteClient();
-  await client.from("audit_log").insert({
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  await db.from("audit_log").insert({
     entity: "people",
     entity_id: params.personId,
     field: params.field,
@@ -222,14 +225,15 @@ export async function setShowDueDate(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=overview`, "Please choose a due date.");
   }
 
-  const client = getSupabaseWriteClient();
-  const { data: roles } = await client.from("show_roles").select("id").eq("show_id", showId);
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: roles } = await db.from("show_roles").select("id").eq("show_id", showId);
   const roleIds = (roles ?? []).map((row) => String(row.id));
   if (roleIds.length === 0) {
     withError(`/app/shows/${showId}?tab=overview`, "No roles found. Add people first.");
   }
 
-  const { error } = await client
+  const { error } = await db
     .from("submission_requests")
     .update({ due_date: `${dueDate}T23:59:59.000Z` })
     .in("show_role_id", roleIds);
@@ -311,8 +315,9 @@ export async function setShowRemindersPaused(showId: string, formData: FormData)
 
   const intent = String(formData.get("intent") ?? "pause");
   const shouldPause = intent === "pause";
-  const client = getSupabaseWriteClient();
-  const { error } = await client
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { error } = await db
     .from("shows")
     .update({
       reminders_paused: shouldPause,
@@ -330,9 +335,10 @@ export async function setShowRemindersPaused(showId: string, formData: FormData)
 }
 
 async function wasReminderSentRecently(personId: string, days: number) {
-  const client = getSupabaseWriteClient();
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const { data } = await client
+  const { data } = await db
     .from("audit_log")
     .select("id")
     .eq("entity", "people")
@@ -395,8 +401,9 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
 }
 
 export async function runReminderCron() {
-  const client = getSupabaseWriteClient();
-  const { data: shows } = await client.from("shows").select("id").eq("reminders_paused", false);
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: shows } = await db.from("shows").select("id").eq("reminders_paused", false);
   let sent = 0;
   let total = 0;
   for (const show of shows ?? []) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildExportPageMap, generateExportBinary, toPageMapCsv } from "@/lib/export-runtime";
 import { getProgramBySlug } from "@/lib/programs";
-import { getSupabaseReadClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseReadClient } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -14,8 +14,9 @@ export async function GET(
     return NextResponse.json({ error: "invalid_export_type" }, { status: 400 });
   }
 
-  const client = getSupabaseReadClient();
-  const { data: show } = await client
+  const supabase = getSupabaseReadClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show } = await db
     .from("shows")
     .select("id, slug, is_published, program_id")
     .eq("slug", showSlug)
@@ -26,7 +27,7 @@ export async function GET(
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  const { data: programRow } = await client.from("programs").select("slug").eq("id", show.program_id).maybeSingle();
+  const { data: programRow } = await db.from("programs").select("slug").eq("id", show.program_id).maybeSingle();
   if (!programRow?.slug) {
     return NextResponse.json({ error: "program_not_found" }, { status: 404 });
   }

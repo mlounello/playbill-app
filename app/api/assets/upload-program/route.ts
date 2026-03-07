@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { resolvePlatformRoleForUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -50,12 +51,8 @@ export async function POST(request: Request) {
     }
 
     const admin = getSupabaseWriteClient();
-    const { data: profile } = await admin
-      .from("user_profiles")
-      .select("platform_role")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    const role = String(profile?.platform_role ?? "contributor");
+    const db = admin.schema(APP_SCHEMA);
+    const role = await resolvePlatformRoleForUser({ supabase, userId: user.id, email: user.email });
     if (!["owner", "admin", "editor"].includes(role)) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
@@ -63,7 +60,7 @@ export async function POST(request: Request) {
     let programId = "";
     let resolvedProgramSlug = "";
     if (programSlug) {
-      const { data: programBySlug } = await admin
+      const { data: programBySlug } = await db
         .from("programs")
         .select("id, slug")
         .eq("slug", programSlug)
@@ -75,13 +72,13 @@ export async function POST(request: Request) {
     }
 
     if (!programId && showId) {
-      const { data: show } = await admin
+      const { data: show } = await db
         .from("shows")
         .select("program_id")
         .eq("id", showId)
         .maybeSingle();
       if (show?.program_id) {
-        const { data: programById } = await admin
+        const { data: programById } = await db
           .from("programs")
           .select("id, slug")
           .eq("id", String(show.program_id))

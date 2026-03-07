@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getProgramBySlug } from "@/lib/programs";
-import { getSupabaseReadClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseReadClient } from "@/lib/supabase";
 
 export default async function LegacyEditProgramPage({
   params
@@ -14,8 +14,9 @@ export default async function LegacyEditProgramPage({
     notFound();
   }
 
-  const client = getSupabaseReadClient();
-  const { data: showRow } = await client
+  const supabase = getSupabaseReadClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: showRow } = await db
     .from("shows")
     .select("id")
     .eq("program_id", program.id)
