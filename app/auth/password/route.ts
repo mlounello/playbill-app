@@ -93,11 +93,13 @@ export async function POST(request: Request) {
   const { supabase, applyPendingCookies, cookieName } = await createRouteSupabase();
 
   if (mode === "signup") {
+    const callbackUrl = new URL("/auth/callback", request.url);
+    callbackUrl.searchParams.set("next", nextPath);
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`
+        emailRedirectTo: callbackUrl.toString()
       }
     });
     if (error) {
