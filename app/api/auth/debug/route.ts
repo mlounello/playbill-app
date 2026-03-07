@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { resolvePlatformRoleForUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { APP_SCHEMA } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseAuthCookieName } from "@/lib/supabase";
 
 function safeJsonParse(value: string) {
   try {
@@ -43,6 +43,9 @@ export async function GET() {
         parsed_decoded_json: Boolean(decodedJson)
       };
     });
+    const expectedCookieName = process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? getSupabaseAuthCookieName(process.env.NEXT_PUBLIC_SUPABASE_URL)
+      : null;
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
@@ -62,6 +65,7 @@ export async function GET() {
         user: null,
         session_present: Boolean(session),
         cookie_names: cookieNames,
+        expected_cookie_name: expectedCookieName,
         auth_cookie_diagnostics: authCookieDiagnostics,
         schema_read_ok: !testProgramsError,
         schema_read_error: testProgramsError?.message ?? null,
@@ -78,6 +82,7 @@ export async function GET() {
       user: { id: user.id, email: user.email },
       session_present: Boolean(session),
       cookie_names: cookieNames,
+      expected_cookie_name: expectedCookieName,
       auth_cookie_diagnostics: authCookieDiagnostics,
       resolved_role: role,
       user_error: userError?.message ?? null,

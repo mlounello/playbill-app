@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import { getSupabaseAuthCookieName } from "@/lib/supabase";
 
 export function createSupabaseBrowserClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,5 +9,9 @@ export function createSupabaseBrowserClient() {
     throw new Error("Missing Supabase public environment variables.");
   }
 
-  return createBrowserClient(url, anon);
+  const cookieName = getSupabaseAuthCookieName(url);
+
+  return createBrowserClient(url, anon, {
+    ...(cookieName ? { cookieOptions: { name: cookieName } } : {})
+  });
 }

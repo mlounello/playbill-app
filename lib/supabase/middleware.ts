@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getSupabaseAuthCookieName } from "@/lib/supabase";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
@@ -12,8 +13,10 @@ export async function updateSession(request: NextRequest) {
   if (!url || !anon) {
     return response;
   }
+  const cookieName = getSupabaseAuthCookieName(url);
 
   const supabase = createServerClient(url, anon, {
+    ...(cookieName ? { cookieOptions: { name: cookieName } } : {}),
     cookies: {
       getAll() {
         return request.cookies.getAll();

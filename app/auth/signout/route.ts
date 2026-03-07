@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { getSupabaseAuthCookieName } from "@/lib/supabase";
 
 type PendingCookie = {
   name: string;
@@ -17,7 +18,9 @@ async function createRouteSupabase() {
 
   const cookieStore = await cookies();
   const pending: PendingCookie[] = [];
+  const cookieName = getSupabaseAuthCookieName(url);
   const supabase = createServerClient(url, anon, {
+    ...(cookieName ? { cookieOptions: { name: cookieName } } : {}),
     cookies: {
       getAll() {
         return cookieStore.getAll();

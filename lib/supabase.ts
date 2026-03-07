@@ -12,6 +12,24 @@ export function getAppSchema() {
 export const APP_SCHEMA = getAppSchema();
 export const APP_ID = process.env.APP_ID || "playbill";
 
+export function getSupabaseProjectRef(url: string) {
+  try {
+    const hostname = new URL(url).hostname;
+    const projectRef = hostname.split(".")[0]?.trim();
+    if (!projectRef) {
+      return null;
+    }
+    return projectRef;
+  } catch {
+    return null;
+  }
+}
+
+export function getSupabaseAuthCookieName(url: string) {
+  const projectRef = getSupabaseProjectRef(url);
+  return projectRef ? `sb-${projectRef}-auth-token` : null;
+}
+
 export function getMissingSupabaseEnvVars() {
   const required = [
     "NEXT_PUBLIC_SUPABASE_URL",
