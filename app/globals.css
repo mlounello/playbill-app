@@ -142,6 +142,31 @@ h2 {
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.02);
 }
 
+.auth-login-card {
+  max-width: 540px;
+  margin: 0 auto;
+}
+
+.auth-login-title {
+  margin-bottom: 0.1rem;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #6b766f;
+  font-size: 0.9rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #d7ddd8;
+}
+
 .card,
 .tab-chip,
 button,

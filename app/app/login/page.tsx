@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { MagicLinkForm } from "@/components/auth/magic-link-form";
+import { LoginOptionsForm } from "@/components/auth/login-options-form";
 import { getCurrentUserWithProfile } from "@/lib/auth";
 
 export default async function AdminLoginPage() {
@@ -16,7 +16,7 @@ export default async function AdminLoginPage() {
     <main>
       <div className="container page-shell page-shell-narrow">
         <h1>Admin Login</h1>
-        <MagicLinkForm redirectTo="/app/shows" />
+        <LoginOptionsForm redirectTo="/app/shows" />
         <div className="top-actions">
           <Link href="/">Back Home</Link>
         </div>
