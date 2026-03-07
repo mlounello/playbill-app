@@ -6,7 +6,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 type PasswordMode = "signin" | "signup";
 
 function getCallbackUrl(nextPath: string) {
-  const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || window.location.origin).replace(/\/+$/, "");
+  const baseUrl = (window.location.origin || process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/+$/, "");
   return `${baseUrl}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 }
 

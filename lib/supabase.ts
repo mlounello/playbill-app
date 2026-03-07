@@ -1,6 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 
-export const APP_SCHEMA = process.env.APP_SCHEMA || "app_playbill";
+export function getAppSchema() {
+  return (
+    process.env.APP_SCHEMA ||
+    process.env.NEXT_PUBLIC_APP_SCHEMA ||
+    process.env.NEXT_PUBLIC_SUPABASE_DB_SCHEMA ||
+    "app_playbill"
+  );
+}
+
+export const APP_SCHEMA = getAppSchema();
 export const APP_ID = process.env.APP_ID || "playbill";
 
 export function getMissingSupabaseEnvVars() {

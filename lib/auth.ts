@@ -17,40 +17,51 @@ function normalizePlatformRole(value: unknown): PlatformRole | null {
   return null;
 }
 
-async function resolveRoleViaRpc(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>) {
-  const db = supabase;
-  const attempts: Array<() => ReturnType<typeof db.rpc>> = [
-    () => db.rpc("get_user_role"),
-    () => db.rpc("get_user_role", { p_app_id: APP_ID }),
-    () => db.rpc("get_user_role", { app_id: APP_ID })
-  ];
-
-  let data: unknown = null;
-  let resolved = false;
-  for (const call of attempts) {
-    const { data: result, error } = await call();
-    if (error) {
-      continue;
-    }
-    data = result;
-    resolved = true;
-    break;
-  }
-  if (!resolved) {
-    return null;
-  }
-
-  if (Array.isArray(data)) {
-    for (const entry of data) {
-      const normalized = normalizePlatformRole(entry);
+function pickRoleFromRpcPayload(payload: unknown): PlatformRole | null {
+  if (Array.isArray(payload)) {
+    for (const entry of payload) {
+      const normalized = pickRoleFromRpcPayload(entry);
       if (normalized) {
         return normalized;
       }
     }
     return null;
   }
+  const direct = normalizePlatformRole(payload);
+  if (direct) {
+    return direct;
+  }
+  if (payload && typeof payload === "object") {
+    const roleValue =
+      (payload as { role?: unknown; user_role?: unknown; platform_role?: unknown }).role ??
+      (payload as { role?: unknown; user_role?: unknown; platform_role?: unknown }).user_role ??
+      (payload as { role?: unknown; user_role?: unknown; platform_role?: unknown }).platform_role;
+    return normalizePlatformRole(roleValue);
+  }
+  return null;
+}
 
-  return normalizePlatformRole(data);
+async function resolveRoleViaRpc(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>) {
+  const bases = [supabase.schema(APP_SCHEMA), supabase, supabase.schema("public")];
+  for (const base of bases) {
+    const attempts: Array<() => ReturnType<typeof base.rpc>> = [
+      () => base.rpc("get_user_role"),
+      () => base.rpc("get_user_role", { p_app_id: APP_ID }),
+      () => base.rpc("get_user_role", { app_id: APP_ID })
+    ];
+    for (const call of attempts) {
+      const { data, error } = await call();
+      if (error) {
+        continue;
+      }
+      const role = pickRoleFromRpcPayload(data);
+      if (role) {
+        return role;
+      }
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function ensureUserProfileIdentity(userId: string, email: string): Promise<UserProfile> {
