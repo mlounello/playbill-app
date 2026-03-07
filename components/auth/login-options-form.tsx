@@ -101,6 +101,7 @@ export function LoginOptionsForm({ redirectTo }: { redirectTo: string }) {
           <input
             type="email"
             required
+            autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="name@siena.edu"
@@ -122,6 +123,7 @@ export function LoginOptionsForm({ redirectTo }: { redirectTo: string }) {
           <input
             type="password"
             required
+            autoComplete={passwordMode === "signup" ? "new-password" : "current-password"}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Enter your password"
