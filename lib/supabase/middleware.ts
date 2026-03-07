@@ -2,6 +2,17 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseAuthCookieName } from "@/lib/supabase";
 
+function isSupabaseAuthCookieName(name: string) {
+  return /^sb-[a-z0-9]+-auth-token(?:\..+)?$/i.test(name) || /^sb-[a-z0-9]+-auth-token-code-verifier$/i.test(name);
+}
+
+function cookieBelongsToExpectedProject(name: string, expectedBase: string | null) {
+  if (!expectedBase) {
+    return true;
+  }
+  return name === expectedBase || name.startsWith(`${expectedBase}.`) || name === `${expectedBase}-code-verifier`;
+}
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request
@@ -35,6 +46,18 @@ export async function updateSession(request: NextRequest) {
   });
 
   await supabase.auth.getUser();
+
+  // Clean up stale auth cookies from other Supabase projects to avoid cross-project
+  // session confusion (e.g., old sb-<other-ref>-auth-token cookies persisting).
+  for (const cookie of request.cookies.getAll()) {
+    if (!isSupabaseAuthCookieName(cookie.name)) {
+      continue;
+    }
+    if (cookieBelongsToExpectedProject(cookie.name, cookieName)) {
+      continue;
+    }
+    response.cookies.set(cookie.name, "", { path: "/", maxAge: 0 });
+  }
 
   return response;
 }
