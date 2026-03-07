@@ -10,18 +10,25 @@ type PendingCookie = {
   options?: Record<string, unknown>;
 };
 
-async function createRouteSupabase() {
+async function createRouteSupabase(origin: string) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) {
     throw new Error("Missing Supabase public environment variables.");
   }
 
+  const isSecure = new URL(origin).protocol === "https:";
+
   const cookieStore = await cookies();
   const pending: PendingCookie[] = [];
   const cookieName = getSupabaseAuthCookieName(url);
   const supabase = createServerClient(url, anon, {
-    ...(cookieName ? { cookieOptions: { name: cookieName } } : {}),
+    cookieOptions: {
+      ...(cookieName ? { name: cookieName } : {}),
+      path: "/",
+      sameSite: "lax",
+      secure: isSecure
+    },
     cookies: {
       getAll() {
         // Next.js route handlers often cannot mutate the request cookie store.
@@ -39,6 +46,7 @@ async function createRouteSupabase() {
         return Array.from(byName.values());
       },
       setAll(cookiesToSet) {
+        console.info("[auth/callback] setAll", cookiesToSet.map((c: any) => ({ name: c.name, hasOptions: Boolean(c.options) })));
         for (const cookie of cookiesToSet) {
           try {
             cookieStore.set(cookie.name, cookie.value, cookie.options);
@@ -59,7 +67,7 @@ async function createRouteSupabase() {
     response.cookies.set("playbill_callback_hit", String(Date.now()), {
       path: "/",
       sameSite: "lax",
-      secure: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://playbillapp.mlounello.com").protocol === "https:",
+      secure: isSecure,
       maxAge: 60 * 10
     });
     for (const cookie of pending) {
@@ -84,7 +92,7 @@ export async function GET(request: Request) {
     next
   });
 
-  const { supabase, applyPendingCookies, cookieName } = await createRouteSupabase();
+  const { supabase, applyPendingCookies, cookieName } = await createRouteSupabase(origin);
   let authError: string | null = null;
   let session: any | null = null;
   let user: any | null = null;
