@@ -10,20 +10,6 @@ type PendingCookie = {
   options?: Record<string, unknown>;
 };
 
-type FallbackAuthCookie = { name: string; value: string; secure: boolean };
-
-function toBase64Url(value: string) {
-  return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function encodeSessionCookieValue(session: unknown) {
-  return `base64-${toBase64Url(JSON.stringify(session))}`;
-}
-
-function logCallback(event: string, details: Record<string, unknown>) {
-  console.info("[auth/callback]", event, details);
-}
-
 async function createRouteSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -38,7 +24,19 @@ async function createRouteSupabase() {
     ...(cookieName ? { cookieOptions: { name: cookieName } } : {}),
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        // Next.js route handlers often cannot mutate the request cookie store.
+        // Supabase will call setAll() during the auth exchange; we queue those
+        // cookies in `pending` and also expose them here so subsequent reads
+        // (getSession/getUser) within the same request can see the new session.
+        const existing = cookieStore.getAll();
+        if (pending.length === 0) return existing;
+
+        const byName = new Map(existing.map((c) => [c.name, c]));
+        for (const c of pending) {
+          // Cast is safe: Supabase cookie shape is compatible with Next cookies.
+          byName.set(c.name, c as unknown as (typeof existing)[number]);
+        }
+        return Array.from(byName.values());
       },
       setAll(cookiesToSet) {
         for (const cookie of cookiesToSet) {
@@ -57,7 +55,7 @@ async function createRouteSupabase() {
     }
   });
 
-  function applyPendingCookies(response: NextResponse, fallbackAuthCookie?: FallbackAuthCookie) {
+  function applyPendingCookies(response: NextResponse) {
     response.cookies.set("playbill_callback_hit", String(Date.now()), {
       path: "/",
       sameSite: "lax",
@@ -66,19 +64,6 @@ async function createRouteSupabase() {
     });
     for (const cookie of pending) {
       response.cookies.set(cookie.name, cookie.value, cookie.options);
-    }
-    if (fallbackAuthCookie) {
-      const alreadySet = pending.some(
-        (cookie) => cookie.name === fallbackAuthCookie.name || cookie.name.startsWith(`${fallbackAuthCookie.name}.`)
-      );
-      if (!alreadySet) {
-        response.cookies.set(fallbackAuthCookie.name, fallbackAuthCookie.value, {
-          path: "/",
-          sameSite: "lax",
-          secure: fallbackAuthCookie.secure,
-          maxAge: 60 * 60 * 24 * 365
-        });
-      }
     }
     return response;
   }
@@ -101,37 +86,41 @@ export async function GET(request: Request) {
 
   const { supabase, applyPendingCookies, cookieName } = await createRouteSupabase();
   let authError: string | null = null;
+  let session: any | null = null;
+  let user: any | null = null;
 
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     authError = error?.message ?? null;
-    logCallback("exchange_code_for_session", { ok: !error, error: error?.message ?? null });
+    session = data?.session ?? null;
+    user = data?.user ?? null;
+    logCallback("exchange_code_for_session", {
+      ok: !error,
+      error: error?.message ?? null,
+      has_session: Boolean(session),
+      user_id: user?.id ?? null,
+      email: user?.email ?? null
+    });
   } else if (tokenHash && type) {
-    const { error } = await supabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type: type as "magiclink" | "recovery" | "invite" | "signup" | "email_change" | "email"
     });
     authError = error?.message ?? null;
-    logCallback("verify_otp", { ok: !error, error: error?.message ?? null });
+    session = data?.session ?? null;
+    user = data?.user ?? null;
+    logCallback("verify_otp", {
+      ok: !error,
+      error: error?.message ?? null,
+      has_session: Boolean(session),
+      user_id: user?.id ?? null,
+      email: user?.email ?? null
+    });
   } else {
     logCallback("missing_callback_params", { has_code: false, has_token_hash: Boolean(tokenHash), type: type ?? null });
   }
 
   if (!authError && (code || (tokenHash && type))) {
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-    const {
-      data: { user },
-      error: getUserError
-    } = await supabase.auth.getUser();
-    logCallback("post_callback_user", {
-      has_session: Boolean(session),
-      user_id: user?.id ?? null,
-      email: user?.email ?? null,
-      user_error: getUserError?.message ?? null
-    });
-
     if (user?.id && user?.email) {
       try {
         await ensureUserProfileIdentity(user.id, user.email);
@@ -144,15 +133,10 @@ export async function GET(request: Request) {
     redirectUrl.searchParams.set("auth", "success");
     const response = NextResponse.redirect(redirectUrl);
     response.headers.set("Cache-Control", "no-store, max-age=0");
-    const fallbackAuthCookie: FallbackAuthCookie | undefined =
-      cookieName && session
-        ? {
-            name: cookieName,
-            value: encodeSessionCookieValue(session),
-            secure: new URL(origin).protocol === "https:"
-          }
-        : undefined;
-    return applyPendingCookies(response, fallbackAuthCookie);
+
+    // IMPORTANT: rely on Supabase-set cookies (via pending) rather than writing
+    // a custom, long-lived session cookie. This avoids format/HttpOnly issues.
+    return applyPendingCookies(response);
   }
 
   logCallback("callback_failed", { error: authError ?? "invalid_callback_params" });
@@ -168,4 +152,8 @@ export async function GET(request: Request) {
     maxAge: 60 * 10
   });
   return failedResponse;
+}
+
+function logCallback(event: string, details: Record<string, unknown>) {
+  console.info("[auth/callback]", event, details);
 }
