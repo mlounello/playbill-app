@@ -25,6 +25,11 @@ async function createRouteSupabase() {
       },
       setAll(cookiesToSet) {
         for (const cookie of cookiesToSet) {
+          try {
+            cookieStore.set(cookie.name, cookie.value, cookie.options);
+          } catch {
+            // Best-effort immediate write; redirect response also receives cookies below.
+          }
           pending.push({
             name: cookie.name,
             value: cookie.value,
@@ -69,5 +74,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(new URL("/app/login?error=Could+not+authenticate", origin));
+  return NextResponse.redirect(new URL("/login?error=Could+not+authenticate", origin));
 }

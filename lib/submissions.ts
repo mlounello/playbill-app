@@ -3092,7 +3092,7 @@ export async function contributorSaveTask(showId: string, taskId: string, formDa
 
   const current = await getCurrentUserWithProfile();
   if (!current?.user?.email) {
-    redirect("/app/login");
+    redirect("/login");
   }
 
   const task = await getContributorTaskById(showId, taskId);

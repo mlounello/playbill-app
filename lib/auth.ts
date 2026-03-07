@@ -58,7 +58,7 @@ async function resolveRoleViaRpc(supabase: Awaited<ReturnType<typeof createSupab
       if (role) {
         return role;
       }
-      return null;
+      continue;
     }
   }
   return null;
@@ -138,7 +138,7 @@ export async function getCurrentUserWithProfile() {
 export async function requireRole(allowed: PlatformRole[]) {
   const current = await getCurrentUserWithProfile();
   if (!current) {
-    redirect("/app/login");
+    redirect("/login");
   }
 
   if (!allowed.includes(current.profile.platform_role)) {
