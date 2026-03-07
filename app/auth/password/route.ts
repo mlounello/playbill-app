@@ -9,6 +9,10 @@ type PendingCookie = {
   options?: Record<string, unknown>;
 };
 
+function redirect303(url: URL) {
+  return NextResponse.redirect(url, { status: 303 });
+}
+
 async function createRouteSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -54,7 +58,7 @@ export async function POST(request: Request) {
   const origin = new URL(request.url).origin;
 
   if (!email || !password) {
-    return NextResponse.redirect(new URL("/app/login?error=Email+and+password+are+required", origin));
+    return redirect303(new URL("/login?error=Email+and+password+are+required", origin));
   }
 
   const { supabase, applyPendingCookies } = await createRouteSupabase();
@@ -68,16 +72,16 @@ export async function POST(request: Request) {
       }
     });
     if (error) {
-      return applyPendingCookies(NextResponse.redirect(new URL(`/app/login?error=${encodeURIComponent(error.message)}`, origin)));
+      return applyPendingCookies(redirect303(new URL(`/login?error=${encodeURIComponent(error.message)}`, origin)));
     }
     return applyPendingCookies(
-      NextResponse.redirect(new URL("/app/login?success=Account+created.+Check+your+email+if+confirmation+is+enabled.", origin))
+      redirect303(new URL("/login?success=Account+created.+Check+your+email+if+confirmation+is+enabled.", origin))
     );
   }
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
-    return applyPendingCookies(NextResponse.redirect(new URL(`/app/login?error=${encodeURIComponent(error.message)}`, origin)));
+    return applyPendingCookies(redirect303(new URL(`/login?error=${encodeURIComponent(error.message)}`, origin)));
   }
 
   const {
@@ -88,6 +92,6 @@ export async function POST(request: Request) {
   }
 
   return applyPendingCookies(
-    NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}auth=success`, origin))
+    redirect303(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}auth=success`, origin))
   );
 }

@@ -48,5 +48,5 @@ export async function POST(request: Request) {
   const url = new URL(request.url);
   const { supabase, applyPendingCookies } = await createRouteSupabase();
   await supabase.auth.signOut();
-  return applyPendingCookies(NextResponse.redirect(new URL("/login", url.origin)));
+  return applyPendingCookies(NextResponse.redirect(new URL("/login", url.origin), { status: 303 }));
 }
