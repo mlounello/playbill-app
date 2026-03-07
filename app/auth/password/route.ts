@@ -10,6 +10,14 @@ type PendingCookie = {
   options?: Record<string, unknown>;
 };
 
+function toBase64Url(value: string) {
+  return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function encodeSessionCookieValue(session: unknown) {
+  return `base64-${toBase64Url(JSON.stringify(session))}`;
+}
+
 function redirect303(url: URL) {
   return NextResponse.redirect(url, { status: 303 });
 }
@@ -47,14 +55,27 @@ async function createRouteSupabase() {
     }
   });
 
-  function applyPendingCookies(response: NextResponse) {
+  function applyPendingCookies(response: NextResponse, fallbackAuthCookie?: { name: string; value: string; secure: boolean }) {
     for (const cookie of pending) {
       response.cookies.set(cookie.name, cookie.value, cookie.options);
+    }
+    if (fallbackAuthCookie) {
+      const alreadySet = pending.some(
+        (cookie) => cookie.name === fallbackAuthCookie.name || cookie.name.startsWith(`${fallbackAuthCookie.name}.`)
+      );
+      if (!alreadySet) {
+        response.cookies.set(fallbackAuthCookie.name, fallbackAuthCookie.value, {
+          path: "/",
+          sameSite: "lax",
+          secure: fallbackAuthCookie.secure,
+          maxAge: 60 * 60 * 24 * 365
+        });
+      }
     }
     return response;
   }
 
-  return { supabase, applyPendingCookies };
+  return { supabase, applyPendingCookies, cookieName };
 }
 
 export async function POST(request: Request) {
@@ -69,7 +90,7 @@ export async function POST(request: Request) {
     return redirect303(new URL("/login?error=Email+and+password+are+required", origin));
   }
 
-  const { supabase, applyPendingCookies } = await createRouteSupabase();
+  const { supabase, applyPendingCookies, cookieName } = await createRouteSupabase();
 
   if (mode === "signup") {
     const { error } = await supabase.auth.signUp({
@@ -87,7 +108,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     return applyPendingCookies(redirect303(new URL(`/login?error=${encodeURIComponent(error.message)}`, origin)));
   }
@@ -103,7 +124,17 @@ export async function POST(request: Request) {
     }
   }
 
+  const fallbackAuthCookie =
+    cookieName && data?.session
+      ? {
+          name: cookieName,
+          value: encodeSessionCookieValue(data.session),
+          secure: new URL(origin).protocol === "https:"
+        }
+      : undefined;
+
   return applyPendingCookies(
-    redirect303(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}auth=success`, origin))
+    redirect303(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}auth=success`, origin)),
+    fallbackAuthCookie
   );
 }

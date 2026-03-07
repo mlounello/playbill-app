@@ -10,6 +10,14 @@ type PendingCookie = {
   options?: Record<string, unknown>;
 };
 
+function toBase64Url(value: string) {
+  return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function encodeSessionCookieValue(session: unknown) {
+  return `base64-${toBase64Url(JSON.stringify(session))}`;
+}
+
 async function createRouteSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -43,14 +51,27 @@ async function createRouteSupabase() {
     }
   });
 
-  function applyPendingCookies(response: NextResponse) {
+  function applyPendingCookies(response: NextResponse, fallbackAuthCookie?: { name: string; value: string; secure: boolean }) {
     for (const cookie of pending) {
       response.cookies.set(cookie.name, cookie.value, cookie.options);
+    }
+    if (fallbackAuthCookie) {
+      const alreadySet = pending.some(
+        (cookie) => cookie.name === fallbackAuthCookie.name || cookie.name.startsWith(`${fallbackAuthCookie.name}.`)
+      );
+      if (!alreadySet) {
+        response.cookies.set(fallbackAuthCookie.name, fallbackAuthCookie.value, {
+          path: "/",
+          sameSite: "lax",
+          secure: fallbackAuthCookie.secure,
+          maxAge: 60 * 60 * 24 * 365
+        });
+      }
     }
     return response;
   }
 
-  return { supabase, applyPendingCookies };
+  return { supabase, applyPendingCookies, cookieName };
 }
 
 export async function GET(request: Request) {
@@ -59,9 +80,12 @@ export async function GET(request: Request) {
   const next = searchParams.get("next") || "/app/shows";
 
   if (code) {
-    const { supabase, applyPendingCookies } = await createRouteSupabase();
+    const { supabase, applyPendingCookies, cookieName } = await createRouteSupabase();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
       const {
         data: { user }
       } = await supabase.auth.getUser();
@@ -77,7 +101,15 @@ export async function GET(request: Request) {
       redirectUrl.searchParams.set("auth", "success");
       const response = NextResponse.redirect(redirectUrl);
       response.headers.set("Cache-Control", "no-store, max-age=0");
-      return applyPendingCookies(response);
+      const fallbackAuthCookie =
+        cookieName && session
+          ? {
+              name: cookieName,
+              value: encodeSessionCookieValue(session),
+              secure: new URL(origin).protocol === "https:"
+            }
+          : undefined;
+      return applyPendingCookies(response, fallbackAuthCookie);
     }
   }
 
