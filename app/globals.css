@@ -87,6 +87,10 @@ main {
   flex-wrap: wrap;
 }
 
+.site-nav-form {
+  margin: 0;
+}
+
 .site-nav-link {
   text-decoration: none;
   color: #fff;
@@ -95,6 +99,11 @@ main {
   padding: 0.42rem 0.84rem;
   font-size: 0.88rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.site-nav-button {
+  font: inherit;
+  cursor: pointer;
 }
 
 .site-nav-link:hover {
