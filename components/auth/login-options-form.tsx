@@ -38,36 +38,9 @@ export function LoginOptionsForm({ redirectTo }: { redirectTo: string }) {
     }
   };
 
-  const onPassword = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const onPasswordSubmit = () => {
     setLoadingMethod("password");
     setMessage(null);
-
-    try {
-      const supabase = createSupabaseBrowserClient();
-      if (passwordMode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: getCallbackUrl(redirectTo) }
-        });
-        setMessage(
-          error ? error.message : "Account created. Check your email if confirmation is required, then sign in."
-        );
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          setMessage(error.message);
-          setLoadingMethod(null);
-          return;
-        }
-        window.location.assign(redirectTo);
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not authenticate with email/password.");
-    } finally {
-      setLoadingMethod(null);
-    }
   };
 
   const onGoogle = async () => {
@@ -117,10 +90,14 @@ export function LoginOptionsForm({ redirectTo }: { redirectTo: string }) {
         <span>or</span>
       </div>
 
-      <form className="stack-sm" onSubmit={onPassword}>
+      <form className="stack-sm" method="post" action="/auth/password" onSubmit={onPasswordSubmit}>
+        <input type="hidden" name="next" value={redirectTo} />
+        <input type="hidden" name="mode" value={passwordMode} />
+        <input type="hidden" name="email" value={email} />
         <label>
           Password
           <input
+            name="password"
             type="password"
             required
             autoComplete={passwordMode === "signup" ? "new-password" : "current-password"}

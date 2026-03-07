@@ -148,6 +148,12 @@ h2 {
   color: #7d1f1f;
 }
 
+.card-success {
+  border-color: #a8d1c4;
+  background: #eef9f4;
+  color: #0e5a42;
+}
+
 .auth-login-card {
   max-width: 540px;
   margin: 0 auto;
