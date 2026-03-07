@@ -43,6 +43,7 @@ export async function GET() {
         parsed_decoded_json: Boolean(decodedJson)
       };
     });
+    const callbackHitCookie = cookieStore.get("playbill_callback_hit")?.value ?? null;
     const expectedCookieName = process.env.NEXT_PUBLIC_SUPABASE_URL
       ? getSupabaseAuthCookieName(process.env.NEXT_PUBLIC_SUPABASE_URL)
       : null;
@@ -65,6 +66,7 @@ export async function GET() {
         user: null,
         session_present: Boolean(session),
         cookie_names: cookieNames,
+        callback_hit_cookie: callbackHitCookie,
         expected_cookie_name: expectedCookieName,
         auth_cookie_diagnostics: authCookieDiagnostics,
         schema_read_ok: !testProgramsError,
@@ -82,6 +84,7 @@ export async function GET() {
       user: { id: user.id, email: user.email },
       session_present: Boolean(session),
       cookie_names: cookieNames,
+      callback_hit_cookie: callbackHitCookie,
       expected_cookie_name: expectedCookieName,
       auth_cookie_diagnostics: authCookieDiagnostics,
       resolved_role: role,

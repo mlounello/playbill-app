@@ -58,6 +58,12 @@ async function createRouteSupabase() {
   });
 
   function applyPendingCookies(response: NextResponse, fallbackAuthCookie?: FallbackAuthCookie) {
+    response.cookies.set("playbill_callback_hit", String(Date.now()), {
+      path: "/",
+      sameSite: "lax",
+      secure: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://playbillapp.mlounello.com").protocol === "https:",
+      maxAge: 60 * 10
+    });
     for (const cookie of pending) {
       response.cookies.set(cookie.name, cookie.value, cookie.options);
     }
@@ -150,5 +156,16 @@ export async function GET(request: Request) {
   }
 
   logCallback("callback_failed", { error: authError ?? "invalid_callback_params" });
-  return NextResponse.redirect(new URL("/login?error=Could+not+authenticate", origin));
+  const redirect = new URL("/login?error=Could+not+authenticate", origin);
+  if (authError) {
+    redirect.searchParams.set("auth_error", authError);
+  }
+  const failedResponse = NextResponse.redirect(redirect);
+  failedResponse.cookies.set("playbill_callback_hit", String(Date.now()), {
+    path: "/",
+    sameSite: "lax",
+    secure: new URL(origin).protocol === "https:",
+    maxAge: 60 * 10
+  });
+  return failedResponse;
 }
