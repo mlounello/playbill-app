@@ -63,7 +63,11 @@ export async function GET(request: Request) {
         data: { user }
       } = await supabase.auth.getUser();
       if (user?.id && user?.email) {
-        await ensureUserProfileIdentity(user.id, user.email);
+        try {
+          await ensureUserProfileIdentity(user.id, user.email);
+        } catch {
+          // Do not block auth completion if profile bootstrap has an issue.
+        }
       }
 
       const redirectUrl = new URL(next, origin);

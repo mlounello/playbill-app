@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { resolvePlatformRoleForUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET() {
   try {
+    const cookieStore = await cookies();
+    const cookieNames = cookieStore.getAll().map((cookie) => cookie.name);
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
@@ -20,6 +23,7 @@ export async function GET() {
         logged_in: false,
         user: null,
         session_present: Boolean(session),
+        cookie_names: cookieNames,
         user_error: userError?.message ?? null,
         session_error: sessionError?.message ?? null
       });
@@ -31,6 +35,7 @@ export async function GET() {
       logged_in: true,
       user: { id: user.id, email: user.email },
       session_present: Boolean(session),
+      cookie_names: cookieNames,
       resolved_role: role,
       user_error: userError?.message ?? null,
       session_error: sessionError?.message ?? null
