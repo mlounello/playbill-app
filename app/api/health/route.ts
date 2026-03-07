@@ -6,6 +6,7 @@ export async function GET() {
   const missing = getMissingSupabaseEnvVars();
   const base = {
     ok: false,
+    schema: APP_SCHEMA,
     env: {
       NEXT_PUBLIC_SUPABASE_URL: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
       NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
@@ -43,11 +44,38 @@ export async function GET() {
     ]);
 
     if (programsCheck.error || showsCheck.error || peopleCheck.error) {
+      const checks = {
+        programs: programsCheck.error
+          ? {
+              message: programsCheck.error.message,
+              code: (programsCheck.error as { code?: string }).code ?? null,
+              details: (programsCheck.error as { details?: string }).details ?? null,
+              hint: (programsCheck.error as { hint?: string }).hint ?? null
+            }
+          : { ok: true },
+        shows: showsCheck.error
+          ? {
+              message: showsCheck.error.message,
+              code: (showsCheck.error as { code?: string }).code ?? null,
+              details: (showsCheck.error as { details?: string }).details ?? null,
+              hint: (showsCheck.error as { hint?: string }).hint ?? null
+            }
+          : { ok: true },
+        people: peopleCheck.error
+          ? {
+              message: peopleCheck.error.message,
+              code: (peopleCheck.error as { code?: string }).code ?? null,
+              details: (peopleCheck.error as { details?: string }).details ?? null,
+              hint: (peopleCheck.error as { hint?: string }).hint ?? null
+            }
+          : { ok: true }
+      };
       return NextResponse.json(
         {
           ...base,
           reason: "supabase_query_failed",
-          error: programsCheck.error?.message || showsCheck.error?.message || peopleCheck.error?.message || "Unknown query error"
+          error: programsCheck.error?.message || showsCheck.error?.message || peopleCheck.error?.message || "Unknown query error",
+          checks
         },
         { status: 500 }
       );
