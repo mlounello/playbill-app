@@ -38,9 +38,41 @@ export function LoginOptionsForm({ redirectTo }: { redirectTo: string }) {
     }
   };
 
-  const onPasswordSubmit = () => {
+  const onPasswordAuth = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoadingMethod("password");
     setMessage(null);
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+
+      if (passwordMode === "signup") {
+        const callback = getCallbackUrl(redirectTo);
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: callback }
+        });
+        if (error) {
+          setMessage(error.message);
+        } else if (data.session) {
+          window.location.assign(`${redirectTo}${redirectTo.includes("?") ? "&" : "?"}auth=success`);
+        } else {
+          setMessage("Account created. Check your email to confirm and continue.");
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          setMessage(error.message);
+        } else {
+          window.location.assign(`${redirectTo}${redirectTo.includes("?") ? "&" : "?"}auth=success`);
+        }
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not complete password sign-in.");
+    } finally {
+      setLoadingMethod(null);
+    }
   };
 
   const onGoogle = async () => {
@@ -90,14 +122,10 @@ export function LoginOptionsForm({ redirectTo }: { redirectTo: string }) {
         <span>or</span>
       </div>
 
-      <form className="stack-sm" method="post" action="/auth/password" onSubmit={onPasswordSubmit}>
-        <input type="hidden" name="next" value={redirectTo} />
-        <input type="hidden" name="mode" value={passwordMode} />
-        <input type="hidden" name="email" value={email} />
+      <form className="stack-sm" onSubmit={onPasswordAuth}>
         <label>
           Password
           <input
-            name="password"
             type="password"
             required
             autoComplete={passwordMode === "signup" ? "new-password" : "current-password"}
