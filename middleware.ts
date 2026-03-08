@@ -3,6 +3,12 @@ import { NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  const url = request.nextUrl.clone();
+  if (url.searchParams.has("code") && url.pathname !== "/auth/callback") {
+    url.pathname = "/auth/callback";
+    return NextResponse.redirect(url);
+  }
+
   const pathname = request.nextUrl.pathname;
   if (pathname.startsWith("/auth/")) {
     return NextResponse.next();

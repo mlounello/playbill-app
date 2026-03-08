@@ -6,9 +6,18 @@ import { getCurrentUserWithProfile } from "@/lib/auth";
 export default async function LoginPage({
   searchParams
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; code?: string; next?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, code, next } = await searchParams;
+
+  if (code) {
+    const callbackTarget = new URLSearchParams({ code });
+    if (next) {
+      callbackTarget.set("next", next);
+    }
+    redirect(`/auth/callback?${callbackTarget.toString()}`);
+  }
+
   const current = await getCurrentUserWithProfile();
 
   if (current) {
