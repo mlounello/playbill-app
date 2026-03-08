@@ -22,6 +22,7 @@ async function createRouteSupabase(origin: string) {
   const cookieStore = await cookies();
   const pending: PendingCookie[] = [];
   const cookieName = getSupabaseAuthCookieName(url);
+
   const supabase = createServerClient(url, anon, {
     cookieOptions: {
       ...(cookieName ? { name: cookieName } : {}),
@@ -31,22 +32,21 @@ async function createRouteSupabase(origin: string) {
     },
     cookies: {
       getAll() {
-        // Next.js route handlers often cannot mutate the request cookie store.
-        // Supabase will call setAll() during the auth exchange; we queue those
-        // cookies in `pending` and also expose them here so subsequent reads
-        // (getSession/getUser) within the same request can see the new session.
         const existing = cookieStore.getAll();
         if (pending.length === 0) return existing;
 
         const byName = new Map(existing.map((c) => [c.name, c]));
         for (const c of pending) {
-          // Cast is safe: Supabase cookie shape is compatible with Next cookies.
           byName.set(c.name, c as unknown as (typeof existing)[number]);
         }
         return Array.from(byName.values());
       },
       setAll(cookiesToSet) {
-        console.info("[auth/callback] setAll", cookiesToSet.map((c: any) => ({ name: c.name, hasOptions: Boolean(c.options) })));
+        console.info(
+          "[auth/callback] setAll",
+          cookiesToSet.map((c: any) => ({ name: c.name, hasOptions: Boolean(c.options) }))
+        );
+
         for (const cookie of cookiesToSet) {
           try {
             cookieStore.set(cookie.name, cookie.value, cookie.options);
@@ -70,13 +70,36 @@ async function createRouteSupabase(origin: string) {
       secure: isSecure,
       maxAge: 60 * 10
     });
+
     for (const cookie of pending) {
       response.cookies.set(cookie.name, cookie.value, cookie.options);
     }
+
+    // Clear pb_next after we’ve used it
+    response.cookies.set("pb_next", "", {
+      path: "/",
+      sameSite: "lax",
+      secure: isSecure,
+      maxAge: 0
+    });
+
     return response;
   }
 
   return { supabase, applyPendingCookies, cookieName };
+}
+
+function readNextFromCookie(cookieStore: Awaited<ReturnType<typeof cookies>>) {
+  const pbNext = cookieStore.get("pb_next")?.value;
+  if (!pbNext) return null;
+
+  try {
+    const decoded = decodeURIComponent(pbNext);
+    if (!decoded.startsWith("/")) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(request: Request) {
@@ -84,7 +107,12 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type");
-  const next = searchParams.get("next") || "/app/shows";
+
+  const cookieStore = await cookies();
+  const nextFromQuery = searchParams.get("next");
+  const nextFromCookie = readNextFromCookie(cookieStore);
+  const next = nextFromQuery || nextFromCookie || "/app/shows";
+
   logCallback("received", {
     has_code: Boolean(code),
     has_token_hash: Boolean(tokenHash),
@@ -92,7 +120,7 @@ export async function GET(request: Request) {
     next
   });
 
-  const { supabase, applyPendingCookies, cookieName } = await createRouteSupabase(origin);
+  const { supabase, applyPendingCookies } = await createRouteSupabase(origin);
   let authError: string | null = null;
   let session: any | null = null;
   let user: any | null = null;
@@ -102,6 +130,7 @@ export async function GET(request: Request) {
     authError = error?.message ?? null;
     session = data?.session ?? null;
     user = data?.user ?? null;
+
     logCallback("exchange_code_for_session", {
       ok: !error,
       error: error?.message ?? null,
@@ -117,6 +146,7 @@ export async function GET(request: Request) {
     authError = error?.message ?? null;
     session = data?.session ?? null;
     user = data?.user ?? null;
+
     logCallback("verify_otp", {
       ok: !error,
       error: error?.message ?? null,
@@ -125,7 +155,11 @@ export async function GET(request: Request) {
       email: user?.email ?? null
     });
   } else {
-    logCallback("missing_callback_params", { has_code: false, has_token_hash: Boolean(tokenHash), type: type ?? null });
+    logCallback("missing_callback_params", {
+      has_code: false,
+      has_token_hash: Boolean(tokenHash),
+      type: type ?? null
+    });
   }
 
   if (!authError && (code || (tokenHash && type))) {
@@ -139,19 +173,19 @@ export async function GET(request: Request) {
 
     const redirectUrl = new URL(next, origin);
     redirectUrl.searchParams.set("auth", "success");
+
     const response = NextResponse.redirect(redirectUrl);
     response.headers.set("Cache-Control", "no-store, max-age=0");
-
-    // IMPORTANT: rely on Supabase-set cookies (via pending) rather than writing
-    // a custom, long-lived session cookie. This avoids format/HttpOnly issues.
     return applyPendingCookies(response);
   }
 
   logCallback("callback_failed", { error: authError ?? "invalid_callback_params" });
+
   const redirect = new URL("/login?error=Could+not+authenticate", origin);
   if (authError) {
     redirect.searchParams.set("auth_error", authError);
   }
+
   const failedResponse = NextResponse.redirect(redirect);
   failedResponse.cookies.set("playbill_callback_hit", String(Date.now()), {
     path: "/",
@@ -159,6 +193,15 @@ export async function GET(request: Request) {
     secure: new URL(origin).protocol === "https:",
     maxAge: 60 * 10
   });
+
+  // Clear pb_next on failure too
+  failedResponse.cookies.set("pb_next", "", {
+    path: "/",
+    sameSite: "lax",
+    secure: new URL(origin).protocol === "https:",
+    maxAge: 0
+  });
+
   return failedResponse;
 }
 
