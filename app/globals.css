@@ -959,6 +959,18 @@ button.tab-chip {
   gap: 0.35rem;
 }
 
+.contributor-entry-hero {
+  border-color: #d9cfbf;
+  background:
+    radial-gradient(circle at top right, rgba(255, 208, 66, 0.18), transparent 38%),
+    linear-gradient(145deg, rgba(0, 107, 84, 0.06), rgba(255, 255, 255, 0.94)),
+    #fff;
+}
+
+.contributor-entry-card {
+  border-color: #d7cfbf;
+}
+
 .preset-row select {
   width: auto;
   min-width: 170px;

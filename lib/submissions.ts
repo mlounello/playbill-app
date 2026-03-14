@@ -174,6 +174,19 @@ export type ContributorTaskSummary = {
   submitted_at: string | null;
 };
 
+export type ContributorTaskLoginSummary = {
+  show_id: string;
+  task_id: string;
+  show_title: string;
+  program_slug: string;
+  person_name: string;
+  role_title: string;
+  submission_type: SubmissionType;
+  due_date: string | null;
+  submission_status: ShowSubmissionPerson["submission_status"];
+  email: string;
+};
+
 export type ShowRoleAssignment = {
   id: string;
   person_id: string;
@@ -2833,6 +2846,49 @@ export async function getContributorTaskById(showId: string, taskId: string) {
         }
       : null
   };
+}
+
+export async function getContributorTaskLoginSummary(showId: string, taskId: string) {
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    return null;
+  }
+
+  const resolvedTask = await resolveSubmissionTaskForShow(showId, taskId);
+  if (!resolvedTask) {
+    return null;
+  }
+
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: requestRow } = await db
+    .from("submission_requests")
+    .select("due_date, status")
+    .eq("id", resolvedTask.task_id)
+    .maybeSingle();
+  const { data: person } = await db
+    .from("people")
+    .select("id, full_name, role_title, email")
+    .eq("id", resolvedTask.person_id)
+    .eq("program_id", context.program_id)
+    .maybeSingle();
+
+  if (!person) {
+    return null;
+  }
+
+  return {
+    show_id: context.show_id,
+    task_id: resolvedTask.task_id,
+    show_title: context.show_title,
+    program_slug: context.program_slug,
+    person_name: String(person.full_name ?? ""),
+    role_title: String(person.role_title ?? ""),
+    submission_type: resolvedTask.request_type,
+    due_date: requestRow?.due_date ? String(requestRow.due_date) : null,
+    submission_status: normalizeSubmissionStatus(String(requestRow?.status ?? resolvedTask.status ?? "pending")),
+    email: String(person.email ?? "")
+  } satisfies ContributorTaskLoginSummary;
 }
 
 async function updateSubmissionCore(args: {

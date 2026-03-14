@@ -8,7 +8,9 @@ function isProtectedPath(pathname: string) {
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
-  if (url.searchParams.has("code") && url.pathname !== "/auth/callback") {
+  const hasAuthCallbackParams =
+    url.searchParams.has("code") || (url.searchParams.has("token_hash") && url.searchParams.has("type"));
+  if (hasAuthCallbackParams && url.pathname !== "/auth/callback") {
     url.pathname = "/auth/callback";
     return NextResponse.redirect(url);
   }
