@@ -1199,6 +1199,12 @@ body.density-compact .admin-surface textarea {
   gap: 0.08in;
 }
 
+.image-page-full {
+  padding: 0;
+  grid-template-rows: 1fr;
+  gap: 0;
+}
+
 .image-page .section-title {
   margin-bottom: 0;
 }
@@ -1206,6 +1212,10 @@ body.density-compact .admin-surface textarea {
 .image-page .full-page-image {
   align-self: stretch;
   justify-self: stretch;
+}
+
+.image-page-full .full-page-image {
+  object-fit: cover;
 }
 
 .poster-overlay {

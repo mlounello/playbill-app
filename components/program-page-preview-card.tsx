@@ -15,8 +15,9 @@ export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
   }
 
   if (page.type === "image") {
+    const imagePageClassName = page.title ? "booklet-page image-page" : "booklet-page image-page image-page-full";
     return (
-      <article className="booklet-page image-page">
+      <article className={imagePageClassName}>
         {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
         <img src={page.imageUrl} alt={page.title || "Module preview"} className="full-page-image" />
       </article>
