@@ -62,6 +62,7 @@ import {
   getReminderDeliveryMode,
   getShowReminderSummary,
   sendReminderPreviewEmail,
+  sendSingleReminderNow,
   setShowRemindersPaused,
   sendReminderTestEmail,
   sendShowInvites,
@@ -1093,6 +1094,7 @@ export default async function ShowWorkspacePage({
                             const approveAction = adminQuickStatus.bind(null, show.id, task.task_id, "approved");
                             const lockAction = adminQuickStatus.bind(null, show.id, task.task_id, "locked");
                             const returnAction = adminReturnSubmission.bind(null, show.id, task.task_id);
+                            const remindAction = sendSingleReminderNow.bind(null, show.id, task.task_id);
                             return (
                               <tr key={task.task_id}>
                                 <td>
@@ -1113,6 +1115,9 @@ export default async function ShowWorkspacePage({
                                 <td>
                                   <div className="submission-actions">
                                     <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Review</Link>
+                                    <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true">
+                                      <button type="submit">Send Reminder</button>
+                                    </form>
                                     <form action={approveAction} data-pending-label="Approving submission..." data-preserve-scroll="true">
                                       <button type="submit">Approve</button>
                                     </form>
@@ -1137,6 +1142,7 @@ export default async function ShowWorkspacePage({
                         const approveAction = adminQuickStatus.bind(null, show.id, task.task_id, "approved");
                         const lockAction = adminQuickStatus.bind(null, show.id, task.task_id, "locked");
                         const returnAction = adminReturnSubmission.bind(null, show.id, task.task_id);
+                        const remindAction = sendSingleReminderNow.bind(null, show.id, task.task_id);
                         return (
                           <div key={task.task_id} className="submission-row">
                             <div className="submission-row-top">
@@ -1158,6 +1164,9 @@ export default async function ShowWorkspacePage({
                             </div>
                             <div className="submission-actions">
                               <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Open Review</Link>
+                              <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true">
+                                <button type="submit">Send Reminder</button>
+                              </form>
                               <form action={approveAction} data-pending-label="Approving submission..." data-preserve-scroll="true">
                                 <button type="submit">Approve</button>
                               </form>

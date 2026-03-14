@@ -166,6 +166,11 @@ async function getReminderRecipients(showId: string) {
     .filter((row): row is ReminderRecipient => row !== null);
 }
 
+async function getReminderRecipientByRequestId(showId: string, requestId: string) {
+  const recipients = await getReminderRecipients(showId);
+  return recipients.find((item) => item.requestId === requestId) ?? null;
+}
+
 function shouldRemind(status: string) {
   return !["submitted", "approved", "locked"].includes(status);
 }
@@ -184,10 +189,12 @@ function getRequestLabel(value: string) {
 
 function getContributorTaskLink(item: ReminderRecipient) {
   const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  const taskPath = `/contribute/shows/${item.showId}/tasks/${item.requestId}`;
+  const loginPath = `/login?next=${encodeURIComponent(taskPath)}`;
   if (!baseUrl) {
-    return "/contribute";
+    return loginPath;
   }
-  return `${baseUrl}/contribute/shows/${item.showId}/tasks/${item.requestId}`;
+  return `${baseUrl}${loginPath}`;
 }
 
 async function writeReminderAudit(params: {
@@ -338,7 +345,11 @@ export async function sendReminderPreviewEmail(showId: string) {
   }
 
   const deliveryMode = getReminderDeliveryMode();
-  const link = getContributorTaskLink(recipient);
+  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  const intendedContributorLink = getContributorTaskLink(recipient);
+  const adminPreviewLink = baseUrl
+    ? `${baseUrl}/app/shows/${showId}/submissions/${recipient.requestId}`
+    : `/app/shows/${showId}/submissions/${recipient.requestId}`;
   const requestLabel = getRequestLabel(recipient.requestType);
   const subject = `${context.title}: ${requestLabel} reminder`;
   const text =
@@ -348,13 +359,15 @@ export async function sendReminderPreviewEmail(showId: string) {
     `Please submit your ${requestLabel}.\n` +
     `Role: ${recipient.roleTitle}\n` +
     `Due: ${formatDate(recipient.dueDate)}\n` +
-    `Link: ${link}\n`;
+    `Contributor link: ${intendedContributorLink}\n\n` +
+    `Admin preview link: ${adminPreviewLink}\n`;
   const html =
     `<p><strong>This is a preview copy of the live reminder email.</strong></p>` +
     `<p>Originally addressed to: ${recipient.name} &lt;${recipient.email}&gt;</p>` +
     `<p>This is a reminder for <strong>${context.title}</strong>.</p>` +
     `<p>Please submit your ${requestLabel}.<br/>Role: ${recipient.roleTitle}<br/>Due: ${formatDate(recipient.dueDate)}</p>` +
-    `<p><a href="${link}">Open contributor portal</a></p>`;
+    `<p><strong>Contributor link (real recipient only):</strong><br/><a href="${intendedContributorLink}">${intendedContributorLink}</a></p>` +
+    `<p><strong>Admin preview link:</strong><br/><a href="${adminPreviewLink}">Open review in admin workspace</a></p>`;
   const result = await sendEmail({
     to: current.profile.email,
     subject,
@@ -367,6 +380,58 @@ export async function sendReminderPreviewEmail(showId: string) {
     : `Reminder preview processed for ${current.profile.email}, but delivery was not live (${result.reason}).`;
   withSuccess(
     `/app/shows/${showId}?tab=overview`,
+    deliveryMode.isDelivering ? baseMessage : `${baseMessage} ${deliveryMode.label}.`
+  );
+}
+
+export async function sendSingleReminderNow(showId: string, requestId: string) {
+  "use server";
+  await requireRole(["owner", "admin", "editor"]);
+
+  const context = await getShowContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show not found.");
+  }
+  if (context.remindersPaused) {
+    withSuccess(`/app/shows/${showId}?tab=submissions`, "Reminders are currently paused for this show.");
+  }
+
+  const recipient = await getReminderRecipientByRequestId(showId, requestId);
+  if (!recipient) {
+    withError(`/app/shows/${showId}?tab=submissions`, "That submission request could not be found.");
+  }
+  if (!shouldRemind(recipient.status)) {
+    withSuccess(
+      `/app/shows/${showId}?tab=submissions`,
+      `${recipient.name} does not currently need a reminder for ${getRequestLabel(recipient.requestType)}.`
+    );
+  }
+
+  const deliveryMode = getReminderDeliveryMode();
+  const link = getContributorTaskLink(recipient);
+  const requestLabel = getRequestLabel(recipient.requestType);
+  const subject = `${context.title}: ${requestLabel} reminder`;
+  const text = `Reminder for ${context.title}\nPlease submit your ${requestLabel}.\nRole: ${recipient.roleTitle}\nDue: ${formatDate(recipient.dueDate)}\nLink: ${link}\n`;
+  const html = `<p>This is a reminder for <strong>${context.title}</strong>.</p><p>Please submit your ${requestLabel}.<br/>Role: ${recipient.roleTitle}<br/>Due: ${formatDate(recipient.dueDate)}</p><p><a href="${link}">Open contributor portal</a></p>`;
+  const result = await sendEmail({ to: recipient.email, subject, text, html });
+
+  await writeReminderAudit({
+    personId: recipient.personId,
+    field: "reminder_sent",
+    reason: `manual_single_${result.reason}`,
+    payload: {
+      request_id: recipient.requestId,
+      due_date: recipient.dueDate,
+      sent: result.sent,
+      mode: "manual_single"
+    }
+  });
+
+  const baseMessage = result.sent
+    ? `Reminder sent to ${recipient.name} for ${requestLabel}.`
+    : `Reminder processed for ${recipient.name}, but delivery was not live (${result.reason}).`;
+  withSuccess(
+    `/app/shows/${showId}?tab=submissions`,
     deliveryMode.isDelivering ? baseMessage : `${baseMessage} ${deliveryMode.label}.`
   );
 }

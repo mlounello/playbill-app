@@ -919,6 +919,46 @@ button.tab-chip {
   align-items: center;
 }
 
+.contributor-task-hero {
+  border-color: #d9cfbf;
+  background:
+    linear-gradient(135deg, rgba(0, 107, 84, 0.06), rgba(255, 208, 66, 0.1)),
+    #fffdf8;
+}
+
+.contributor-task-eyebrow {
+  font-family: var(--font-title);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.contributor-task-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.contributor-task-layout {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.contributor-task-guide {
+  height: 100%;
+}
+
+.contributor-task-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
 .preset-row select {
   width: auto;
   min-width: 170px;

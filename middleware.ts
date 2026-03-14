@@ -2,6 +2,10 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
+function isProtectedPath(pathname: string) {
+  return pathname === "/app" || pathname.startsWith("/app/") || pathname === "/contribute" || pathname.startsWith("/contribute/");
+}
+
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
   if (url.searchParams.has("code") && url.pathname !== "/auth/callback") {
@@ -13,7 +17,18 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/auth/")) {
     return NextResponse.next();
   }
-  return updateSession(request);
+
+  const { response, user } = await updateSession(request);
+
+  if (!user && isProtectedPath(pathname)) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+    loginUrl.searchParams.set("next", nextPath);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return response;
 }
 
 export const config = {
