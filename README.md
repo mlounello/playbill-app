@@ -40,6 +40,36 @@ npm run dev
 3. Add the same env vars in Vercel project settings.
 4. Set your custom domain to `playbill.mlounello.com` in Vercel Domains.
 
+## Live email + reminder setup
+
+Add these Vercel env vars for live delivery:
+
+- `NEXT_PUBLIC_SITE_URL`
+- `RESEND_API_KEY`
+- `REMINDER_FROM_EMAIL`
+- `CRON_SECRET`
+- `DISABLE_OUTBOUND_EMAIL=false`
+
+This repo includes a Vercel cron in [vercel.json](/Users/mikelounello/playbill-app/vercel.json) that calls `/api/cron/reminders` daily at `13:00 UTC`.
+
+Reminder cadence is enforced in the app logic:
+
+- weekly reminders for still-open requests
+- last-day reminders on the due date
+- paused shows are skipped
+- submitted, approved, and locked items are skipped
+
+To go live:
+
+1. Create a Resend API key.
+2. Verify the sending domain or sender address in Resend.
+3. Set `REMINDER_FROM_EMAIL` to that verified sender, for example `Siena Theatre <noreply@playbill.mlounello.com>`.
+4. Set `NEXT_PUBLIC_SITE_URL` to your production app URL, for example `https://playbillapp.mlounello.com`.
+5. Set `CRON_SECRET` in Vercel.
+6. Remove `DISABLE_OUTBOUND_EMAIL` or set it to `false`.
+
+Invite and reminder emails link directly to each contributor's assigned task.
+
 ## Supabase auth redirect setup (required for magic links)
 
 In Supabase Dashboard:

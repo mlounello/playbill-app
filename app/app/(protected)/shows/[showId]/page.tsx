@@ -62,6 +62,7 @@ import {
   getReminderDeliveryMode,
   getShowReminderSummary,
   setShowRemindersPaused,
+  sendReminderTestEmail,
   sendShowInvites,
   sendShowRemindersNow,
   setShowDueDate
@@ -167,6 +168,7 @@ export default async function ShowWorkspacePage({
   const updateShowDepartmentsAction = updateShowDepartments.bind(null, show.id);
   const setReminderPausedAction = setShowRemindersPaused.bind(null, show.id);
   const setDueDateAction = setShowDueDate.bind(null, show.id);
+  const sendReminderTestEmailAction = sendReminderTestEmail.bind(null, show.id);
   const sendInvitesAction = sendShowInvites.bind(null, show.id);
   const sendRemindersAction = sendShowRemindersNow.bind(null, show.id);
   const reorderShowModulesAction = reorderShowModules.bind(null, show.id);
@@ -438,6 +440,9 @@ export default async function ShowWorkspacePage({
                   <div className="top-actions">
                     <form action={sendInvitesAction} data-pending-label="Sending invites..." data-preserve-scroll="true">
                       <button type="submit">Send Invites</button>
+                    </form>
+                    <form action={sendReminderTestEmailAction} data-pending-label="Sending test email..." data-preserve-scroll="true">
+                      <button type="submit">Send Test Email To Me</button>
                     </form>
                     <form action={sendRemindersAction} data-pending-label="Sending reminders..." data-preserve-scroll="true" className="top-actions">
                       <label>

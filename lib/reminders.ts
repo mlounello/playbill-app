@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
 type ReminderRecipient = {
+  showId: string;
   personId: string;
   email: string;
   name: string;
@@ -151,6 +152,7 @@ async function getReminderRecipients(showId: string) {
       const person = personById.get(personId);
       if (!person || !person.email) return null;
       return {
+        showId,
         personId,
         email: person.email,
         name: person.name,
@@ -178,6 +180,14 @@ function getRequestLabel(value: string) {
   if (value === "dramaturgical_note") return "dramaturgical note";
   if (value === "music_director_note") return "music director's note";
   return "bio";
+}
+
+function getContributorTaskLink(item: ReminderRecipient) {
+  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  if (!baseUrl) {
+    return "/contribute";
+  }
+  return `${baseUrl}/contribute/shows/${item.showId}/tasks/${item.requestId}`;
 }
 
 async function writeReminderAudit(params: {
@@ -261,7 +271,7 @@ export async function sendShowInvites(showId: string) {
 
   let sent = 0;
   for (const item of recipients) {
-    const link = `${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/contribute`;
+    const link = getContributorTaskLink(item);
     const requestLabel = getRequestLabel(item.requestType);
     const subject = `${context.title}: ${requestLabel} submission invite`;
     const text = `Hi ${item.name},\n\nPlease submit your ${requestLabel} for ${context.title}.\nRole: ${item.roleTitle}\nDue: ${formatDate(item.dueDate)}\nLink: ${link}\n`;
@@ -278,6 +288,36 @@ export async function sendShowInvites(showId: string) {
   }
 
   const baseMessage = `Invites processed: ${sent}/${recipients.length} sent.`;
+  withSuccess(
+    `/app/shows/${showId}?tab=overview`,
+    deliveryMode.isDelivering ? baseMessage : `${baseMessage} ${deliveryMode.label}.`
+  );
+}
+
+export async function sendReminderTestEmail(showId: string) {
+  "use server";
+  const current = await requireRole(["owner", "admin", "editor"]);
+  const context = await getShowContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  const deliveryMode = getReminderDeliveryMode();
+  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  const link = baseUrl ? `${baseUrl}/contribute` : "/contribute";
+  const subject = `${context.title}: test reminder email`;
+  const text = `This is a test reminder email for ${context.title}.\nIf you received this, email delivery is working.\nContributor portal: ${link}\n`;
+  const html = `<p>This is a test reminder email for <strong>${context.title}</strong>.</p><p>If you received this, email delivery is working.</p><p><a href="${link}">Open contributor portal</a></p>`;
+  const result = await sendEmail({
+    to: current.profile.email,
+    subject,
+    text,
+    html
+  });
+
+  const baseMessage = result.sent
+    ? `Test reminder sent to ${current.profile.email}.`
+    : `Test reminder processed for ${current.profile.email}, but delivery was not live (${result.reason}).`;
   withSuccess(
     `/app/shows/${showId}?tab=overview`,
     deliveryMode.isDelivering ? baseMessage : `${baseMessage} ${deliveryMode.label}.`
@@ -381,7 +421,7 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
       continue;
     }
 
-    const link = `${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/contribute`;
+    const link = getContributorTaskLink(item);
     const requestLabel = getRequestLabel(item.requestType);
     const subject = `${context.title}: ${requestLabel} reminder`;
     const text = `Reminder for ${context.title}\nPlease submit your ${requestLabel}.\nRole: ${item.roleTitle}\nDue: ${formatDate(item.dueDate)}\nLink: ${link}\n`;
