@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { hideShowOnlyCastRoleTemplatesForShow } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/rich-text";
+import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 
 export type ShowSummary = {
@@ -172,7 +173,7 @@ function normalizeOptionalHttpUrl(value: string | undefined, fieldLabel: string)
   if (!trimmed) {
     return "";
   }
-  if (!isValidHttpUrl(trimmed)) {
+  if (!isValidHttpUrl(trimmed) && !isSupportedAssetUrl(trimmed)) {
     throw new Error(`${fieldLabel} must be a valid http(s) URL.`);
   }
   return trimmed;
@@ -445,8 +446,8 @@ export async function getShowsForDashboard() {
         sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
         acknowledgements: String(program?.acknowledgements ?? ""),
         special_thanks: String((program as Record<string, unknown> | undefined)?.special_thanks ?? ""),
-        sponsorship_image_url: String(program?.actf_ad_image_url ?? ""),
-        poster_image_url: String(program?.poster_image_url ?? ""),
+        sponsorship_image_url: normalizeAssetUrl(String(program?.actf_ad_image_url ?? "")),
+        poster_image_url: normalizeAssetUrl(String(program?.poster_image_url ?? "")),
         show_dates: String(program?.show_dates ?? ""),
         performance_schedule: Array.isArray(program?.performance_schedule)
           ? (program?.performance_schedule as Array<{ date?: string; time?: string }>)
@@ -512,8 +513,8 @@ export async function getShowById(showId: string) {
       sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
       acknowledgements: String(program?.acknowledgements ?? ""),
       special_thanks: String((program as Record<string, unknown> | undefined)?.special_thanks ?? ""),
-      sponsorship_image_url: String(program?.actf_ad_image_url ?? ""),
-      poster_image_url: String(program?.poster_image_url ?? ""),
+      sponsorship_image_url: normalizeAssetUrl(String(program?.actf_ad_image_url ?? "")),
+      poster_image_url: normalizeAssetUrl(String(program?.poster_image_url ?? "")),
       show_dates: String(program?.show_dates ?? ""),
       performance_schedule: Array.isArray(program?.performance_schedule)
         ? (program?.performance_schedule as Array<{ date?: string; time?: string }>)

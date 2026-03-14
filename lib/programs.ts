@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { buildDepartmentInfoHtml } from "@/lib/departments";
 import { buildSeasonCalendarHtml } from "@/lib/seasons";
+import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
@@ -145,7 +146,7 @@ function normalizeOptionalHttpUrl(value: string | undefined, fieldLabel: string)
   if (!trimmed) {
     return "";
   }
-  if (!isValidHttpUrl(trimmed)) {
+  if (!isValidHttpUrl(trimmed) && !isSupportedAssetUrl(trimmed)) {
     throw new Error(`${fieldLabel} must be a valid http(s) URL.`);
   }
   return trimmed;
@@ -155,7 +156,7 @@ const submissionSchema = z.object({
   personId: z.string().uuid(),
   email: z.string().email(),
   bio: z.string().min(1),
-  headshotUrl: z.string().url().optional().or(z.literal(""))
+  headshotUrl: z.string().optional().or(z.literal(""))
 });
 
 function slugify(value: string) {
@@ -364,7 +365,7 @@ function normalizeExistingPeopleRows(rows: Record<string, unknown>[]) {
     role_title: String(person.role_title ?? ""),
     team_type: person.team_type === "cast" ? "cast" : "production",
     bio: String(person.bio ?? ""),
-    headshot_url: String(person.headshot_url ?? ""),
+    headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
     email: String(person.email ?? ""),
     submission_status: String(person.submission_status ?? "pending"),
     submitted_at: person.submitted_at ? String(person.submitted_at) : null
@@ -475,7 +476,7 @@ function parseProductionPhotos(text: string | undefined) {
   return text
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => Boolean(line) && isValidHttpUrl(line));
+    .filter((line) => Boolean(line) && (isValidHttpUrl(line) || isSupportedAssetUrl(line)));
 }
 
 function parseCustomPages(text: string | undefined): CustomPageRecord[] {
@@ -1904,7 +1905,7 @@ export async function getProgramBySlug(
       role_title: String(person.role_title ?? ""),
       bio: String(person.bio ?? ""),
       team_type: person.team_type === "cast" ? "cast" : "production",
-      headshot_url: String(person.headshot_url ?? ""),
+      headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
       email: String(person.email ?? ""),
       submission_status: String(person.submission_status ?? "pending")
     })) as PersonRecord[];
@@ -1923,19 +1924,21 @@ export async function getProgramBySlug(
       performance_schedule: Array.isArray(program.performance_schedule)
         ? (program.performance_schedule as PerformanceRecord[])
         : [],
-      poster_image_url: String(program.poster_image_url ?? ""),
+      poster_image_url: normalizeAssetUrl(String(program.poster_image_url ?? "")),
       director_notes: String(program.director_notes ?? ""),
       dramaturgical_note: String(program.dramaturgical_note ?? ""),
       music_director_note: String(program.music_director_note ?? ""),
       billing_page: String(program.billing_page ?? ""),
       acts_songs: String(program.acts_songs ?? ""),
       department_info: String(program.department_info ?? ""),
-      actf_ad_image_url: String(program.actf_ad_image_url ?? ""),
+      actf_ad_image_url: normalizeAssetUrl(String(program.actf_ad_image_url ?? "")),
       acknowledgements: String(program.acknowledgements ?? ""),
       sponsorships: String((program as Record<string, unknown>).sponsorships ?? ""),
       special_thanks: String((program as Record<string, unknown>).special_thanks ?? ""),
       season_calendar: String(program.season_calendar ?? ""),
-      production_photo_urls: Array.isArray(program.production_photo_urls) ? (program.production_photo_urls as string[]) : [],
+      production_photo_urls: Array.isArray(program.production_photo_urls)
+        ? (program.production_photo_urls as string[]).map((url) => normalizeAssetUrl(url))
+        : [],
       custom_pages: Array.isArray(program.custom_pages) ? (program.custom_pages as CustomPageRecord[]) : [],
       layout_order: Array.isArray(program.layout_order) ? (program.layout_order as LayoutToken[]) : [...layoutTokenValues]
     };

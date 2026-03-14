@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolvePlatformRoleForUser } from "@/lib/auth";
+import { buildAssetProxyUrl, getProgramAssetBucketName } from "@/lib/storage-assets";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
@@ -14,11 +15,17 @@ function sanitizeFilename(value: string) {
 }
 
 async function ensureBucket(client: ReturnType<typeof getSupabaseWriteClient>, bucket: string) {
-  const { data: buckets } = await client.storage.listBuckets();
+  const { data: buckets, error: listError } = await client.storage.listBuckets();
+  if (listError) {
+    throw new Error(listError.message);
+  }
   if ((buckets ?? []).some((item) => item.name === bucket)) {
     return;
   }
-  await client.storage.createBucket(bucket, { public: true, fileSizeLimit: "10MB" });
+  const { error: createError } = await client.storage.createBucket(bucket, { public: true, fileSizeLimit: "10MB" });
+  if (createError && !/already exists/i.test(createError.message)) {
+    throw new Error(createError.message);
+  }
 }
 
 export async function POST(request: Request) {
@@ -75,7 +82,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const bucket = "program-assets";
+    const bucket = getProgramAssetBucketName();
     await ensureBucket(admin, bucket);
 
     const ext = file.name.includes(".") ? file.name.split(".").pop() ?? "jpg" : "jpg";
@@ -91,8 +98,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: uploadError.message }, { status: 500 });
     }
 
-    const { data: publicUrlData } = admin.storage.from(bucket).getPublicUrl(path);
-    const publicUrl = String(publicUrlData.publicUrl ?? "");
+    const publicUrl = buildAssetProxyUrl(bucket, path);
 
     const { error: peopleError } = await db.from("people").update({ headshot_url: publicUrl }).eq("id", personId);
     if (peopleError) {

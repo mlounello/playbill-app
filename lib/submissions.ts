@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getCurrentUserWithProfile, requireRole } from "@/lib/auth";
 import { sanitizeRichText } from "@/lib/rich-text";
+import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 
 export const BIO_CHAR_LIMIT_DEFAULT = 375;
@@ -108,7 +109,7 @@ const manualPersonSchema = z.object({
 
 const reviewSchema = z.object({
   bio: z.string().optional().or(z.literal("")),
-  headshotUrl: z.string().url().optional().or(z.literal("")),
+  headshotUrl: z.string().optional().or(z.literal("")),
   status: z.enum(["pending", "draft", "submitted", "returned", "approved", "locked"]),
   reason: z.string().optional().or(z.literal("")),
   skipBio: z.boolean().optional()
@@ -698,7 +699,7 @@ export async function getShowSubmissionPeople(showId: string) {
         : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
       bio: cleanBio,
       no_bio: rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false,
-      headshot_url: String(person.headshot_url ?? ""),
+      headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
       submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(cleanBio).length
@@ -798,7 +799,7 @@ export async function getShowSubmissionQueue(showId: string) {
       submission_type: requestType,
       bio: taskBody,
       no_bio: requestType === "bio" && rowHasColumn(personRecord, "no_bio") ? Boolean(person.no_bio) : false,
-      headshot_url: String(person.headshot_url ?? ""),
+      headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
       submission_status: normalizeSubmissionStatus(String(request.status ?? person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(taskBody).length
