@@ -324,6 +324,53 @@ export async function sendReminderTestEmail(showId: string) {
   );
 }
 
+export async function sendReminderPreviewEmail(showId: string) {
+  "use server";
+  const current = await requireRole(["owner", "admin", "editor"]);
+  const context = await getShowContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show not found.");
+  }
+
+  const recipient = (await getReminderRecipients(showId)).find((item) => shouldRemind(item.status));
+  if (!recipient) {
+    withError(`/app/shows/${showId}?tab=overview`, "No open reminder-eligible requests were found for this show.");
+  }
+
+  const deliveryMode = getReminderDeliveryMode();
+  const link = getContributorTaskLink(recipient);
+  const requestLabel = getRequestLabel(recipient.requestType);
+  const subject = `${context.title}: ${requestLabel} reminder`;
+  const text =
+    `This is a preview copy of the live reminder email.\n\n` +
+    `Originally addressed to: ${recipient.name} <${recipient.email}>\n\n` +
+    `Reminder for ${context.title}\n` +
+    `Please submit your ${requestLabel}.\n` +
+    `Role: ${recipient.roleTitle}\n` +
+    `Due: ${formatDate(recipient.dueDate)}\n` +
+    `Link: ${link}\n`;
+  const html =
+    `<p><strong>This is a preview copy of the live reminder email.</strong></p>` +
+    `<p>Originally addressed to: ${recipient.name} &lt;${recipient.email}&gt;</p>` +
+    `<p>This is a reminder for <strong>${context.title}</strong>.</p>` +
+    `<p>Please submit your ${requestLabel}.<br/>Role: ${recipient.roleTitle}<br/>Due: ${formatDate(recipient.dueDate)}</p>` +
+    `<p><a href="${link}">Open contributor portal</a></p>`;
+  const result = await sendEmail({
+    to: current.profile.email,
+    subject,
+    text,
+    html
+  });
+
+  const baseMessage = result.sent
+    ? `Reminder preview sent to ${current.profile.email} for ${recipient.name}.`
+    : `Reminder preview processed for ${current.profile.email}, but delivery was not live (${result.reason}).`;
+  withSuccess(
+    `/app/shows/${showId}?tab=overview`,
+    deliveryMode.isDelivering ? baseMessage : `${baseMessage} ${deliveryMode.label}.`
+  );
+}
+
 export async function sendShowRemindersNow(showId: string, formData?: FormData) {
   "use server";
   await requireRole(["owner", "admin", "editor"]);
