@@ -14,7 +14,7 @@ type ReminderRecipient = {
   status: string;
 };
 
-type ReminderDispatchScope = "all_open" | "open_bios" | "open_notes";
+export type ReminderDispatchScope = "all_open" | "open_bios" | "open_notes";
 
 type ReminderRecipientGroup = {
   showId: string;
@@ -23,6 +23,14 @@ type ReminderRecipientGroup = {
   name: string;
   roleTitle: string;
   items: ReminderRecipient[];
+};
+
+type ReminderDispatchProgress = {
+  processed: number;
+  sent: number;
+  total: number;
+  recipientName?: string;
+  reason?: string;
 };
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
@@ -39,6 +47,10 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
   }
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function withError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
   redirect(`${path}${path.includes("?") ? "&" : "?"}${qp.toString()}`);
@@ -47,6 +59,12 @@ function withError(path: string, message: string): never {
 function withSuccess(path: string, message: string): never {
   const qp = new URLSearchParams({ success: message });
   redirect(`${path}${path.includes("?") ? "&" : "?"}${qp.toString()}`);
+}
+
+function getReminderScopeLabel(scope: ReminderDispatchScope) {
+  if (scope === "open_bios") return "all open bios";
+  if (scope === "open_notes") return "all open notes";
+  return "all open tasks";
 }
 
 async function sendEmail(params: { to: string; subject: string; text: string; html: string }) {
@@ -96,6 +114,32 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
   }
 
   return { sent: true, reason: "sent" as const };
+}
+
+async function sendEmailWithThrottle(params: { to: string; subject: string; text: string; html: string }) {
+  const attempts = 3;
+  let result: { sent: boolean; reason: string } = { sent: false, reason: "provider_request_failed" };
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(1200 * attempt);
+    }
+
+    result = await sendEmail(params);
+    if (result.sent) {
+      return result;
+    }
+
+    const retryable =
+      result.reason === "provider_timeout" ||
+      result.reason === "provider_request_failed" ||
+      String(result.reason).startsWith("provider_error_429");
+    if (!retryable) {
+      return result;
+    }
+  }
+
+  return result;
 }
 
 export function getReminderDeliveryMode() {
@@ -500,7 +544,7 @@ export async function sendShowInvites(showId: string) {
       continue;
     }
 
-    const result = await sendEmail({ to: group.email, subject: email.subject, text: email.text, html: email.html });
+    const result = await sendEmailWithThrottle({ to: group.email, subject: email.subject, text: email.text, html: email.html });
     await writeReminderAudit({
       personId: group.personId,
       field: "invite_sent",
@@ -512,6 +556,7 @@ export async function sendShowInvites(showId: string) {
       }
     });
     if (result.sent) sent += 1;
+    await sleep(600);
   }
 
   const baseMessage = `Invites processed: ${sent}/${recipients.length} sent.`;
@@ -672,8 +717,7 @@ export async function sendShowRemindersNow(showId: string, formData?: FormData) 
   }
   const summary = await runReminderDispatchForShow(showId, "manual", scope);
   const deliveryMode = getReminderDeliveryMode();
-  const scopeLabel =
-    scope === "open_bios" ? "all open bios" : scope === "open_notes" ? "all open notes" : "all open tasks";
+  const scopeLabel = getReminderScopeLabel(scope);
   withSuccess(
     `/app/shows/${showId}?tab=overview`,
     deliveryMode.isDelivering
@@ -722,7 +766,12 @@ async function wasReminderSentRecently(personId: string, days: number) {
   return (data ?? []).length > 0;
 }
 
-export async function runReminderDispatchForShow(showId: string, mode: "manual" | "cron", scope: ReminderDispatchScope = "all_open") {
+async function dispatchReminderRun(
+  showId: string,
+  mode: "manual" | "cron",
+  scope: ReminderDispatchScope = "all_open",
+  onProgress?: (progress: ReminderDispatchProgress) => Promise<void> | void
+) {
   const context = await getShowContext(showId);
   if (!context) {
     return { sent: 0, total: 0 };
@@ -748,6 +797,7 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
     }))
     .filter((group) => group.items.length > 0);
   let sent = 0;
+  let processed = 0;
 
   for (const group of recipients) {
     const earliestDue = getEarliestDueDate(group.items);
@@ -755,14 +805,30 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
     const isLastDay = context.reminderSendLastDay && diffDays !== null && diffDays <= 0;
     const shouldSendInCron = mode === "manual" || isLastDay || !(await wasReminderSentRecently(group.personId, cadenceDays - 1));
     if (!shouldSendInCron) {
+      processed += 1;
+      await onProgress?.({
+        processed,
+        sent,
+        total: recipients.length,
+        recipientName: group.name,
+        reason: "skipped_recently_sent"
+      });
       continue;
     }
 
     const email = await buildContributorReminderEmail({ context, group });
     if (!email) {
+      processed += 1;
+      await onProgress?.({
+        processed,
+        sent,
+        total: recipients.length,
+        recipientName: group.name,
+        reason: "no_open_items"
+      });
       continue;
     }
-    const result = await sendEmail({ to: group.email, subject: email.subject, text: email.text, html: email.html });
+    const result = await sendEmailWithThrottle({ to: group.email, subject: email.subject, text: email.text, html: email.html });
 
     await writeReminderAudit({
       personId: group.personId,
@@ -776,9 +842,30 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
       }
     });
     if (result.sent) sent += 1;
+    processed += 1;
+    await onProgress?.({
+      processed,
+      sent,
+      total: recipients.length,
+      recipientName: group.name,
+      reason: result.reason
+    });
+    await sleep(600);
   }
 
   return { sent, total: recipients.length };
+}
+
+export async function runReminderDispatchForShow(showId: string, mode: "manual" | "cron", scope: ReminderDispatchScope = "all_open") {
+  return dispatchReminderRun(showId, mode, scope);
+}
+
+export async function streamReminderDispatchForShow(
+  showId: string,
+  scope: ReminderDispatchScope,
+  onProgress: (progress: ReminderDispatchProgress) => Promise<void> | void
+) {
+  return dispatchReminderRun(showId, "manual", scope, onProgress);
 }
 
 export async function runReminderCron() {

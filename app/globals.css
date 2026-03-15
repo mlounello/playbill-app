@@ -1070,6 +1070,42 @@ details summary {
   animation: skeleton 1.2s linear infinite;
 }
 
+.bulk-reminder-runner {
+  display: grid;
+  gap: 0.65rem;
+  min-width: min(460px, 100%);
+}
+
+.bulk-reminder-progress {
+  border: 1px solid #d4ddd8;
+  border-radius: 0.7rem;
+  padding: 0.75rem;
+  background: #f9fbfa;
+}
+
+.bulk-reminder-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.bulk-reminder-progress-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #dce9e3;
+  overflow: hidden;
+}
+
+.bulk-reminder-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #006b54 0%, #2d8a72 100%);
+  transition: width 220ms ease;
+}
+
 .skeleton-line {
   height: 0.95rem;
   border-radius: 0.4rem;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FlashToast } from "@/components/flash-toast";
+import { BulkReminderRunner } from "@/components/bulk-reminder-runner";
 import { PeopleBulkEditor } from "@/components/people-bulk-editor";
 import { PerformanceInputs } from "@/components/performance-inputs";
 import { ProgramPagePreviewCard } from "@/components/program-page-preview-card";
@@ -67,7 +68,6 @@ import {
   setShowRemindersPaused,
   sendReminderTestEmail,
   sendShowInvites,
-  sendShowRemindersNow,
   setShowDueDate
 } from "@/lib/reminders";
 
@@ -175,7 +175,6 @@ export default async function ShowWorkspacePage({
   const sendReminderPreviewEmailAction = sendReminderPreviewEmail.bind(null, show.id);
   const sendReminderTestEmailAction = sendReminderTestEmail.bind(null, show.id);
   const sendInvitesAction = sendShowInvites.bind(null, show.id);
-  const sendRemindersAction = sendShowRemindersNow.bind(null, show.id);
   const reorderShowModulesAction = reorderShowModules.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
   const hasDepartmentModuleVisible = show.modules.some((module) => module.module_type === "department_info" && module.visible);
@@ -469,19 +468,15 @@ export default async function ShowWorkspacePage({
                     <form action={sendReminderPreviewEmailAction} data-pending-label="Sending reminder preview..." data-preserve-scroll="true" data-no-overlay="true">
                       <button type="submit">Send Real Reminder Preview To Me</button>
                     </form>
-                    <form action={sendRemindersAction} data-pending-label="Sending reminders..." data-preserve-scroll="true" data-no-overlay="true" className="top-actions">
-                      <label>
-                        Reminder scope
-                        <select name="scope" defaultValue="all_open">
-                          <option value="all_open">All open tasks</option>
-                          <option value="open_bios">All open bios</option>
-                          <option value="open_notes">All open notes</option>
-                        </select>
-                      </label>
-                      <button type="submit" disabled={show.reminders_paused}>
-                        {show.reminders_paused ? "Reminders Paused" : "Send Reminders Now"}
-                      </button>
-                    </form>
+                    <BulkReminderRunner
+                      showId={show.id}
+                      remindersPaused={show.reminders_paused}
+                      options={[
+                        { value: "all_open", label: "All open tasks" },
+                        { value: "open_bios", label: "All open bios" },
+                        { value: "open_notes", label: "All open notes" }
+                      ]}
+                    />
                     <form action={setReminderPausedAction} data-pending-label="Updating reminders setting..." data-preserve-scroll="true">
                       <input type="hidden" name="intent" value={show.reminders_paused ? "resume" : "pause"} />
                       <button type="submit">
