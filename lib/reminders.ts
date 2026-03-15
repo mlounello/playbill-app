@@ -264,6 +264,14 @@ async function generateDirectMagicLink(email: string, targetPath: string) {
       15_000,
       "generate_magic_link_timeout"
     );
+    const hashedToken = String(data?.properties?.hashed_token ?? "").trim();
+    if (!error && hashedToken) {
+      const directCallback = new URL(redirectTo);
+      directCallback.searchParams.set("token_hash", hashedToken);
+      directCallback.searchParams.set("type", type);
+      return directCallback.toString();
+    }
+
     const actionLink = String(data?.properties?.action_link ?? "").trim();
     if (!error && actionLink) {
       return actionLink;
