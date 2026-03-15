@@ -201,9 +201,10 @@ function richTextToPlain(value: string) {
 }
 
 function estimateBioWeight(person: PersonRecord, showHeadshots = true) {
-  const plainLength = richTextToPlain(person.bio).length;
-  const headshotWeight = showHeadshots && person.headshot_url.trim() ? 180 : 60;
-  return 220 + Math.min(1900, Math.round(plainLength * 0.45)) + headshotWeight;
+  const lineEstimate = estimateRichTextLines(person.bio);
+  const textWeight = Math.max(240, Math.round(lineEstimate * 34));
+  const headshotWeight = showHeadshots && person.headshot_url.trim() ? 220 : 70;
+  return 180 + textWeight + headshotWeight;
 }
 
 function getBioPageBudget(densityMode: DensityMode) {
@@ -953,12 +954,12 @@ function buildBiosStackBody(people: PersonRecord[], showHeadshots = true) {
 }
 
 function estimateBiosStackUnits(page: Extract<ProgramPage, { type: "bios" }>) {
-  const titleUnits = page.title.trim() ? 54 : 0;
+  const titleUnits = page.title.trim() ? 72 : 0;
   const bodyUnits = page.people.reduce((total, person) => {
-    const plain = richTextToPlain(person.bio);
-    const textUnits = Math.max(90, Math.round(plain.length * 0.24));
-    const headshotUnits = (page.showHeadshots ?? true) && person.headshot_url.trim() ? 70 : 25;
-    return total + textUnits + headshotUnits + 42;
+    const lineEstimate = estimateRichTextLines(person.bio);
+    const textUnits = Math.max(150, Math.round(lineEstimate * 18));
+    const headshotUnits = (page.showHeadshots ?? true) && person.headshot_url.trim() ? 80 : 30;
+    return total + textUnits + headshotUnits + 56;
   }, 0);
   return titleUnits + bodyUnits;
 }
