@@ -128,7 +128,7 @@ export default async function ShowWorkspacePage({
   const savePlanAction = updateShowModules.bind(null, show.id);
   const mappedTokens = getProgramTokensFromShowModules(show.modules);
   const people =
-    activeTab === "overview" || activeTab === "people-roles" || activeTab === "submissions"
+    activeTab === "overview" || activeTab === "people-roles"
       ? await getShowSubmissionPeople(show.id)
       : [];
   const specialNoteAssignments =
@@ -346,7 +346,9 @@ export default async function ShowWorkspacePage({
     }
   ];
   const activeBlockers = blockerItems.filter((item) => item.count > 0);
-  const specialNotePeople = people.filter((person) => person.role_category_display !== "cast");
+  const specialNotePeople = activeTab === "people-roles"
+    ? people.filter((person) => person.role_category_display !== "cast")
+    : [];
   const currentDirectorNotePersonId = specialNoteAssignments.directorPersonId;
   const currentDramaturgNotePersonId = specialNoteAssignments.dramaturgPersonId;
   const currentMusicDirectorNotePersonId = specialNoteAssignments.musicDirectorPersonId;
