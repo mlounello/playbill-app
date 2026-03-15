@@ -206,8 +206,9 @@ function estimateBioRichTextLines(html: string) {
   const emphasisTags =
     countTag(html, "em") + countTag(html, "i") + countTag(html, "strong") + countTag(html, "b");
   const longWordPressure = words.filter((word) => word.length >= 11).length;
-  const effectiveLength = plain.length + emphasisTags * 14 + longWordPressure * 5;
-  const charLines = Math.ceil(Math.max(1, effectiveLength) / 70);
+  const cappedLength = Math.min(plain.length, 375);
+  const effectiveLength = cappedLength + emphasisTags * 16 + longWordPressure * 8;
+  const charLines = Math.ceil(Math.max(1, effectiveLength) / 64);
   const paragraphBlocks = countTag(html, "p") + countTag(html, "li") + countTag(html, "blockquote");
   const hardBreaks = (html.match(/<br\s*\/?>/gi) ?? []).length;
 
@@ -216,9 +217,9 @@ function estimateBioRichTextLines(html: string) {
 
 function estimateBioWeight(person: PersonRecord, showHeadshots = true) {
   const lineEstimate = estimateBioRichTextLines(person.bio);
-  const textWeight = Math.max(210, Math.round(lineEstimate * 29));
-  const headshotWeight = showHeadshots && person.headshot_url.trim() ? 190 : 40;
-  return 150 + textWeight + headshotWeight;
+  const textWeight = Math.max(190, Math.round(lineEstimate * 26));
+  const headshotWeight = showHeadshots && person.headshot_url.trim() ? 180 : 36;
+  return 145 + textWeight + headshotWeight;
 }
 
 function getBioPageBudget(densityMode: DensityMode) {
@@ -971,9 +972,9 @@ function estimateBiosStackUnits(page: Extract<ProgramPage, { type: "bios" }>) {
   const titleUnits = page.title.trim() ? 64 : 0;
   const bodyUnits = page.people.reduce((total, person) => {
     const lineEstimate = estimateBioRichTextLines(person.bio);
-    const textUnits = Math.max(130, Math.round(lineEstimate * 15));
-    const headshotUnits = (page.showHeadshots ?? true) && person.headshot_url.trim() ? 70 : 22;
-    return total + textUnits + headshotUnits + 44;
+    const textUnits = Math.max(120, Math.round(lineEstimate * 14));
+    const headshotUnits = (page.showHeadshots ?? true) && person.headshot_url.trim() ? 68 : 20;
+    return total + textUnits + headshotUnits + 42;
   }, 0);
   return titleUnits + bodyUnits;
 }
