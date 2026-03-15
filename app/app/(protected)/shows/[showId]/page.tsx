@@ -28,6 +28,7 @@ import {
   reorderShowModules,
   updateShowActsAndSongs,
   updateShowAcknowledgements,
+  updateShowReminderSettings,
   updateShowSponsorships,
   updateShowPresentation,
   updateShowModules
@@ -168,6 +169,7 @@ export default async function ShowWorkspacePage({
   const updateShowPresentationAction = updateShowPresentation.bind(null, show.id);
   const assignSeasonToShowAction = assignSeasonToShow.bind(null, show.id);
   const updateShowDepartmentsAction = updateShowDepartments.bind(null, show.id);
+  const updateShowReminderSettingsAction = updateShowReminderSettings.bind(null, show.id);
   const setReminderPausedAction = setShowRemindersPaused.bind(null, show.id);
   const setDueDateAction = setShowDueDate.bind(null, show.id);
   const sendReminderPreviewEmailAction = sendReminderPreviewEmail.bind(null, show.id);
@@ -423,7 +425,7 @@ export default async function ShowWorkspacePage({
                     <div className="stat-value">{reminderSummary.overdue}</div>
                   </div>
                   <div className="stat-item">
-                    <div className="stat-label">Due in 7 days</div>
+                    <div className="stat-label">Due in {show.reminder_due_soon_days} days</div>
                     <div className="stat-value">{reminderSummary.dueSoon}</div>
                   </div>
                 </div>
@@ -458,7 +460,7 @@ export default async function ShowWorkspacePage({
                         <select name="scope" defaultValue="all_open">
                           <option value="all_open">All open requests</option>
                           <option value="overdue_only">Overdue only</option>
-                          <option value="due_soon_7d">Due in 7 days</option>
+                          <option value="due_soon_7d">Due in {show.reminder_due_soon_days} days</option>
                         </select>
                       </label>
                       <button type="submit" disabled={show.reminders_paused}>
@@ -1299,6 +1301,60 @@ export default async function ShowWorkspacePage({
               <div className="pane-header">
                 <strong>Settings</strong>
               </div>
+              <article className="card stack-sm">
+                <strong>Reminder Automation</strong>
+                <div className="meta-text">
+                  Control automatic reminder cadence for this specific show. Manual invites and manual reminder sends remain available even if automation is turned off.
+                </div>
+                <form action={updateShowReminderSettingsAction} className="stack-sm" data-pending-label="Saving reminder settings..." data-preserve-scroll="true">
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      name="reminderAutomationEnabled"
+                      defaultChecked={show.reminder_automation_enabled}
+                    />
+                    <span>Enable automatic cron reminders for this show</span>
+                  </label>
+                  <div className="form-row-2">
+                    <label>
+                      Reminder cadence (days)
+                      <input
+                        type="number"
+                        name="reminderCadenceDays"
+                        min={1}
+                        max={30}
+                        defaultValue={show.reminder_cadence_days}
+                      />
+                    </label>
+                    <label>
+                      Due soon window (days)
+                      <input
+                        type="number"
+                        name="reminderDueSoonDays"
+                        min={1}
+                        max={30}
+                        defaultValue={show.reminder_due_soon_days}
+                      />
+                    </label>
+                  </div>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      name="reminderSendLastDay"
+                      defaultChecked={show.reminder_send_last_day}
+                    />
+                    <span>Send an automatic last-day reminder on the due date</span>
+                  </label>
+                  <div className="meta-text">
+                    Current automation: {show.reminder_automation_enabled ? "Enabled" : "Disabled"} • cadence every{" "}
+                    {show.reminder_cadence_days} day{show.reminder_cadence_days === 1 ? "" : "s"} • due soon window{" "}
+                    {show.reminder_due_soon_days} day{show.reminder_due_soon_days === 1 ? "" : "s"} • last-day reminder{" "}
+                    {show.reminder_send_last_day ? "on" : "off"}
+                  </div>
+                  <button type="submit">Save Reminder Automation</button>
+                </form>
+              </article>
+
               <article className="card stack-sm">
                 <strong>Show Setup: Poster + Performance Schedule</strong>
                 <div className="meta-text">

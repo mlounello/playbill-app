@@ -129,7 +129,9 @@ async function getShowContext(showId: string) {
   const db = supabase.schema(APP_SCHEMA);
   const { data: show } = await db
     .from("shows")
-    .select("id, title, slug, reminders_paused")
+    .select(
+      "id, title, slug, reminders_paused, reminder_automation_enabled, reminder_cadence_days, reminder_due_soon_days, reminder_send_last_day"
+    )
     .eq("id", showId)
     .maybeSingle();
   if (!show) {
@@ -141,7 +143,13 @@ async function getShowContext(showId: string) {
     title: String(show.title ?? "Show"),
     slug: String(show.slug ?? ""),
     programSlug: String(program?.slug ?? show.slug ?? ""),
-    remindersPaused: Boolean(show.reminders_paused)
+    remindersPaused: Boolean(show.reminders_paused),
+    reminderAutomationEnabled:
+      show.reminder_automation_enabled === undefined ? true : Boolean(show.reminder_automation_enabled),
+    reminderCadenceDays: Number(show.reminder_cadence_days ?? 7) || 7,
+    reminderDueSoonDays: Number(show.reminder_due_soon_days ?? 7) || 7,
+    reminderSendLastDay:
+      show.reminder_send_last_day === undefined ? true : Boolean(show.reminder_send_last_day)
   };
 }
 
@@ -418,8 +426,10 @@ async function writeReminderAudit(params: {
 }
 
 export async function getShowReminderSummary(showId: string) {
+  const context = await getShowContext(showId);
   const recipients = await getReminderRecipients(showId);
   const now = Date.now();
+  const dueSoonWindow = context?.reminderDueSoonDays ?? 7;
 
   const missing = recipients.filter((item) => shouldRemind(item.status)).length;
   const overdue = recipients.filter((item) => {
@@ -429,7 +439,7 @@ export async function getShowReminderSummary(showId: string) {
   const dueSoon = recipients.filter((item) => {
     if (!shouldRemind(item.status) || !item.dueDate) return false;
     const diffDays = Math.floor((new Date(item.dueDate).getTime() - now) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 7;
+    return diffDays >= 0 && diffDays <= dueSoonWindow;
   }).length;
 
   return { missing, overdue, dueSoon };
@@ -657,8 +667,9 @@ export async function sendShowRemindersNow(showId: string, formData?: FormData) 
   }
   const summary = await runReminderDispatchForShow(showId, "manual", scope);
   const deliveryMode = getReminderDeliveryMode();
+  const dueSoonWindow = context.reminderDueSoonDays ?? 7;
   const scopeLabel =
-    scope === "overdue_only" ? "overdue only" : scope === "due_soon_7d" ? "due in 7 days" : "all open";
+    scope === "overdue_only" ? "overdue only" : scope === "due_soon_7d" ? `due in ${dueSoonWindow} days` : "all open";
   withSuccess(
     `/app/shows/${showId}?tab=overview`,
     deliveryMode.isDelivering
@@ -715,7 +726,12 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
   if (context.remindersPaused) {
     return { sent: 0, total: 0 };
   }
+  if (mode === "cron" && !context.reminderAutomationEnabled) {
+    return { sent: 0, total: 0 };
+  }
   const now = Date.now();
+  const dueSoonWindow = context.reminderDueSoonDays ?? 7;
+  const cadenceDays = context.reminderCadenceDays ?? 7;
   const recipients = groupReminderRecipients(await getReminderRecipients(showId))
     .map((group) => ({
       ...group,
@@ -727,7 +743,7 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
           return dueTime < now;
         }
         const diffDays = Math.floor((dueTime - now) / (1000 * 60 * 60 * 24));
-        return diffDays >= 0 && diffDays <= 7;
+        return diffDays >= 0 && diffDays <= dueSoonWindow;
       })
     }))
     .filter((group) => group.items.length > 0);
@@ -736,8 +752,8 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
   for (const group of recipients) {
     const earliestDue = getEarliestDueDate(group.items);
     const diffDays = earliestDue ? Math.floor((earliestDue - now) / (1000 * 60 * 60 * 24)) : null;
-    const isLastDay = diffDays !== null && diffDays <= 0;
-    const shouldSendInCron = mode === "manual" || isLastDay || !(await wasReminderSentRecently(group.personId, 6));
+    const isLastDay = context.reminderSendLastDay && diffDays !== null && diffDays <= 0;
+    const shouldSendInCron = mode === "manual" || isLastDay || !(await wasReminderSentRecently(group.personId, cadenceDays - 1));
     if (!shouldSendInCron) {
       continue;
     }

@@ -20,6 +20,10 @@ export type ShowSummary = {
   is_published: boolean;
   published_at: string | null;
   reminders_paused: boolean;
+  reminder_automation_enabled: boolean;
+  reminder_cadence_days: number;
+  reminder_due_soon_days: number;
+  reminder_send_last_day: boolean;
   acts_and_songs: string;
   season_calendar: string;
   sponsorships: string;
@@ -233,6 +237,29 @@ function formatPerformanceLabel(performance: { date?: string; time?: string }) {
   return `${datePart} ${timePart}`;
 }
 
+async function getTableColumns(_db: unknown, tableName: string) {
+  const metaClient = getSupabaseWriteClientRaw();
+  const { data, error } = await metaClient
+    .from("information_schema.columns")
+    .select("column_name")
+    .eq("table_schema", APP_SCHEMA)
+    .eq("table_name", tableName);
+
+  if (error || !data) {
+    return new Set<string>();
+  }
+
+  return new Set(data.map((item) => String(item.column_name)));
+}
+
+function filterToColumns(record: Record<string, unknown>, columns: Set<string>) {
+  if (columns.size === 0) {
+    return record;
+  }
+
+  return Object.fromEntries(Object.entries(record).filter(([key]) => columns.has(key)));
+}
+
 function withError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
   redirect(`${path}?${qp.toString()}`);
@@ -399,7 +426,7 @@ export async function getShowsForDashboard() {
   const db = supabase.schema(APP_SCHEMA);
     const { data: shows } = await db
       .from("shows")
-      .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at, reminders_paused")
+      .select("*")
       .order("created_at", { ascending: false });
 
     const { data: programs } = await db
@@ -441,6 +468,12 @@ export async function getShowsForDashboard() {
         is_published: Boolean(show.is_published),
         published_at: show.published_at ? String(show.published_at) : null,
         reminders_paused: Boolean(show.reminders_paused),
+        reminder_automation_enabled:
+          show.reminder_automation_enabled === undefined ? true : Boolean(show.reminder_automation_enabled),
+        reminder_cadence_days: Number(show.reminder_cadence_days ?? 7) || 7,
+        reminder_due_soon_days: Number(show.reminder_due_soon_days ?? 7) || 7,
+        reminder_send_last_day:
+          show.reminder_send_last_day === undefined ? true : Boolean(show.reminder_send_last_day),
         acts_and_songs: String(program?.acts_songs ?? ""),
         season_calendar: String(program?.season_calendar ?? ""),
         sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
@@ -470,7 +503,7 @@ export async function getShowById(showId: string) {
   const db = supabase.schema(APP_SCHEMA);
     const { data: show, error } = await db
       .from("shows")
-      .select("id, title, slug, status, start_date, end_date, venue, program_id, is_published, published_at, reminders_paused")
+      .select("*")
       .eq("id", showId)
       .single();
 
@@ -508,6 +541,12 @@ export async function getShowById(showId: string) {
       is_published: Boolean(show.is_published),
       published_at: show.published_at ? String(show.published_at) : null,
       reminders_paused: Boolean(show.reminders_paused),
+      reminder_automation_enabled:
+        show.reminder_automation_enabled === undefined ? true : Boolean(show.reminder_automation_enabled),
+      reminder_cadence_days: Number(show.reminder_cadence_days ?? 7) || 7,
+      reminder_due_soon_days: Number(show.reminder_due_soon_days ?? 7) || 7,
+      reminder_send_last_day:
+        show.reminder_send_last_day === undefined ? true : Boolean(show.reminder_send_last_day),
       acts_and_songs: String(program?.acts_songs ?? ""),
       season_calendar: String(program?.season_calendar ?? ""),
       sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
@@ -596,6 +635,50 @@ export async function updateShowModules(showId: string, formData: FormData) {
     savedAt: String(Date.now())
   });
   redirect(`/app/shows/${showId}?${qp.toString()}`);
+}
+
+export async function updateShowReminderSettings(showId: string, formData: FormData) {
+  "use server";
+
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const reminderAutomationEnabled = String(formData.get("reminderAutomationEnabled") ?? "") === "on";
+  const reminderSendLastDay = String(formData.get("reminderSendLastDay") ?? "") === "on";
+  const cadenceRaw = String(formData.get("reminderCadenceDays") ?? "7").trim();
+  const dueSoonRaw = String(formData.get("reminderDueSoonDays") ?? "7").trim();
+  const reminderCadenceDays = Math.min(30, Math.max(1, Number(cadenceRaw) || 7));
+  const reminderDueSoonDays = Math.min(30, Math.max(1, Number(dueSoonRaw) || 7));
+
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const showColumns = await getTableColumns(db, "shows");
+  const payload = filterToColumns(
+    {
+      reminder_automation_enabled: reminderAutomationEnabled,
+      reminder_cadence_days: reminderCadenceDays,
+      reminder_due_soon_days: reminderDueSoonDays,
+      reminder_send_last_day: reminderSendLastDay,
+      updated_at: new Date().toISOString()
+    },
+    showColumns
+  );
+
+  if (!("reminder_automation_enabled" in payload) && !("reminder_cadence_days" in payload)) {
+    withError(
+      `/app/shows/${showId}?tab=settings`,
+      "Reminder settings columns are not available yet. Run the latest SQL migration first."
+    );
+  }
+
+  const { error } = await db.from("shows").update(payload).eq("id", showId);
+  if (error) {
+    withError(`/app/shows/${showId}?tab=settings`, error.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Reminder settings saved.")}`);
 }
 
 export async function reorderShowModules(showId: string, formData: FormData) {
