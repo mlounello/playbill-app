@@ -65,10 +65,12 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
     return (
       <article className="booklet-page">
         <h2 className="section-title playbill-title">{page.title}</h2>
-        <div className="bios-list">
+          <div className="bios-list">
           {page.people.map((person) => (
             <section key={person.id} className="bio-row">
-              {person.headshot_url ? <img src={person.headshot_url} alt={person.full_name} className="headshot" /> : null}
+              {page.showHeadshots !== false && person.headshot_url ? (
+                <img src={person.headshot_url} alt={person.full_name} className="headshot" />
+              ) : null}
               <div>
                 <div className="bio-name">
                   {person.full_name}

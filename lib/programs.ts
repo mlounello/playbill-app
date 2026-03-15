@@ -96,7 +96,7 @@ export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string }
   | { id: string; type: "stacked"; title: string; sections: Array<{ title: string; body: string }> }
-  | { id: string; type: "bios"; title: string; people: PersonRecord[] }
+  | { id: string; type: "bios"; title: string; people: PersonRecord[]; showHeadshots?: boolean }
   | { id: string; type: "image"; title: string; imageUrl: string }
   | { id: string; type: "photo_grid"; title: string; photos: string[] }
   | { id: string; type: "filler"; title: string; body: string };
@@ -200,9 +200,9 @@ function richTextToPlain(value: string) {
     .trim();
 }
 
-function estimateBioWeight(person: PersonRecord) {
+function estimateBioWeight(person: PersonRecord, showHeadshots = true) {
   const plainLength = richTextToPlain(person.bio).length;
-  const headshotWeight = person.headshot_url.trim() ? 180 : 60;
+  const headshotWeight = showHeadshots && person.headshot_url.trim() ? 180 : 60;
   return 220 + Math.min(1900, Math.round(plainLength * 0.45)) + headshotWeight;
 }
 
@@ -216,20 +216,27 @@ function getBioPageBudget(densityMode: DensityMode) {
   return 1900;
 }
 
-function paginateBios(title: string, idBase: string, people: PersonRecord[], densityMode: DensityMode = "normal") {
+function paginateBios(
+  title: string,
+  idBase: string,
+  people: PersonRecord[],
+  densityMode: DensityMode = "normal",
+  showHeadshots = true
+) {
   const PAGE_BUDGET = getBioPageBudget(densityMode);
   const pages: ProgramPage[] = [];
   let current: PersonRecord[] = [];
   let currentWeight = 0;
 
   for (const person of people) {
-    const weight = estimateBioWeight(person);
+    const weight = estimateBioWeight(person, showHeadshots);
     if (current.length > 0 && currentWeight + weight > PAGE_BUDGET) {
       pages.push({
         id: `${idBase}-${pages.length + 1}`,
         type: "bios",
         title: pages.length === 0 ? title : `${title} (cont.)`,
-        people: current
+        people: current,
+        showHeadshots
       });
       current = [];
       currentWeight = 0;
@@ -244,7 +251,8 @@ function paginateBios(title: string, idBase: string, people: PersonRecord[], den
       id: `${idBase}-${pages.length + 1}`,
       type: "bios",
       title: pages.length === 0 ? title : `${title} (cont.)`,
-      people: current
+      people: current,
+      showHeadshots
     });
   }
 
@@ -929,14 +937,14 @@ function estimateStackUnits(page: ProgramPage) {
   return Number.MAX_SAFE_INTEGER;
 }
 
-function buildBiosStackBody(people: PersonRecord[]) {
+function buildBiosStackBody(people: PersonRecord[], showHeadshots = true) {
   return `<div class="bios-list">${people
     .map((person) => {
       const safeBio = sanitizeRichText(person.bio);
       const roleInline = person.role_title?.trim()
         ? `<span class="bio-role-inline"> (${escapeHtml(person.role_title)})</span>`
         : "";
-      const headshot = person.headshot_url?.trim()
+      const headshot = showHeadshots && person.headshot_url?.trim()
         ? `<img src="${escapeHtml(person.headshot_url)}" alt="${escapeHtml(person.full_name)}" class="headshot" />`
         : "";
       return `<section class="bio-row">${headshot}<div><div class="bio-name">${escapeHtml(person.full_name)}${roleInline}</div><div class="page-body rich-render bio-body">${safeBio}</div></div></section>`;
@@ -949,7 +957,7 @@ function estimateBiosStackUnits(page: Extract<ProgramPage, { type: "bios" }>) {
   const bodyUnits = page.people.reduce((total, person) => {
     const plain = richTextToPlain(person.bio);
     const textUnits = Math.max(90, Math.round(plain.length * 0.24));
-    const headshotUnits = person.headshot_url.trim() ? 70 : 25;
+    const headshotUnits = (page.showHeadshots ?? true) && person.headshot_url.trim() ? 70 : 25;
     return total + textUnits + headshotUnits + 42;
   }, 0);
   return titleUnits + bodyUnits;
@@ -1113,8 +1121,9 @@ function renderModulePages(
     const pages: ProgramPage[] = [];
     const scope = getSettingString(module.settings, "scope");
     const allowMultipleBioPages = Boolean(module.settings.allow_multiple_pages ?? true);
+    const includeHeadshots = Boolean(module.settings.include_headshots ?? true);
     if (scope !== "production" && cast.length > 0) {
-      const castPages = paginateBios(`${title}: Cast`, `${idBase}-cast`, castWithBios, densityMode);
+      const castPages = paginateBios(`${title}: Cast`, `${idBase}-cast`, castWithBios, densityMode, includeHeadshots);
       if (allowMultipleBioPages) {
         pages.push(...castPages);
       } else if (castPages.length > 0) {
@@ -1122,7 +1131,13 @@ function renderModulePages(
       }
     }
     if (scope !== "cast" && production.length > 0) {
-      const productionPages = paginateBios(`${title}: Production Team`, `${idBase}-production`, productionWithBios, densityMode);
+      const productionPages = paginateBios(
+        `${title}: Production Team`,
+        `${idBase}-production`,
+        productionWithBios,
+        densityMode,
+        includeHeadshots
+      );
       if (allowMultipleBioPages) {
         pages.push(...productionPages);
       } else if (productionPages.length > 0) {
@@ -1396,7 +1411,7 @@ function buildRenderablePagesFromModules(
 
       stackBuffer.push({
         title: page.title,
-        body: buildBiosStackBody(page.people),
+        body: buildBiosStackBody(page.people, page.showHeadshots ?? true),
         units,
         billingLike: false,
         originalPage: page
@@ -1853,12 +1868,12 @@ function buildRenderablePages(
     }
 
     if (token === "cast_bios") {
-      pages.push(...paginateBios("Who's Who in the Cast", "cast-bios", castWithBios, densityMode));
+      pages.push(...paginateBios("Who's Who in the Cast", "cast-bios", castWithBios, densityMode, true));
       continue;
     }
 
     if (token === "team_bios") {
-      pages.push(...paginateBios("Who's Who in the Production Team", "team-bios", productionWithBios, densityMode));
+      pages.push(...paginateBios("Who's Who in the Production Team", "team-bios", productionWithBios, densityMode, true));
       continue;
     }
 
