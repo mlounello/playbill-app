@@ -39,20 +39,34 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
     return { sent: false, reason: "email_provider_not_configured" as const };
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      from,
-      to: [params.to],
-      subject: params.subject,
-      text: params.text,
-      html: params.html
-    })
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from,
+        to: [params.to],
+        subject: params.subject,
+        text: params.text,
+        html: params.html
+      }),
+      signal: controller.signal
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    if (error instanceof Error && error.name === "AbortError") {
+      return { sent: false, reason: "provider_timeout" as const };
+    }
+    return { sent: false, reason: "provider_request_failed" as const };
+  }
+  clearTimeout(timeout);
 
   if (!response.ok) {
     return { sent: false, reason: `provider_error_${response.status}` as const };
