@@ -14,7 +14,7 @@ type ReminderRecipient = {
   status: string;
 };
 
-type ReminderDispatchScope = "all_open" | "overdue_only" | "due_soon_7d";
+type ReminderDispatchScope = "all_open" | "open_bios" | "open_notes";
 
 type ReminderRecipientGroup = {
   showId: string;
@@ -430,8 +430,13 @@ export async function getShowReminderSummary(showId: string) {
   const recipients = await getReminderRecipients(showId);
   const now = Date.now();
   const dueSoonWindow = context?.reminderDueSoonDays ?? 7;
+  const openItems = recipients.filter((item) => shouldRemind(item.status));
+  const currentDueDate =
+    openItems
+      .map((item) => item.dueDate)
+      .find((value): value is string => Boolean(value)) ?? null;
 
-  const missing = recipients.filter((item) => shouldRemind(item.status)).length;
+  const missing = openItems.length;
   const overdue = recipients.filter((item) => {
     if (!shouldRemind(item.status) || !item.dueDate) return false;
     return new Date(item.dueDate).getTime() < now;
@@ -442,7 +447,7 @@ export async function getShowReminderSummary(showId: string) {
     return diffDays >= 0 && diffDays <= dueSoonWindow;
   }).length;
 
-  return { missing, overdue, dueSoon };
+  return { missing, overdue, dueSoon, currentDueDate };
 }
 
 export async function setShowDueDate(showId: string, formData: FormData) {
@@ -657,7 +662,7 @@ export async function sendShowRemindersNow(showId: string, formData?: FormData) 
   await requireRole(["owner", "admin", "editor"]);
   const rawScope = String(formData?.get("scope") ?? "all_open");
   const scope: ReminderDispatchScope =
-    rawScope === "overdue_only" || rawScope === "due_soon_7d" ? rawScope : "all_open";
+    rawScope === "open_bios" || rawScope === "open_notes" ? rawScope : "all_open";
   const context = await getShowContext(showId);
   if (!context) {
     withError("/app/shows", "Show not found.");
@@ -667,9 +672,8 @@ export async function sendShowRemindersNow(showId: string, formData?: FormData) 
   }
   const summary = await runReminderDispatchForShow(showId, "manual", scope);
   const deliveryMode = getReminderDeliveryMode();
-  const dueSoonWindow = context.reminderDueSoonDays ?? 7;
   const scopeLabel =
-    scope === "overdue_only" ? "overdue only" : scope === "due_soon_7d" ? `due in ${dueSoonWindow} days` : "all open";
+    scope === "open_bios" ? "all open bios" : scope === "open_notes" ? "all open notes" : "all open tasks";
   withSuccess(
     `/app/shows/${showId}?tab=overview`,
     deliveryMode.isDelivering
@@ -730,20 +734,16 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
     return { sent: 0, total: 0 };
   }
   const now = Date.now();
-  const dueSoonWindow = context.reminderDueSoonDays ?? 7;
   const cadenceDays = context.reminderCadenceDays ?? 7;
   const recipients = groupReminderRecipients(await getReminderRecipients(showId))
     .map((group) => ({
       ...group,
       items: getOpenReminderItems(group).filter((item) => {
         if (scope === "all_open") return true;
-        if (!item.dueDate) return false;
-        const dueTime = new Date(item.dueDate).getTime();
-        if (scope === "overdue_only") {
-          return dueTime < now;
+        if (scope === "open_bios") {
+          return item.requestType === "bio";
         }
-        const diffDays = Math.floor((dueTime - now) / (1000 * 60 * 60 * 24));
-        return diffDays >= 0 && diffDays <= dueSoonWindow;
+        return item.requestType !== "bio";
       })
     }))
     .filter((group) => group.items.length > 0);

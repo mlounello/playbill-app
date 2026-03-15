@@ -279,7 +279,10 @@ export default async function ShowWorkspacePage({
           overLimit: 0,
           needsReview: 0
         };
-  const reminderSummary = activeTab === "overview" ? await getShowReminderSummary(show.id) : { missing: 0, overdue: 0, dueSoon: 0 };
+  const reminderSummary =
+    activeTab === "overview"
+      ? await getShowReminderSummary(show.id)
+      : { missing: 0, overdue: 0, dueSoon: 0, currentDueDate: null };
   const paddingSimIds =
     activeTab === "program-plan"
       ? (paddingSim ?? "")
@@ -447,7 +450,12 @@ export default async function ShowWorkspacePage({
                   <form action={setDueDateAction} className="top-actions" data-pending-label="Saving due date..." data-preserve-scroll="true">
                     <label>
                       Global bio due date
-                      <input type="date" name="dueDate" required />
+                      <input
+                        type="date"
+                        name="dueDate"
+                        required
+                        defaultValue={reminderSummary.currentDueDate ? String(reminderSummary.currentDueDate).slice(0, 10) : ""}
+                      />
                     </label>
                     <button type="submit">Set Due Date</button>
                   </form>
@@ -465,9 +473,9 @@ export default async function ShowWorkspacePage({
                       <label>
                         Reminder scope
                         <select name="scope" defaultValue="all_open">
-                          <option value="all_open">All open requests</option>
-                          <option value="overdue_only">Overdue only</option>
-                          <option value="due_soon_7d">Due in {show.reminder_due_soon_days} days</option>
+                          <option value="all_open">All open tasks</option>
+                          <option value="open_bios">All open bios</option>
+                          <option value="open_notes">All open notes</option>
                         </select>
                       </label>
                       <button type="submit" disabled={show.reminders_paused}>
