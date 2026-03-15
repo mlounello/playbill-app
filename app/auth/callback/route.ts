@@ -10,6 +10,18 @@ type PendingCookie = {
   options?: Record<string, unknown>;
 };
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}_timeout`)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  });
+}
+
 async function createRouteSupabase(origin: string) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -126,30 +138,42 @@ export async function GET(request: Request) {
   let user: any | null = null;
 
   if (code) {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-    authError = error?.message ?? null;
-    session = data?.session ?? null;
-    user = data?.user ?? null;
+    try {
+      const { data, error } = await withTimeout(supabase.auth.exchangeCodeForSession(code), 15_000, "exchange_code");
+      authError = error?.message ?? null;
+      session = data?.session ?? null;
+      user = data?.user ?? null;
+    } catch (error) {
+      authError = error instanceof Error ? error.message : "exchange_code_failed";
+    }
 
     logCallback("exchange_code_for_session", {
-      ok: !error,
-      error: error?.message ?? null,
+      ok: !authError,
+      error: authError,
       has_session: Boolean(session),
       user_id: user?.id ?? null,
       email: user?.email ?? null
     });
   } else if (tokenHash && type) {
-    const { data, error } = await supabase.auth.verifyOtp({
-      token_hash: tokenHash,
-      type: type as "magiclink" | "recovery" | "invite" | "signup" | "email_change" | "email"
-    });
-    authError = error?.message ?? null;
-    session = data?.session ?? null;
-    user = data?.user ?? null;
+    try {
+      const { data, error } = await withTimeout(
+        supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: type as "magiclink" | "recovery" | "invite" | "signup" | "email_change" | "email"
+        }),
+        15_000,
+        "verify_otp"
+      );
+      authError = error?.message ?? null;
+      session = data?.session ?? null;
+      user = data?.user ?? null;
+    } catch (error) {
+      authError = error instanceof Error ? error.message : "verify_otp_failed";
+    }
 
     logCallback("verify_otp", {
-      ok: !error,
-      error: error?.message ?? null,
+      ok: !authError,
+      error: authError,
       has_session: Boolean(session),
       user_id: user?.id ?? null,
       email: user?.email ?? null
@@ -165,7 +189,7 @@ export async function GET(request: Request) {
   if (!authError && (code || (tokenHash && type))) {
     if (user?.id && user?.email) {
       try {
-        await ensureUserProfileIdentity(user.id, user.email);
+        await withTimeout(ensureUserProfileIdentity(user.id, user.email), 5_000, "profile_bootstrap");
       } catch {
         // Do not block auth completion if profile bootstrap has an issue.
       }
