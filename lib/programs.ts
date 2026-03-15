@@ -222,6 +222,179 @@ function estimateBioWeight(person: PersonRecord, showHeadshots = true) {
   return 145 + textWeight + headshotWeight;
 }
 
+async function launchMeasurementBrowser() {
+  const isVercel = Boolean(process.env.VERCEL);
+  if (isVercel) {
+    const playwrightCore = await import("playwright-core");
+    const chromium = await import("@sparticuz/chromium");
+    const executablePath = await chromium.default.executablePath();
+    return playwrightCore.chromium.launch({
+      executablePath,
+      headless: true,
+      args: [...chromium.default.args, "--disable-dev-shm-usage"]
+    });
+  }
+
+  const playwright = await import("playwright");
+  return playwright.chromium.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+  });
+}
+
+function buildBioMeasurementRow(person: PersonRecord, showHeadshots: boolean) {
+  const safeBio = sanitizeRichText(person.bio);
+  const roleInline = person.role_title?.trim()
+    ? `<span class="bio-role-inline"> (${escapeHtml(person.role_title)})</span>`
+    : "";
+  const headshot = showHeadshots && person.headshot_url?.trim() ? `<div class="headshot measure-headshot"></div>` : "";
+  return `<section class="bio-row">${headshot}<div><div class="bio-name">${escapeHtml(person.full_name)}${roleInline}</div><div class="page-body rich-render bio-body">${safeBio}</div></div></section>`;
+}
+
+async function measureBioRows(
+  title: string,
+  people: PersonRecord[],
+  showHeadshots: boolean,
+  densityMode: DensityMode
+): Promise<{ availableBodyHeight: number; rowGap: number; rowHeights: number[] } | null> {
+  if (people.length === 0) {
+    return { availableBodyHeight: 0, rowGap: 0, rowHeights: [] };
+  }
+
+  const densityScale = densityMode === "compact" ? 1.06 : densityMode === "loose" ? 0.94 : 1;
+  const browser = await launchMeasurementBrowser();
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 2000 } });
+    const rowHtml = people.map((person) => buildBioMeasurementRow(person, showHeadshots)).join("");
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Oswald:wght@700&display=swap");
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: #ffffff; }
+      body { font-family: "Merriweather", Georgia, serif; }
+      .booklet-page {
+        width: 5.5in;
+        height: 8.5in;
+        overflow: hidden;
+        padding: 0.36in;
+        background: #fffef9;
+        color: #000000;
+      }
+      .section-title {
+        margin-top: 0;
+        margin-bottom: 0.45rem;
+      }
+      .playbill-title {
+        color: #006b54;
+        font-family: "Oswald", "Helvetica Neue", Arial, sans-serif;
+        font-weight: 700;
+        font-size: 14pt;
+        line-height: 1.15;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+      .page-body {
+        color: #000000;
+        font-family: "Merriweather", Georgia, serif;
+        font-weight: 400;
+        font-size: 10pt;
+        line-height: 1.45;
+      }
+      .rich-render p { margin: 0; }
+      .rich-render ul,
+      .rich-render ol {
+        margin: 0.2rem 0 0.2rem 1.15rem;
+        padding: 0;
+      }
+      .bio-name {
+        color: #006b54;
+        font-family: "Merriweather", Georgia, serif;
+        font-weight: 700;
+        font-size: 11pt;
+        margin-bottom: 0.3rem;
+      }
+      .bio-role-inline {
+        color: inherit;
+        font-family: inherit;
+        font-weight: inherit;
+        font-size: inherit;
+      }
+      .bio-body {
+        text-align: justify;
+        text-justify: inter-word;
+        hyphens: auto;
+      }
+      .bios-list {
+        display: grid;
+        gap: 0.2in;
+      }
+      .bio-row {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.16in;
+        align-items: start;
+        break-inside: avoid;
+      }
+      .headshot {
+        width: 1.2in;
+        height: 1.2in;
+        border: 1px solid #c9c3b2;
+      }
+      .measure-headshot {
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <article class="booklet-page">
+      <h2 class="section-title playbill-title">${escapeHtml(title)}</h2>
+      <div class="bios-list">${rowHtml}</div>
+    </article>
+  </body>
+</html>`;
+
+    await page.setContent(html, { waitUntil: "load" });
+    try {
+      await page.waitForFunction(() => !("fonts" in document) || document.fonts.status === "loaded", { timeout: 2500 });
+    } catch {
+      // Font loading can lag in serverless; continue with fallback fonts if needed.
+    }
+
+    const measured = await page.evaluate((scale) => {
+      const article = document.querySelector<HTMLElement>(".booklet-page");
+      const list = document.querySelector<HTMLElement>(".bios-list");
+      if (!article || !list) {
+        return null;
+      }
+      const articleRect = article.getBoundingClientRect();
+      const listRect = list.getBoundingClientRect();
+      const articleStyles = window.getComputedStyle(article);
+      const listStyles = window.getComputedStyle(list);
+      const paddingBottom = Number.parseFloat(articleStyles.paddingBottom || "0") || 0;
+      const rowGap =
+        Number.parseFloat(listStyles.rowGap || "0") ||
+        Number.parseFloat(listStyles.gap || "0") ||
+        0;
+      const contentBottom = articleRect.bottom - paddingBottom;
+      const availableBodyHeight = (contentBottom - listRect.top) * scale;
+      const rowHeights = Array.from(list.querySelectorAll<HTMLElement>(".bio-row")).map(
+        (row) => row.getBoundingClientRect().height * scale
+      );
+      return { availableBodyHeight, rowGap: rowGap * scale, rowHeights };
+    }, densityScale);
+
+    return measured;
+  } catch {
+    return null;
+  } finally {
+    await browser.close();
+  }
+}
+
 function getBioPageBudget(densityMode: DensityMode) {
   if (densityMode === "compact") {
     return 2200;
@@ -232,7 +405,7 @@ function getBioPageBudget(densityMode: DensityMode) {
   return 1900;
 }
 
-function paginateBios(
+function paginateBiosHeuristic(
   title: string,
   idBase: string,
   people: PersonRecord[],
@@ -260,6 +433,66 @@ function paginateBios(
 
     current.push(person);
     currentWeight += weight;
+  }
+
+  if (current.length > 0) {
+    pages.push({
+      id: `${idBase}-${pages.length + 1}`,
+      type: "bios",
+      title: pages.length === 0 ? title : `${title} (cont.)`,
+      people: current,
+      showHeadshots
+    });
+  }
+
+  return pages;
+}
+
+async function paginateBios(
+  title: string,
+  idBase: string,
+  people: PersonRecord[],
+  densityMode: DensityMode = "normal",
+  showHeadshots = true
+) {
+  const measured = await Promise.race([
+    measureBioRows(title, people, showHeadshots, densityMode),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000))
+  ]);
+
+  if (!measured || measured.rowHeights.length !== people.length || measured.availableBodyHeight <= 0) {
+    return paginateBiosHeuristic(title, idBase, people, densityMode, showHeadshots);
+  }
+
+  const pages: ProgramPage[] = [];
+  let current: PersonRecord[] = [];
+  let usedHeight = 0;
+
+  for (let index = 0; index < people.length; index += 1) {
+    const person = people[index];
+    const rowHeight = measured.rowHeights[index] ?? 0;
+    const nextHeight = current.length === 0 ? rowHeight : usedHeight + measured.rowGap + rowHeight;
+
+    if (current.length > 0 && nextHeight > measured.availableBodyHeight) {
+      pages.push({
+        id: `${idBase}-${pages.length + 1}`,
+        type: "bios",
+        title: pages.length === 0 ? title : `${title} (cont.)`,
+        people: current,
+        showHeadshots
+      });
+      current = [];
+      usedHeight = 0;
+    }
+
+    if (current.length === 0) {
+      current.push(person);
+      usedHeight = rowHeight;
+      continue;
+    }
+
+    current.push(person);
+    usedHeight += measured.rowGap + rowHeight;
   }
 
   if (current.length > 0) {
@@ -999,7 +1232,7 @@ function getBillingStackBudget(densityMode: DensityMode) {
   return 1325;
 }
 
-function renderModulePages(
+async function renderModulePages(
   module: ProgramModuleRecord,
   index: number,
   program: {
@@ -1139,7 +1372,7 @@ function renderModulePages(
     const allowMultipleBioPages = Boolean(module.settings.allow_multiple_pages ?? true);
     const includeHeadshots = Boolean(module.settings.include_headshots ?? true);
     if (scope !== "production" && cast.length > 0) {
-      const castPages = paginateBios(`${title}: Cast`, `${idBase}-cast`, castWithBios, densityMode, includeHeadshots);
+      const castPages = await paginateBios(`${title}: Cast`, `${idBase}-cast`, castWithBios, densityMode, includeHeadshots);
       if (allowMultipleBioPages) {
         pages.push(...castPages);
       } else if (castPages.length > 0) {
@@ -1147,7 +1380,7 @@ function renderModulePages(
       }
     }
     if (scope !== "cast" && production.length > 0) {
-      const productionPages = paginateBios(
+      const productionPages = await paginateBios(
         `${title}: Production Team`,
         `${idBase}-production`,
         productionWithBios,
@@ -1349,7 +1582,7 @@ function renderModulePages(
   return [] as ProgramPage[];
 }
 
-function buildRenderablePagesFromModules(
+async function buildRenderablePagesFromModules(
   program: {
     title: string;
     theatre_name: string;
@@ -1480,7 +1713,16 @@ function buildRenderablePagesFromModules(
 
   for (let index = 0; index < visibleModules.length; index += 1) {
     const module = visibleModules[index];
-    const renderedPages = renderModulePages(module, index, program, rosterPeople, cast, production, showRoles, densityMode);
+    const renderedPages = await renderModulePages(
+      module,
+      index,
+      program,
+      rosterPeople,
+      cast,
+      production,
+      showRoles,
+      densityMode
+    );
     if (renderedPages.length === 0) {
       continue;
     }
@@ -1734,7 +1976,7 @@ export async function createProgram(formData: FormData) {
   redirect(`/programs/${program.slug}`);
 }
 
-function buildRenderablePages(
+async function buildRenderablePages(
   program: {
     title: string;
     theatre_name: string;
@@ -1884,12 +2126,14 @@ function buildRenderablePages(
     }
 
     if (token === "cast_bios") {
-      pages.push(...paginateBios("Who's Who in the Cast", "cast-bios", castWithBios, densityMode, true));
+      pages.push(...(await paginateBios("Who's Who in the Cast", "cast-bios", castWithBios, densityMode, true)));
       continue;
     }
 
     if (token === "team_bios") {
-      pages.push(...paginateBios("Who's Who in the Production Team", "team-bios", productionWithBios, densityMode, true));
+      pages.push(
+        ...(await paginateBios("Who's Who in the Production Team", "team-bios", productionWithBios, densityMode, true))
+      );
       continue;
     }
 
@@ -2109,7 +2353,7 @@ export async function getProgramBySlug(
       if (previewModuleId) {
         const previewTarget = normalizedModules.find((module) => module.id === previewModuleId);
         if (previewTarget) {
-          const previewRendered = renderModulePages(
+          const previewRendered = await renderModulePages(
             { ...previewTarget, visible: true },
             0,
             safeProgram,
@@ -2123,7 +2367,7 @@ export async function getProgramBySlug(
         }
       }
 
-      pageSequence = buildRenderablePagesFromModules(
+      pageSequence = await buildRenderablePagesFromModules(
         safeProgram,
         normalizedPeople,
         castPeople,
@@ -2135,7 +2379,7 @@ export async function getProgramBySlug(
     }
 
     if (pageSequence.length === 0) {
-      pageSequence = buildRenderablePages(safeProgram, castPeople, productionPeople, appliedDensityMode);
+      pageSequence = await buildRenderablePages(safeProgram, castPeople, productionPeople, appliedDensityMode);
     }
     const stackedPageCount = pageSequence.filter((page) => page.type === "stacked").length;
     if (stackedPageCount > 0) {
@@ -2146,7 +2390,7 @@ export async function getProgramBySlug(
     let currentPaddingNeeded = getPaddingNeeded(pageSequence.length);
 
     if (currentPaddingNeeded > 0 && appliedDensityMode !== "compact" && normalizedModules.length > 0) {
-      const compactPages = buildRenderablePagesFromModules(
+      const compactPages = await buildRenderablePagesFromModules(
         safeProgram,
         normalizedPeople,
         castPeople,
@@ -2176,7 +2420,7 @@ export async function getProgramBySlug(
         const used: string[] = [];
         for (let index = 0; index < fillerPool.length; index += 1) {
           const module = fillerPool[index];
-          const rendered = renderModulePages(
+          const rendered = await renderModulePages(
             module,
             normalizedModules.length + index,
             safeProgram,
