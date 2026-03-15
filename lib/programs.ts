@@ -200,8 +200,22 @@ function richTextToPlain(value: string) {
     .trim();
 }
 
+function estimateBioRichTextLines(html: string) {
+  const plain = richTextToPlain(html);
+  const words = plain.split(/\s+/).filter(Boolean);
+  const emphasisTags =
+    countTag(html, "em") + countTag(html, "i") + countTag(html, "strong") + countTag(html, "b");
+  const longWordPressure = words.filter((word) => word.length >= 11).length;
+  const effectiveLength = plain.length + emphasisTags * 14 + longWordPressure * 5;
+  const charLines = Math.ceil(Math.max(1, effectiveLength) / 70);
+  const paragraphBlocks = countTag(html, "p") + countTag(html, "li") + countTag(html, "blockquote");
+  const hardBreaks = (html.match(/<br\s*\/?>/gi) ?? []).length;
+
+  return charLines + paragraphBlocks * 2 + hardBreaks;
+}
+
 function estimateBioWeight(person: PersonRecord, showHeadshots = true) {
-  const lineEstimate = estimateRichTextLines(person.bio);
+  const lineEstimate = estimateBioRichTextLines(person.bio);
   const textWeight = Math.max(210, Math.round(lineEstimate * 29));
   const headshotWeight = showHeadshots && person.headshot_url.trim() ? 190 : 40;
   return 150 + textWeight + headshotWeight;
@@ -956,7 +970,7 @@ function buildBiosStackBody(people: PersonRecord[], showHeadshots = true) {
 function estimateBiosStackUnits(page: Extract<ProgramPage, { type: "bios" }>) {
   const titleUnits = page.title.trim() ? 64 : 0;
   const bodyUnits = page.people.reduce((total, person) => {
-    const lineEstimate = estimateRichTextLines(person.bio);
+    const lineEstimate = estimateBioRichTextLines(person.bio);
     const textUnits = Math.max(130, Math.round(lineEstimate * 15));
     const headshotUnits = (page.showHeadshots ?? true) && person.headshot_url.trim() ? 70 : 22;
     return total + textUnits + headshotUnits + 44;
