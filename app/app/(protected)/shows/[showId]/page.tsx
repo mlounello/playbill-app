@@ -189,6 +189,13 @@ export default async function ShowWorkspacePage({
   const exportProgramDiagnostics =
     activeTab === "export" && show.program_slug ? await getProgramBySlug(show.program_slug) : null;
   const publicUrl = show.slug ? `/p/${show.slug}` : "";
+  const siteUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  const genericSubmissionPath = show.program_slug ? `/programs/${show.program_slug}/submit` : "";
+  const genericSubmissionUrl = genericSubmissionPath
+    ? siteUrl
+      ? `${siteUrl}${genericSubmissionPath}`
+      : genericSubmissionPath
+    : "";
   const activeSubmissionFilter = submissionFilter || "all";
   const activeSubmissionQuery = (submissionQuery || "").trim().toLowerCase();
   const activeSubmissionSort = submissionSort || "name_asc";
@@ -1301,6 +1308,30 @@ export default async function ShowWorkspacePage({
               <div className="pane-header">
                 <strong>Settings</strong>
               </div>
+              <article className="card stack-sm">
+                <strong>Contributor Access Links</strong>
+                <div className="meta-text">
+                  Use the generic show submission link below if you want one stable link to share in rehearsal reports, production books, or email. Personalized reminder emails still provide the smoother direct-to-task sign-in flow.
+                </div>
+                {genericSubmissionUrl ? (
+                  <>
+                    <label>
+                      Generic show submission link
+                      <input value={genericSubmissionUrl} readOnly onFocus={(event) => event.currentTarget.select()} />
+                    </label>
+                    <div className="link-row">
+                      <Link href={genericSubmissionPath}>Open submission page</Link>
+                      {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open program preview</Link> : null}
+                    </div>
+                  </>
+                ) : (
+                  <div className="meta-text">This show does not have a linked program slug yet, so the generic submission link is not available.</div>
+                )}
+                <div className="meta-text">
+                  Automated reminder cron currently runs daily at 9:00 AM Eastern (13:00 UTC) and then applies this show&apos;s reminder automation settings.
+                </div>
+              </article>
+
               <article className="card stack-sm">
                 <strong>Reminder Automation</strong>
                 <div className="meta-text">
