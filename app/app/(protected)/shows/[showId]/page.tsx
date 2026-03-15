@@ -443,16 +443,16 @@ export default async function ShowWorkspacePage({
                     <button type="submit">Set Due Date</button>
                   </form>
                   <div className="top-actions">
-                    <form action={sendInvitesAction} data-pending-label="Sending invites..." data-preserve-scroll="true">
+                    <form action={sendInvitesAction} data-pending-label="Sending invites..." data-preserve-scroll="true" data-no-overlay="true">
                       <button type="submit">Send Invites</button>
                     </form>
-                    <form action={sendReminderTestEmailAction} data-pending-label="Sending test email..." data-preserve-scroll="true">
+                    <form action={sendReminderTestEmailAction} data-pending-label="Sending test email..." data-preserve-scroll="true" data-no-overlay="true">
                       <button type="submit">Send Test Email To Me</button>
                     </form>
-                    <form action={sendReminderPreviewEmailAction} data-pending-label="Sending reminder preview..." data-preserve-scroll="true">
+                    <form action={sendReminderPreviewEmailAction} data-pending-label="Sending reminder preview..." data-preserve-scroll="true" data-no-overlay="true">
                       <button type="submit">Send Real Reminder Preview To Me</button>
                     </form>
-                    <form action={sendRemindersAction} data-pending-label="Sending reminders..." data-preserve-scroll="true" className="top-actions">
+                    <form action={sendRemindersAction} data-pending-label="Sending reminders..." data-preserve-scroll="true" data-no-overlay="true" className="top-actions">
                       <label>
                         Reminder scope
                         <select name="scope" defaultValue="all_open">
@@ -1117,7 +1117,7 @@ export default async function ShowWorkspacePage({
                                 <td>
                                   <div className="submission-actions">
                                     <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Review</Link>
-                                    <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true">
+                                    <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true" data-no-overlay="true">
                                       <button type="submit">Send Reminder</button>
                                     </form>
                                     <form action={approveAction} data-pending-label="Approving submission..." data-preserve-scroll="true">
@@ -1166,7 +1166,7 @@ export default async function ShowWorkspacePage({
                             </div>
                             <div className="submission-actions">
                               <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Open Review</Link>
-                              <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true">
+                              <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true" data-no-overlay="true">
                                 <button type="submit">Send Reminder</button>
                               </form>
                               <form action={approveAction} data-pending-label="Approving submission..." data-preserve-scroll="true">

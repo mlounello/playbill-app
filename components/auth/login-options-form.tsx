@@ -10,6 +10,20 @@ function getCallbackUrl(nextPath: string) {
   return `${baseUrl}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export function LoginOptionsForm({ redirectTo }: { redirectTo: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,10 +40,14 @@ export function LoginOptionsForm({ redirectTo }: { redirectTo: string }) {
 
     try {
       const supabase = createSupabaseBrowserClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: getCallbackUrl(redirectTo) }
-      });
+      const { error } = await withTimeout(
+        supabase.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: getCallbackUrl(redirectTo) }
+        }),
+        15000,
+        "Sending the magic link took too long. Please try again."
+      );
       setMessage(error ? error.message : "Magic link sent. Check your email.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not send magic link.");

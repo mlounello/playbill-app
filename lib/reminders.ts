@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
-import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 
 type ReminderRecipient = {
   showId: string;
@@ -15,6 +15,29 @@ type ReminderRecipient = {
 };
 
 type ReminderDispatchScope = "all_open" | "overdue_only" | "due_soon_7d";
+
+type ReminderRecipientGroup = {
+  showId: string;
+  personId: string;
+  email: string;
+  name: string;
+  roleTitle: string;
+  items: ReminderRecipient[];
+};
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
 
 function withError(path: string, message: string): never {
   const qp = new URLSearchParams({ error: message });
@@ -201,14 +224,171 @@ function getRequestLabel(value: string) {
   return "bio";
 }
 
+function getContributorTaskPath(item: ReminderRecipient) {
+  return `/contribute/shows/${item.showId}/tasks/${item.requestId}`;
+}
+
 function getContributorTaskLink(item: ReminderRecipient) {
   const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
-  const taskPath = `/contribute/shows/${item.showId}/tasks/${item.requestId}`;
+  const taskPath = getContributorTaskPath(item);
   const loginPath = `/login?next=${encodeURIComponent(taskPath)}`;
   if (!baseUrl) {
     return loginPath;
   }
   return `${baseUrl}${loginPath}`;
+}
+
+function buildAuthCallbackRedirectUrl(targetPath: string) {
+  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  if (!baseUrl) {
+    return "";
+  }
+  return `${baseUrl}/auth/callback?next=${encodeURIComponent(targetPath)}`;
+}
+
+async function generateDirectMagicLink(email: string, targetPath: string) {
+  const redirectTo = buildAuthCallbackRedirectUrl(targetPath);
+  if (!redirectTo) {
+    return "";
+  }
+
+  const supabase = getSupabaseWriteClientRaw();
+  const attempts: Array<"magiclink" | "invite"> = ["magiclink", "invite"];
+  for (const type of attempts) {
+    const { data, error } = await withTimeout(
+      supabase.auth.admin.generateLink({
+        type,
+        email,
+        options: { redirectTo }
+      }),
+      15_000,
+      "generate_magic_link_timeout"
+    );
+    const actionLink = String(data?.properties?.action_link ?? "").trim();
+    if (!error && actionLink) {
+      return actionLink;
+    }
+  }
+
+  return "";
+}
+
+function groupReminderRecipients(items: ReminderRecipient[]) {
+  const grouped = new Map<string, ReminderRecipientGroup>();
+  for (const item of items) {
+    const key = `${item.personId}::${item.email.toLowerCase()}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.items.push(item);
+      continue;
+    }
+    grouped.set(key, {
+      showId: item.showId,
+      personId: item.personId,
+      email: item.email,
+      name: item.name,
+      roleTitle: item.roleTitle,
+      items: [item]
+    });
+  }
+
+  return Array.from(grouped.values()).map((group) => ({
+    ...group,
+    items: group.items.sort((a, b) => {
+      const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
+      return aDue - bDue || getRequestLabel(a.requestType).localeCompare(getRequestLabel(b.requestType));
+    })
+  }));
+}
+
+function getOpenReminderItems(group: ReminderRecipientGroup) {
+  return group.items.filter((item) => shouldRemind(item.status));
+}
+
+function getEarliestDueDate(items: ReminderRecipient[]) {
+  const dueTimes = items
+    .map((item) => (item.dueDate ? new Date(item.dueDate).getTime() : null))
+    .filter((value): value is number => value !== null && Number.isFinite(value))
+    .sort((a, b) => a - b);
+  return dueTimes.length > 0 ? dueTimes[0] : null;
+}
+
+function getDaysRemainingCopy(items: ReminderRecipient[]) {
+  const earliest = getEarliestDueDate(items);
+  if (earliest === null) {
+    return "Please submit your materials as soon as possible to be included in the program.";
+  }
+  const diffDays = Math.ceil((earliest - Date.now()) / (1000 * 60 * 60 * 24));
+  if (diffDays > 1) {
+    return `You have ${diffDays} days to complete the submission to be included in the program. If you do not want a bio in the program there is a box you can select to omit your bio.`;
+  }
+  if (diffDays === 1) {
+    return "You have 1 day to complete the submission to be included in the program. If you do not want a bio in the program there is a box you can select to omit your bio.";
+  }
+  if (diffDays === 0) {
+    return "Your submission is due today to be included in the program. If you do not want a bio in the program there is a box you can select to omit your bio.";
+  }
+  return "The submission deadline has passed, but you can still submit your materials now if the program is still being finalized. If you do not want a bio in the program there is a box you can select to omit your bio.";
+}
+
+function formatStatusLabel(value: string) {
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildOutstandingItemsHtml(items: ReminderRecipient[]) {
+  const rows = items.map((item) => {
+    return `<li><strong>${getRequestLabel(item.requestType)}</strong> — Status: ${formatStatusLabel(item.status)}${item.dueDate ? ` — Due: ${formatDate(item.dueDate)}` : ""}</li>`;
+  });
+  return `<ul>${rows.join("")}</ul>`;
+}
+
+function buildOutstandingItemsText(items: ReminderRecipient[]) {
+  return items
+    .map((item) => `- ${getRequestLabel(item.requestType)} | Status: ${formatStatusLabel(item.status)}${item.dueDate ? ` | Due: ${formatDate(item.dueDate)}` : ""}`)
+    .join("\n");
+}
+
+async function buildContributorReminderEmail(params: {
+  context: Awaited<ReturnType<typeof getShowContext>>;
+  group: ReminderRecipientGroup;
+  explicitTargetRequestId?: string;
+}) {
+  const openItems = getOpenReminderItems(params.group);
+  if (!params.context || openItems.length === 0) {
+    return null;
+  }
+
+  const targetItem =
+    (params.explicitTargetRequestId
+      ? openItems.find((item) => item.requestId === params.explicitTargetRequestId)
+      : null) ?? openItems[0];
+  const destinationPath = openItems.length > 1 ? "/contribute" : getContributorTaskPath(targetItem);
+  const directLink = (await generateDirectMagicLink(params.group.email, destinationPath)) || getContributorTaskLink(targetItem);
+  const subject = `${params.context.title}: submission reminder`;
+  const text =
+    `Hello ${params.group.name},\n\n` +
+    `This is a reminder that you have items still needed to be submitted for ${params.context.title}.\n\n` +
+    `${buildOutstandingItemsText(openItems)}\n\n` +
+    `${getDaysRemainingCopy(openItems)}\n\n` +
+    `Please click here to submit your materials:\n${directLink}\n`;
+  const html =
+    `<p>Hello ${params.group.name},</p>` +
+    `<p>This is a reminder that you have items still needed to be submitted for <strong>${params.context.title}</strong>.</p>` +
+    buildOutstandingItemsHtml(openItems) +
+    `<p>${getDaysRemainingCopy(openItems)}</p>` +
+    `<p><a href="${directLink}">Please click here to submit your materials.</a></p>`;
+
+  return {
+    subject,
+    text,
+    html,
+    directLink,
+    openItems
+  };
 }
 
 async function writeReminderAudit(params: {
@@ -284,26 +464,29 @@ export async function sendShowInvites(showId: string) {
     withError("/app/shows", "Show not found.");
   }
 
-  const recipients = await getReminderRecipients(showId);
+  const recipients = groupReminderRecipients(await getReminderRecipients(showId));
   if (recipients.length === 0) {
     withError(`/app/shows/${showId}?tab=overview`, "No recipients found.");
   }
   const deliveryMode = getReminderDeliveryMode();
 
   let sent = 0;
-  for (const item of recipients) {
-    const link = getContributorTaskLink(item);
-    const requestLabel = getRequestLabel(item.requestType);
-    const subject = `${context.title}: ${requestLabel} submission invite`;
-    const text = `Hi ${item.name},\n\nPlease submit your ${requestLabel} for ${context.title}.\nRole: ${item.roleTitle}\nDue: ${formatDate(item.dueDate)}\nLink: ${link}\n`;
-    const html = `<p>Hi ${item.name},</p><p>Please submit your ${requestLabel} for <strong>${context.title}</strong>.</p><p>Role: ${item.roleTitle}<br/>Due: ${formatDate(item.dueDate)}</p><p><a href="${link}">Open contributor portal</a></p>`;
+  for (const group of recipients) {
+    const email = await buildContributorReminderEmail({ context, group });
+    if (!email) {
+      continue;
+    }
 
-    const result = await sendEmail({ to: item.email, subject, text, html });
+    const result = await sendEmail({ to: group.email, subject: email.subject, text: email.text, html: email.html });
     await writeReminderAudit({
-      personId: item.personId,
+      personId: group.personId,
       field: "invite_sent",
       reason: result.reason,
-      payload: { request_id: item.requestId, due_date: item.dueDate, sent: result.sent }
+      payload: {
+        request_ids: email.openItems.map((item) => item.requestId),
+        due_dates: email.openItems.map((item) => item.dueDate),
+        sent: result.sent
+      }
     });
     if (result.sent) sent += 1;
   }
@@ -324,11 +507,10 @@ export async function sendReminderTestEmail(showId: string) {
   }
 
   const deliveryMode = getReminderDeliveryMode();
-  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
-  const link = baseUrl ? `${baseUrl}/contribute` : "/contribute";
+  const link = (await generateDirectMagicLink(current.profile.email, "/contribute")) || "/contribute";
   const subject = `${context.title}: test reminder email`;
-  const text = `This is a test reminder email for ${context.title}.\nIf you received this, email delivery is working.\nContributor portal: ${link}\n`;
-  const html = `<p>This is a test reminder email for <strong>${context.title}</strong>.</p><p>If you received this, email delivery is working.</p><p><a href="${link}">Open contributor portal</a></p>`;
+  const text = `This is a test reminder email for ${context.title}.\nIf you received this, email delivery is working.\nPlease click here to submit your materials:\n${link}\n`;
+  const html = `<p>This is a test reminder email for <strong>${context.title}</strong>.</p><p>If you received this, email delivery is working.</p><p><a href="${link}">Please click here to submit your materials.</a></p>`;
   const result = await sendEmail({
     to: current.profile.email,
     subject,
@@ -353,34 +535,33 @@ export async function sendReminderPreviewEmail(showId: string) {
     withError("/app/shows", "Show not found.");
   }
 
-  const recipient = (await getReminderRecipients(showId)).find((item) => shouldRemind(item.status));
-  if (!recipient) {
+  const recipientGroup = groupReminderRecipients(await getReminderRecipients(showId)).find((group) => getOpenReminderItems(group).length > 0);
+  if (!recipientGroup) {
     withError(`/app/shows/${showId}?tab=overview`, "No open reminder-eligible requests were found for this show.");
   }
 
   const deliveryMode = getReminderDeliveryMode();
   const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
-  const intendedContributorLink = getContributorTaskLink(recipient);
+  const previewEmail = await buildContributorReminderEmail({ context, group: recipientGroup });
+  const firstOpenItem = previewEmail?.openItems[0] ?? null;
+  if (!previewEmail || !firstOpenItem) {
+    withError(`/app/shows/${showId}?tab=overview`, "No open reminder-eligible requests were found for this show.");
+  }
   const adminPreviewLink = baseUrl
-    ? `${baseUrl}/app/shows/${showId}/submissions/${recipient.requestId}`
-    : `/app/shows/${showId}/submissions/${recipient.requestId}`;
-  const requestLabel = getRequestLabel(recipient.requestType);
-  const subject = `${context.title}: ${requestLabel} reminder`;
+    ? `${baseUrl}/app/shows/${showId}/submissions/${firstOpenItem.requestId}`
+    : `/app/shows/${showId}/submissions/${firstOpenItem.requestId}`;
+  const subject = `${context.title}: submission reminder preview`;
   const text =
     `This is a preview copy of the live reminder email.\n\n` +
-    `Originally addressed to: ${recipient.name} <${recipient.email}>\n\n` +
-    `Reminder for ${context.title}\n` +
-    `Please submit your ${requestLabel}.\n` +
-    `Role: ${recipient.roleTitle}\n` +
-    `Due: ${formatDate(recipient.dueDate)}\n` +
-    `Contributor link: ${intendedContributorLink}\n\n` +
+    `Originally addressed to: ${recipientGroup.name} <${recipientGroup.email}>\n\n` +
+    `${previewEmail.text}\n` +
+    `Live email note: the real recipient email includes a direct secure sign-in link tied to their inbox.\n\n` +
     `Admin preview link: ${adminPreviewLink}\n`;
   const html =
     `<p><strong>This is a preview copy of the live reminder email.</strong></p>` +
-    `<p>Originally addressed to: ${recipient.name} &lt;${recipient.email}&gt;</p>` +
-    `<p>This is a reminder for <strong>${context.title}</strong>.</p>` +
-    `<p>Please submit your ${requestLabel}.<br/>Role: ${recipient.roleTitle}<br/>Due: ${formatDate(recipient.dueDate)}</p>` +
-    `<p><strong>Contributor link (real recipient only):</strong><br/><a href="${intendedContributorLink}">${intendedContributorLink}</a></p>` +
+    `<p>Originally addressed to: ${recipientGroup.name} &lt;${recipientGroup.email}&gt;</p>` +
+    `<div>${previewEmail.html}</div>` +
+    `<p><strong>Live email note:</strong> the real recipient email includes a direct secure sign-in link tied to their inbox.</p>` +
     `<p><strong>Admin preview link:</strong><br/><a href="${adminPreviewLink}">Open review in admin workspace</a></p>`;
   const result = await sendEmail({
     to: current.profile.email,
@@ -390,7 +571,7 @@ export async function sendReminderPreviewEmail(showId: string) {
   });
 
   const baseMessage = result.sent
-    ? `Reminder preview sent to ${current.profile.email} for ${recipient.name}.`
+    ? `Reminder preview sent to ${current.profile.email} for ${recipientGroup.name}.`
     : `Reminder preview processed for ${current.profile.email}, but delivery was not live (${result.reason}).`;
   withSuccess(
     `/app/shows/${showId}?tab=overview`,
@@ -422,28 +603,31 @@ export async function sendSingleReminderNow(showId: string, requestId: string) {
   }
 
   const deliveryMode = getReminderDeliveryMode();
-  const link = getContributorTaskLink(recipient);
-  const requestLabel = getRequestLabel(recipient.requestType);
-  const subject = `${context.title}: ${requestLabel} reminder`;
-  const text = `Reminder for ${context.title}\nPlease submit your ${requestLabel}.\nRole: ${recipient.roleTitle}\nDue: ${formatDate(recipient.dueDate)}\nLink: ${link}\n`;
-  const html = `<p>This is a reminder for <strong>${context.title}</strong>.</p><p>Please submit your ${requestLabel}.<br/>Role: ${recipient.roleTitle}<br/>Due: ${formatDate(recipient.dueDate)}</p><p><a href="${link}">Open contributor portal</a></p>`;
-  const result = await sendEmail({ to: recipient.email, subject, text, html });
+  const recipientGroup = groupReminderRecipients(await getReminderRecipients(showId)).find((group) => group.personId === recipient.personId);
+  if (!recipientGroup) {
+    withError(`/app/shows/${showId}?tab=submissions`, "That submission request could not be found.");
+  }
+  const email = await buildContributorReminderEmail({ context, group: recipientGroup, explicitTargetRequestId: requestId });
+  if (!email) {
+    withError(`/app/shows/${showId}?tab=submissions`, "No open reminder items were found for this person.");
+  }
+  const result = await sendEmail({ to: recipientGroup.email, subject: email.subject, text: email.text, html: email.html });
 
   await writeReminderAudit({
-    personId: recipient.personId,
+    personId: recipientGroup.personId,
     field: "reminder_sent",
     reason: `manual_single_${result.reason}`,
     payload: {
-      request_id: recipient.requestId,
-      due_date: recipient.dueDate,
+      request_ids: email.openItems.map((item) => item.requestId),
+      due_dates: email.openItems.map((item) => item.dueDate),
       sent: result.sent,
       mode: "manual_single"
     }
   });
 
   const baseMessage = result.sent
-    ? `Reminder sent to ${recipient.name} for ${requestLabel}.`
-    : `Reminder processed for ${recipient.name}, but delivery was not live (${result.reason}).`;
+    ? `Reminder sent to ${recipientGroup.name}.`
+    : `Reminder processed for ${recipientGroup.name}, but delivery was not live (${result.reason}).`;
   withSuccess(
     `/app/shows/${showId}?tab=submissions`,
     deliveryMode.isDelivering ? baseMessage : `${baseMessage} ${deliveryMode.label}.`
@@ -524,41 +708,48 @@ export async function runReminderDispatchForShow(showId: string, mode: "manual" 
     return { sent: 0, total: 0 };
   }
   const now = Date.now();
-  const recipients = (await getReminderRecipients(showId))
-    .filter((item) => shouldRemind(item.status))
-    .filter((item) => {
-      if (scope === "all_open") return true;
-      if (!item.dueDate) return false;
-      const dueTime = new Date(item.dueDate).getTime();
-      if (scope === "overdue_only") {
-        return dueTime < now;
-      }
-      const diffDays = Math.floor((dueTime - now) / (1000 * 60 * 60 * 24));
-      return diffDays >= 0 && diffDays <= 7;
-    });
+  const recipients = groupReminderRecipients(await getReminderRecipients(showId))
+    .map((group) => ({
+      ...group,
+      items: getOpenReminderItems(group).filter((item) => {
+        if (scope === "all_open") return true;
+        if (!item.dueDate) return false;
+        const dueTime = new Date(item.dueDate).getTime();
+        if (scope === "overdue_only") {
+          return dueTime < now;
+        }
+        const diffDays = Math.floor((dueTime - now) / (1000 * 60 * 60 * 24));
+        return diffDays >= 0 && diffDays <= 7;
+      })
+    }))
+    .filter((group) => group.items.length > 0);
   let sent = 0;
 
-  for (const item of recipients) {
-    const due = item.dueDate ? new Date(item.dueDate).getTime() : null;
-    const diffDays = due ? Math.floor((due - now) / (1000 * 60 * 60 * 24)) : null;
+  for (const group of recipients) {
+    const earliestDue = getEarliestDueDate(group.items);
+    const diffDays = earliestDue ? Math.floor((earliestDue - now) / (1000 * 60 * 60 * 24)) : null;
     const isLastDay = diffDays !== null && diffDays <= 0;
-    const shouldSendInCron = mode === "manual" || isLastDay || !(await wasReminderSentRecently(item.personId, 6));
+    const shouldSendInCron = mode === "manual" || isLastDay || !(await wasReminderSentRecently(group.personId, 6));
     if (!shouldSendInCron) {
       continue;
     }
 
-    const link = getContributorTaskLink(item);
-    const requestLabel = getRequestLabel(item.requestType);
-    const subject = `${context.title}: ${requestLabel} reminder`;
-    const text = `Reminder for ${context.title}\nPlease submit your ${requestLabel}.\nRole: ${item.roleTitle}\nDue: ${formatDate(item.dueDate)}\nLink: ${link}\n`;
-    const html = `<p>This is a reminder for <strong>${context.title}</strong>.</p><p>Please submit your ${requestLabel}.<br/>Role: ${item.roleTitle}<br/>Due: ${formatDate(item.dueDate)}</p><p><a href="${link}">Open contributor portal</a></p>`;
-    const result = await sendEmail({ to: item.email, subject, text, html });
+    const email = await buildContributorReminderEmail({ context, group });
+    if (!email) {
+      continue;
+    }
+    const result = await sendEmail({ to: group.email, subject: email.subject, text: email.text, html: email.html });
 
     await writeReminderAudit({
-      personId: item.personId,
+      personId: group.personId,
       field: "reminder_sent",
       reason: mode === "manual" ? `manual_${result.reason}` : isLastDay ? `last_day_${result.reason}` : `weekly_${result.reason}`,
-      payload: { request_id: item.requestId, due_date: item.dueDate, sent: result.sent, mode }
+      payload: {
+        request_ids: email.openItems.map((item) => item.requestId),
+        due_dates: email.openItems.map((item) => item.dueDate),
+        sent: result.sent,
+        mode
+      }
     });
     if (result.sent) sent += 1;
   }

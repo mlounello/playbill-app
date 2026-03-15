@@ -70,6 +70,9 @@ export function GlobalLoadingOverlay() {
     const onSubmit = (event: Event) => {
       const form = event.target as HTMLFormElement | null;
       if (!form) return;
+      if (form.dataset.noOverlay === "true") {
+        return;
+      }
       if (form.dataset.preserveScroll === "true") {
         try {
           const activeElement = document.activeElement as HTMLElement | null;
