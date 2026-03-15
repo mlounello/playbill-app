@@ -778,3 +778,42 @@ export async function runReminderCron() {
   }
   return { sent, total, shows: (shows ?? []).length };
 }
+
+export async function sendContributorSubmissionConfirmation(params: {
+  email: string;
+  name: string;
+  showTitle: string;
+  submissionLabel: string;
+  showId: string;
+  taskId: string;
+}) {
+  const taskPath = `/contribute/shows/${params.showId}/tasks/${params.taskId}`;
+  const link = (await generateDirectMagicLink(params.email, taskPath)) || getContributorTaskLink({
+    showId: params.showId,
+    personId: "",
+    email: params.email,
+    name: params.name,
+    roleTitle: "",
+    requestId: params.taskId,
+    requestType: "bio",
+    dueDate: null,
+    status: "submitted"
+  });
+
+  const subject = `${params.showTitle}: ${params.submissionLabel} received`;
+  const text =
+    `Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
+    `You can view or edit your bio until it accepted by clicking the link here: ${link}\n\n` +
+    `Thanks,`;
+  const html =
+    `<p>Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
+    `You can view or edit your bio until it accepted by clicking the link <a href="${link}">here</a>.</p>` +
+    `<p>Thanks,</p>`;
+
+  return sendEmail({
+    to: params.email,
+    subject,
+    text,
+    html
+  });
+}

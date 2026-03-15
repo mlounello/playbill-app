@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getCurrentUserWithProfile, requireRole } from "@/lib/auth";
+import { sendContributorSubmissionConfirmation } from "@/lib/reminders";
 import { sanitizeRichText } from "@/lib/rich-text";
 import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
@@ -3179,6 +3180,21 @@ export async function contributorSaveTask(showId: string, taskId: string, formDa
 
   if (!result.ok) {
     withError(`/contribute/shows/${showId}/tasks/${taskId}`, result.message);
+  }
+
+  if (intent === "submit") {
+    try {
+      await sendContributorSubmissionConfirmation({
+        email: current.user.email,
+        name: task.person.full_name,
+        showTitle: task.show_title,
+        submissionLabel: getSubmissionTypeLabel(task.person.submission_type),
+        showId,
+        taskId
+      });
+    } catch {
+      // Do not block contributor success if the confirmation email fails.
+    }
   }
 
   redirect(`/contribute/shows/${showId}/tasks/${taskId}?saved=1`);

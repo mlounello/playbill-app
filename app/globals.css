@@ -213,6 +213,24 @@ label {
   font-weight: 600;
 }
 
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+}
+
+.checkbox-inline input[type="checkbox"] {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.checkbox-inline span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 input,
 textarea,
 select {

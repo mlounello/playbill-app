@@ -178,9 +178,9 @@ export default async function ContributorTaskPage({
             placeholder={isBioTask ? "Share your short bio." : `Share your ${submissionLabel.toLowerCase()}.`}
           />
           {isBioTask ? (
-            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+            <label className="checkbox-inline">
               <input type="checkbox" name="skipBio" defaultChecked={hasNoBio} disabled={isReadOnly} />
-              I prefer not to include a bio.
+              <span>I prefer not to include a bio.</span>
             </label>
           ) : null}
 
