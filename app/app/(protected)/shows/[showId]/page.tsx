@@ -1317,7 +1317,7 @@ export default async function ShowWorkspacePage({
                   <>
                     <label>
                       Generic show submission link
-                      <input value={genericSubmissionUrl} readOnly onFocus={(event) => event.currentTarget.select()} />
+                      <input defaultValue={genericSubmissionUrl} readOnly />
                     </label>
                     <div className="link-row">
                       <Link href={genericSubmissionPath}>Open submission page</Link>
