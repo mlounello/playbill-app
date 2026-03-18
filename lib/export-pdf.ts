@@ -189,6 +189,9 @@ export async function renderProgramPdfWithPlaywright(params: {
 
   try {
     const page = await browser.newPage();
+    await page.setViewportSize(
+      params.exportType === "print" ? { width: 1600, height: 1200 } : { width: 1200, height: 1600 }
+    );
     page.on("pageerror", (error) => {
       console.warn("[playbill-export] Page error during PDF render", {
         exportType: params.exportType,
@@ -248,7 +251,6 @@ export async function renderProgramPdfWithPlaywright(params: {
         ? {
             printBackground: true,
             preferCSSPageSize: true,
-            landscape: true,
             margin: { top: "0in", right: "0in", bottom: "0in", left: "0in" },
             scale: 1
           }

@@ -1279,6 +1279,7 @@ body.density-compact .admin-surface textarea {
 }
 
 .booklet-page {
+  box-sizing: border-box;
   width: 5.5in;
   height: 8.5in;
   overflow: hidden;
