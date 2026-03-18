@@ -128,10 +128,7 @@ export default async function ShowWorkspacePage({
 
   const savePlanAction = updateShowModules.bind(null, show.id);
   const mappedTokens = getProgramTokensFromShowModules(show.modules);
-  const people =
-    activeTab === "overview" || activeTab === "people-roles"
-      ? await getShowSubmissionPeople(show.id)
-      : [];
+  const people = activeTab === "people-roles" ? await getShowSubmissionPeople(show.id) : [];
   const specialNoteAssignments =
     activeTab === "people-roles"
       ? await getShowSpecialNoteAssignments(show.id)
@@ -200,7 +197,8 @@ export default async function ShowWorkspacePage({
   const activeSubmissionSort = submissionSort || "name_asc";
   const activeSubmissionView = submissionView === "cards" ? "cards" : "table";
   const submissionViewProvided = typeof submissionView === "string";
-  const submissionQueue = activeTab === "submissions" ? await getShowSubmissionQueue(show.id) : [];
+  const submissionQueue =
+    activeTab === "submissions" || activeTab === "overview" ? await getShowSubmissionQueue(show.id) : [];
   const deliveryMode = activeTab === "overview" ? getReminderDeliveryMode() : null;
   const isTaskComplete = (task: (typeof submissionQueue)[number]) =>
     task.submission_status === "submitted" ||
@@ -259,16 +257,20 @@ export default async function ShowWorkspacePage({
   const blockers =
     activeTab === "overview"
       ? {
-          missingBios: people.filter((person) => person.submission_type === "bio" && person.bio_char_count === 0 && !person.no_bio).length,
-          missingHeadshots: people.filter((person) => person.submission_type === "bio" && !person.headshot_url.trim()).length,
-          skippedBios: people.filter((person) => person.submission_type === "bio" && person.no_bio).length,
-          returnedForEdits: people.filter((person) => person.submission_status === "returned").length,
-          overLimit: people.filter((person) =>
-            person.submission_type === "bio"
-              ? person.bio_char_count > BIO_CHAR_LIMIT_DEFAULT
-              : countWordsFromRichText(person.bio) > SPECIAL_NOTE_WORD_LIMIT_DEFAULT
+          missingBios: submissionQueue.filter(
+            (task) => task.submission_type === "bio" && task.bio_char_count === 0 && !task.no_bio
           ).length,
-          needsReview: people.filter((person) => person.submission_status === "submitted").length
+          missingHeadshots: submissionQueue.filter(
+            (task) => task.submission_type === "bio" && !task.no_bio && !task.headshot_url.trim()
+          ).length,
+          skippedBios: submissionQueue.filter((task) => task.submission_type === "bio" && task.no_bio).length,
+          returnedForEdits: submissionQueue.filter((task) => task.submission_status === "returned").length,
+          overLimit: submissionQueue.filter((task) =>
+            task.submission_type === "bio"
+              ? task.bio_char_count > BIO_CHAR_LIMIT_DEFAULT
+              : countWordsFromRichText(task.bio) > SPECIAL_NOTE_WORD_LIMIT_DEFAULT
+          ).length,
+          needsReview: submissionQueue.filter((task) => task.submission_status === "submitted").length
         }
       : {
           missingBios: 0,
