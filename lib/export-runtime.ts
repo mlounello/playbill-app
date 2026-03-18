@@ -65,6 +65,10 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function buildRenderTargetPath(programSlug: string, exportType: ExportType) {
+  return exportType === "print" ? `/programs/${programSlug}?view=booklet&export=1` : `/programs/${programSlug}?export=1`;
+}
+
 export async function generateExportBinary(params: {
   cacheKey: string;
   origin: string;
@@ -72,13 +76,15 @@ export async function generateExportBinary(params: {
   exportType: ExportType;
   program: ProgramExportPayload;
 }) {
+  const renderTargetPath = buildRenderTargetPath(params.programSlug, params.exportType);
   const cached = getCachedExport(params.cacheKey);
   if (cached) {
     return {
       bytes: cached.bytes,
       renderer: cached.renderer,
       fallbackReason: cached.fallbackReason,
-      cacheHit: true
+      cacheHit: true,
+      renderTargetPath
     };
   }
 
@@ -93,9 +99,22 @@ export async function generateExportBinary(params: {
         exportType: params.exportType
       });
       setCachedExport(params.cacheKey, { bytes, renderer: "playwright", fallbackReason: "" });
-      return { bytes, renderer: "playwright" as const, fallbackReason: "", cacheHit: false };
+      return {
+        bytes,
+        renderer: "playwright" as const,
+        fallbackReason: "",
+        cacheHit: false,
+        renderTargetPath
+      };
     } catch (error) {
       fallbackReason = error instanceof Error ? error.message : "playwright_failed";
+      console.warn("[playbill-export] Playwright render failed", {
+        exportType: params.exportType,
+        targetPath: renderTargetPath,
+        attempt: attempt + 1,
+        maxAttempts: EXPORT_RETRY_DELAYS_MS.length + 1,
+        error: fallbackReason
+      });
       const delay = EXPORT_RETRY_DELAYS_MS[attempt];
       if (delay) {
         await wait(delay);
@@ -120,7 +139,8 @@ export async function generateExportBinary(params: {
     bytes: fallbackBytes,
     renderer,
     fallbackReason,
-    cacheHit: false
+    cacheHit: false,
+    renderTargetPath
   };
 }
 

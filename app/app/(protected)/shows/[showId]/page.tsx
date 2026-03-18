@@ -1255,9 +1255,15 @@ export default async function ShowWorkspacePage({
                       </div>
                       {row.file_path ? (
                         <div className="link-row">
-                          <Link href={row.file_path}>Open Export</Link>
-                          <Link href={`${row.file_path}?artifact=page-map`}>View Page Map</Link>
-                          <Link href={`${row.file_path}?artifact=page-map&format=csv`}>Download Page Map CSV</Link>
+                          <a href={row.file_path} data-no-overlay="true">
+                            Open Export
+                          </a>
+                          <a href={`${row.file_path}?artifact=page-map`} data-no-overlay="true">
+                            View Page Map
+                          </a>
+                          <a href={`${row.file_path}?artifact=page-map&format=csv`} data-no-overlay="true">
+                            Download Page Map CSV
+                          </a>
                         </div>
                       ) : null}
                     </div>

@@ -108,7 +108,8 @@ export async function GET(
       "X-Playbill-Sheet-Count": String(diagnostics.booklet_spread_count),
       "X-Playbill-Blank-Pages": String(diagnostics.blank_padding_pages),
       "X-Playbill-Preview-Parity": diagnostics.preview_export_parity_ok ? "ok" : "mismatch",
-      "X-Playbill-Fallback-Reason": fallbackReason.slice(0, 120),
+      "X-Playbill-Fallback-Reason": fallbackReason.slice(0, 240),
+      "X-Playbill-Render-Target": `/programs/${String(programRow.slug)}${exportType === "print" ? "?view=booklet&export=1" : "?export=1"}`,
       "X-Playbill-Cache": cacheStatus
     }
   });

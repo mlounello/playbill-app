@@ -59,8 +59,12 @@ export default async function PublicProgramPage({
           <strong>{program.title}</strong>
           <Link href={`/p/${canonicalShowSlug}`}>Flip view</Link>
           <Link href={`/p/${canonicalShowSlug}?view=scroll`}>Scroll view</Link>
-          <a href={`/api/public/exports/${canonicalShowSlug}/proof`}>Proof PDF</a>
-          <a href={`/api/public/exports/${canonicalShowSlug}/print`}>Print PDF</a>
+          <a href={`/api/public/exports/${canonicalShowSlug}/proof`} data-no-overlay="true">
+            Proof PDF
+          </a>
+          <a href={`/api/public/exports/${canonicalShowSlug}/print`} data-no-overlay="true">
+            Print PDF
+          </a>
         </div>
 
         {scrollView ? (

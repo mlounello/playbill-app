@@ -236,8 +236,12 @@ export function PublicProgramViewer({
         <span className="meta-text">
           View {stepIndex + 1}/{steps.length}
         </span>
-        <a href={`/api/public/exports/${showSlug}/proof`}>Download Proof PDF</a>
-        <a href={`/api/public/exports/${showSlug}/print`}>Download Print PDF</a>
+        <a href={`/api/public/exports/${showSlug}/proof`} data-no-overlay="true">
+          Download Proof PDF
+        </a>
+        <a href={`/api/public/exports/${showSlug}/print`} data-no-overlay="true">
+          Download Print PDF
+        </a>
         <a href={`/programs/${programSlug}`}>Legacy View</a>
       </article>
 

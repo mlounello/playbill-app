@@ -111,6 +111,7 @@ export function GlobalLoadingOverlay() {
       const target = event.target as HTMLElement | null;
       const anchor = target?.closest("a") as HTMLAnchorElement | null;
       if (!anchor) return;
+      if (anchor.dataset.noOverlay === "true") return;
       if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const href = anchor.getAttribute("href") || "";
