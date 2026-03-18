@@ -51,6 +51,7 @@ import {
   getShowSpecialNoteAssignments,
   getShowSpecialNoteTemplates,
   getShowSubmissionQueue,
+  removePersonFromShow,
   removeRoleAssignment,
   reorderRoleListOrder,
   resyncShowSubmissionRequests,
@@ -145,6 +146,7 @@ export default async function ShowWorkspacePage({
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
   const bulkEditSelectedPeopleAction = bulkEditSelectedPeople.bind(null, show.id);
   const updatePersonProfileAction = updatePersonProfile.bind(null, show.id);
+  const removePersonFromShowAction = removePersonFromShow.bind(null, show.id);
   const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
   const reorderRoleListOrderAction = reorderRoleListOrder.bind(null, show.id);
   const createSpecialNoteTemplateAction = createSpecialNoteTemplate.bind(null, show.id);
@@ -961,6 +963,7 @@ export default async function ShowWorkspacePage({
                 }))}
                 onSubmitAction={bulkEditSelectedPeopleAction}
                 onEditAction={updatePersonProfileAction}
+                onRemovePersonAction={removePersonFromShowAction}
                 onAddRoleAction={addRoleAssignmentAction}
                 onUpdateRoleAction={updateRoleAssignmentAction}
                 onRemoveRoleAction={removeRoleAssignmentAction}

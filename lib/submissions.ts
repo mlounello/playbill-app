@@ -1876,6 +1876,100 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
   redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Person profile updated.")}`);
 }
 
+export async function removePersonFromShow(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const personId = String(formData.get("personId") ?? "").trim();
+  if (!personId) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Person id is required.");
+  }
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: personRow } = await db
+    .from("people")
+    .select("id, full_name, email")
+    .eq("program_id", context.program_id)
+    .eq("id", personId)
+    .maybeSingle();
+  if (!personRow?.id) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Person not found.");
+  }
+
+  const personName = String(personRow.full_name ?? "");
+  const personEmail = normalizeEmail(String(personRow.email ?? ""));
+
+  const { data: roleRows } = await db
+    .from("show_roles")
+    .select("id")
+    .eq("show_id", showId)
+    .eq("person_id", personId);
+  const roleIds = (roleRows ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
+
+  let deletedRequestCount = 0;
+  if (roleIds.length > 0) {
+    const { data: requestRows } = await db
+      .from("submission_requests")
+      .select("id")
+      .in("show_role_id", roleIds);
+    const requestIds = (requestRows ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
+    deletedRequestCount = requestIds.length;
+
+    if (requestIds.length > 0) {
+      const { error: submissionsDeleteError } = await db.from("submissions").delete().in("request_id", requestIds);
+      if (submissionsDeleteError) {
+        withError(`/app/shows/${showId}?tab=people-roles`, submissionsDeleteError.message || "Could not remove person submissions.");
+      }
+
+      const { error: requestsDeleteError } = await db.from("submission_requests").delete().in("id", requestIds);
+      if (requestsDeleteError) {
+        withError(`/app/shows/${showId}?tab=people-roles`, requestsDeleteError.message || "Could not remove person requests.");
+      }
+    }
+
+    const { error: rolesDeleteError } = await db.from("show_roles").delete().in("id", roleIds).eq("show_id", showId);
+    if (rolesDeleteError) {
+      withError(`/app/shows/${showId}?tab=people-roles`, rolesDeleteError.message || "Could not remove person roles.");
+    }
+  }
+
+  const { error: personDeleteError } = await db
+    .from("people")
+    .delete()
+    .eq("program_id", context.program_id)
+    .eq("id", personId);
+  if (personDeleteError) {
+    withError(`/app/shows/${showId}?tab=people-roles`, personDeleteError.message || "Could not remove person from show.");
+  }
+
+  await writeAuditLog({
+    entity: "people",
+    entityId: personId,
+    field: "removed_from_show",
+    beforeValue: JSON.stringify({
+      full_name: personName,
+      email: personEmail,
+      removed_role_count: roleIds.length,
+      removed_request_count: deletedRequestCount
+    }),
+    afterValue: "",
+    reason: `removed person from show ${showId}`
+  });
+
+  redirect(
+    `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
+      `${personName || "Person"} removed from show.`
+    )}`
+  );
+}
+
 export async function getShowRoleAssignments(showId: string) {
   const context = await getShowProgramContext(showId);
   if (!context) {

@@ -1504,6 +1504,12 @@ body.density-compact .admin-surface textarea {
   border: 1px solid #c8d9d3;
 }
 
+.ghost-button-danger {
+  background: #fff4f4;
+  color: #8f1f1f;
+  border-color: #dfb6b6;
+}
+
 .ghost-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;

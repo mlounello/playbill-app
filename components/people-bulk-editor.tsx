@@ -33,6 +33,7 @@ export function PeopleBulkEditor({
   people,
   onSubmitAction,
   onEditAction,
+  onRemovePersonAction,
   onAddRoleAction,
   onUpdateRoleAction,
   onRemoveRoleAction,
@@ -45,6 +46,7 @@ export function PeopleBulkEditor({
   people: PersonRow[];
   onSubmitAction: (formData: FormData) => void;
   onEditAction: (formData: FormData) => void;
+  onRemovePersonAction: (formData: FormData) => void;
   onAddRoleAction: (formData: FormData) => void;
   onUpdateRoleAction: (formData: FormData) => void;
   onRemoveRoleAction: (formData: FormData) => void;
@@ -209,6 +211,20 @@ export function PeopleBulkEditor({
                         >
                           Edit
                         </button>
+                        <form action={onRemovePersonAction} data-row-pending="true" data-preserve-scroll="true">
+                          <input type="hidden" name="personId" value={person.id} />
+                          <button
+                            type="submit"
+                            className="ghost-button ghost-button-danger"
+                            onClick={(event) => {
+                              if (!window.confirm(`Remove ${person.full_name} from this show? This removes their roles and submission tasks too.`)) {
+                                event.preventDefault();
+                              }
+                            }}
+                          >
+                            Remove from Show
+                          </button>
+                        </form>
                       </div>
                     </td>
                   </tr>
