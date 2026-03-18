@@ -12,7 +12,7 @@ export default async function AdminShowsPage({
 
   return (
     <main>
-      <div className="container page-shell">
+      <div className="container container-wide page-shell">
         <div className="title-row">
           <h1>Show Workspaces</h1>
           <div className="top-actions">

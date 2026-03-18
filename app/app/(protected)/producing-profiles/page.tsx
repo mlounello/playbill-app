@@ -18,7 +18,7 @@ export default async function ProducingProfilesPage({
 
   return (
     <main>
-      <div className="container page-shell">
+      <div className="container container-wide page-shell">
         <div className="title-row">
           <h1>Producing Department / Company Profiles</h1>
           <Link className="button-link" href="/app/shows">

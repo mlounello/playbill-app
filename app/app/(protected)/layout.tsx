@@ -6,7 +6,7 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
 
   return (
     <>
-      <div className="container hide-print" style={{ paddingBottom: 0 }}>
+      <div className="container container-wide hide-print" style={{ paddingBottom: 0 }}>
         <div className="card row-between">
           <div>
             Signed in as <strong>{current.profile.email}</strong> ({current.profile.platform_role})

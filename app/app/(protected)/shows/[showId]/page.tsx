@@ -394,7 +394,7 @@ export default async function ShowWorkspacePage({
 
   return (
     <main>
-      <div className="container grid workspace-grid">
+      <div className="container container-wide grid workspace-grid">
         <aside className="card workspace-sidebar">
           <WorkspaceTabs tabs={tabs} showId={show.id} activeTab={activeTab} />
         </aside>

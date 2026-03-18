@@ -116,6 +116,10 @@ main {
   padding: 2rem 0 4rem;
 }
 
+.container-wide {
+  width: min(1600px, 98vw);
+}
+
 h1,
 h2,
 h3 {
@@ -621,7 +625,7 @@ button.tab-chip {
 }
 
 .workspace-grid {
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr);
   align-items: start;
 }
 
@@ -1581,6 +1585,7 @@ body.density-compact .admin-surface textarea {
 .people-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
 }
 
 .people-table th,
@@ -1590,6 +1595,44 @@ body.density-compact .admin-surface textarea {
   border-bottom: 1px solid #ece4d7;
   font-size: 0.92rem;
   vertical-align: middle;
+}
+
+.people-table th:nth-child(1),
+.people-table td:nth-child(1) {
+  width: 2.5rem;
+}
+
+.people-table th:nth-child(2),
+.people-table td:nth-child(2) {
+  min-width: 12rem;
+}
+
+.people-table th:nth-child(4),
+.people-table td:nth-child(4) {
+  min-width: 9rem;
+}
+
+.people-table th:nth-child(5),
+.people-table td:nth-child(5) {
+  min-width: 8rem;
+  white-space: nowrap;
+}
+
+.people-table th:nth-child(7),
+.people-table td:nth-child(7) {
+  min-width: 7rem;
+  white-space: nowrap;
+}
+
+.people-table th:nth-child(8),
+.people-table td:nth-child(8) {
+  min-width: 9rem;
+}
+
+.people-table th:last-child,
+.people-table td:last-child {
+  width: 1%;
+  white-space: nowrap;
 }
 
 .people-table th {

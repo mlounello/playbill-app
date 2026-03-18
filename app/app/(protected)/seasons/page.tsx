@@ -19,7 +19,7 @@ export default async function SeasonsLibraryPage({
 
   return (
     <main>
-      <div className="container page-shell">
+      <div className="container container-wide page-shell">
         <div className="title-row">
           <h1>Season Builder</h1>
           <Link className="button-link" href="/app/shows">

@@ -18,7 +18,7 @@ export default async function RolesLibraryPage({
 
   return (
     <main>
-      <div className="container page-shell">
+      <div className="container container-wide page-shell">
         <div className="title-row">
           <h1>Role Library</h1>
           <Link className="button-link" href="/app/shows">
