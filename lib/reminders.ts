@@ -33,6 +33,15 @@ type ReminderDispatchProgress = {
   reason?: string;
 };
 
+type AdminSubmissionNotificationArgs = {
+  showId: string;
+  showTitle: string;
+  personName: string;
+  roleTitle: string;
+  submissionType: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
+  taskId: string;
+};
+
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -65,6 +74,23 @@ function getReminderScopeLabel(scope: ReminderDispatchScope) {
   if (scope === "open_bios") return "all open bios";
   if (scope === "open_notes") return "all open notes";
   return "all open tasks";
+}
+
+function parseEmailList(value: string) {
+  return value
+    .split(/[\n,;]+/g)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((entry, index, array) => array.indexOf(entry) === index);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 async function sendEmail(params: { to: string; subject: string; text: string; html: string }) {
@@ -165,6 +191,95 @@ export function getReminderDeliveryMode() {
     mode: "live" as const,
     label: "Email delivery active",
     isDelivering: true
+  };
+}
+
+async function getAdminSubmissionNotificationRecipients(showId: string) {
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: show } = await db
+    .from("shows")
+    .select("admin_submission_notifications_enabled, admin_submission_notification_emails")
+    .eq("id", showId)
+    .maybeSingle();
+
+  const enabled =
+    show?.admin_submission_notifications_enabled === undefined
+      ? false
+      : Boolean(show.admin_submission_notifications_enabled);
+  if (!enabled) {
+    return { enabled: false, emails: [] as string[] };
+  }
+
+  const configured = parseEmailList(String(show?.admin_submission_notification_emails ?? ""));
+  if (configured.length > 0) {
+    return { enabled: true, emails: configured };
+  }
+
+  const { data: admins } = await db
+    .from("user_profiles")
+    .select("email, platform_role")
+    .in("platform_role", ["owner", "admin", "editor"]);
+  const fallbackEmails = (admins ?? [])
+    .map((row) => String(row.email ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .filter((entry, index, array) => array.indexOf(entry) === index);
+
+  return { enabled: true, emails: fallbackEmails };
+}
+
+export async function sendAdminSubmissionNotification(args: AdminSubmissionNotificationArgs) {
+  const deliveryMode = getReminderDeliveryMode();
+  if (deliveryMode.mode === "unconfigured") {
+    return { sent: false as const, reason: "email_provider_not_configured" as const };
+  }
+
+  const recipients = await getAdminSubmissionNotificationRecipients(args.showId);
+  if (!recipients.enabled) {
+    return { sent: false as const, reason: "notifications_disabled" as const };
+  }
+  if (recipients.emails.length === 0) {
+    return { sent: false as const, reason: "no_admin_recipients" as const };
+  }
+
+  const submissionLabel = (() => {
+    if (args.submissionType === "director_note") return "Director's Note";
+    if (args.submissionType === "dramaturgical_note") return "Dramaturgical Note";
+    if (args.submissionType === "music_director_note") return "Music Director's Note";
+    return "Bio";
+  })();
+
+  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  const reviewPath = `/app/shows/${args.showId}/submissions/${args.taskId}`;
+  const reviewUrl = baseUrl ? `${baseUrl}${reviewPath}` : reviewPath;
+  const subject = `${args.showTitle}: ${args.personName} submitted ${submissionLabel}`;
+  const roleLine = args.roleTitle ? `Role: ${args.roleTitle}\n` : "";
+  const text =
+    `${args.personName} submitted ${submissionLabel} for ${args.showTitle}.\n\n` +
+    `${roleLine}` +
+    `Status: Submitted for review\n\n` +
+    `Open review: ${reviewUrl}\n`;
+  const html =
+    `<p><strong>${escapeHtml(args.personName)}</strong> submitted <strong>${escapeHtml(submissionLabel)}</strong> for <strong>${escapeHtml(
+      args.showTitle
+    )}</strong>.</p>` +
+    (args.roleTitle ? `<p><strong>Role:</strong> ${escapeHtml(args.roleTitle)}</p>` : "") +
+    `<p><strong>Status:</strong> Submitted for review</p>` +
+    `<p><a href="${reviewUrl}">Open review</a></p>`;
+
+  let sent = 0;
+  for (const email of recipients.emails) {
+    const result = await sendEmailWithThrottle({ to: email, subject, text, html });
+    if (result.sent) {
+      sent += 1;
+    }
+  }
+
+  return {
+    sent: sent > 0,
+    sentCount: sent,
+    recipientCount: recipients.emails.length,
+    reason: sent > 0 ? ("sent" as const) : ("provider_request_failed" as const)
   };
 }
 

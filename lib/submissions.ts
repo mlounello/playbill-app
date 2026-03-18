@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getCurrentUserWithProfile, requireRole } from "@/lib/auth";
-import { sendContributorSubmissionConfirmation } from "@/lib/reminders";
+import { sendAdminSubmissionNotification, sendContributorSubmissionConfirmation } from "@/lib/reminders";
 import { sanitizeRichText } from "@/lib/rich-text";
 import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
@@ -3288,6 +3288,19 @@ export async function contributorSaveTask(showId: string, taskId: string, formDa
       });
     } catch {
       // Do not block contributor success if the confirmation email fails.
+    }
+
+    try {
+      await sendAdminSubmissionNotification({
+        showId,
+        showTitle: task.show_title,
+        personName: task.person.full_name,
+        roleTitle: task.person.role_title,
+        submissionType: task.person.submission_type,
+        taskId
+      });
+    } catch {
+      // Do not block contributor success if admin notifications fail.
     }
   }
 

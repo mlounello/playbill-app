@@ -1390,6 +1390,26 @@ export default async function ShowWorkspacePage({
                     {show.reminder_due_soon_days} day{show.reminder_due_soon_days === 1 ? "" : "s"} • last-day reminder{" "}
                     {show.reminder_send_last_day ? "on" : "off"}
                   </div>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      name="adminSubmissionNotificationsEnabled"
+                      defaultChecked={show.admin_submission_notifications_enabled}
+                    />
+                    <span>Email admins when a contributor submits materials for review</span>
+                  </label>
+                  <label>
+                    Admin notification recipients
+                    <textarea
+                      name="adminSubmissionNotificationEmails"
+                      className="rich-textarea"
+                      defaultValue={show.admin_submission_notification_emails}
+                      placeholder={"one@email.com\nanother@email.com\n\nLeave blank to notify all admins/editors."}
+                    />
+                  </label>
+                  <div className="meta-text">
+                    If recipient emails are left blank, notifications fall back to all owner/admin/editor emails in the system.
+                  </div>
                   <button type="submit">Save Reminder Automation</button>
                 </form>
               </article>

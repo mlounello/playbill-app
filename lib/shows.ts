@@ -24,6 +24,8 @@ export type ShowSummary = {
   reminder_cadence_days: number;
   reminder_due_soon_days: number;
   reminder_send_last_day: boolean;
+  admin_submission_notifications_enabled: boolean;
+  admin_submission_notification_emails: string;
   acts_and_songs: string;
   season_calendar: string;
   sponsorships: string;
@@ -474,6 +476,11 @@ export async function getShowsForDashboard() {
         reminder_due_soon_days: Number(show.reminder_due_soon_days ?? 7) || 7,
         reminder_send_last_day:
           show.reminder_send_last_day === undefined ? true : Boolean(show.reminder_send_last_day),
+        admin_submission_notifications_enabled:
+          show.admin_submission_notifications_enabled === undefined
+            ? false
+            : Boolean(show.admin_submission_notifications_enabled),
+        admin_submission_notification_emails: String(show.admin_submission_notification_emails ?? ""),
         acts_and_songs: String(program?.acts_songs ?? ""),
         season_calendar: String(program?.season_calendar ?? ""),
         sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
@@ -547,6 +554,11 @@ export async function getShowById(showId: string) {
       reminder_due_soon_days: Number(show.reminder_due_soon_days ?? 7) || 7,
       reminder_send_last_day:
         show.reminder_send_last_day === undefined ? true : Boolean(show.reminder_send_last_day),
+      admin_submission_notifications_enabled:
+        show.admin_submission_notifications_enabled === undefined
+          ? false
+          : Boolean(show.admin_submission_notifications_enabled),
+      admin_submission_notification_emails: String(show.admin_submission_notification_emails ?? ""),
       acts_and_songs: String(program?.acts_songs ?? ""),
       season_calendar: String(program?.season_calendar ?? ""),
       sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
@@ -647,6 +659,8 @@ export async function updateShowReminderSettings(showId: string, formData: FormD
 
   const reminderAutomationEnabled = String(formData.get("reminderAutomationEnabled") ?? "") === "on";
   const reminderSendLastDay = String(formData.get("reminderSendLastDay") ?? "") === "on";
+  const adminSubmissionNotificationsEnabled = String(formData.get("adminSubmissionNotificationsEnabled") ?? "") === "on";
+  const adminSubmissionNotificationEmails = String(formData.get("adminSubmissionNotificationEmails") ?? "").trim();
   const cadenceRaw = String(formData.get("reminderCadenceDays") ?? "7").trim();
   const dueSoonRaw = String(formData.get("reminderDueSoonDays") ?? "7").trim();
   const reminderCadenceDays = Math.min(30, Math.max(1, Number(cadenceRaw) || 7));
@@ -661,12 +675,18 @@ export async function updateShowReminderSettings(showId: string, formData: FormD
       reminder_cadence_days: reminderCadenceDays,
       reminder_due_soon_days: reminderDueSoonDays,
       reminder_send_last_day: reminderSendLastDay,
+      admin_submission_notifications_enabled: adminSubmissionNotificationsEnabled,
+      admin_submission_notification_emails: adminSubmissionNotificationEmails,
       updated_at: new Date().toISOString()
     },
     showColumns
   );
 
-  if (!("reminder_automation_enabled" in payload) && !("reminder_cadence_days" in payload)) {
+  if (
+    !("reminder_automation_enabled" in payload) &&
+    !("reminder_cadence_days" in payload) &&
+    !("admin_submission_notifications_enabled" in payload)
+  ) {
     withError(
       `/app/shows/${showId}?tab=settings`,
       "Reminder settings columns are not available yet. Run the latest SQL migration first."
