@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { tryAutoSyncAppUsers } from "@/lib/app-user-sync";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { APP_ID, APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
@@ -75,6 +76,7 @@ export async function ensureUserProfileIdentity(userId: string, email: string): 
       return { user_id: String(existing.user_id), email: existingEmail };
     }
     await db.from("user_profiles").update({ email }).eq("user_id", userId);
+    await tryAutoSyncAppUsers("profile-email-updated");
     return { user_id: String(existing.user_id), email };
   }
 
@@ -88,6 +90,7 @@ export async function ensureUserProfileIdentity(userId: string, email: string): 
     return { user_id: userId, email };
   }
 
+  await tryAutoSyncAppUsers("profile-created");
   return { user_id: String(inserted.user_id), email: String(inserted.email ?? email) };
 }
 

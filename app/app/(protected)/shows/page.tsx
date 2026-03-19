@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { FlashToast } from "@/components/flash-toast";
-import { getShowsForDashboard } from "@/lib/shows";
+import { getShowsForDashboard, triggerAppUserSync } from "@/lib/shows";
 
 export default async function AdminShowsPage({
   searchParams
@@ -16,6 +16,9 @@ export default async function AdminShowsPage({
         <div className="title-row">
           <h1>Show Workspaces</h1>
           <div className="top-actions">
+            <form action={triggerAppUserSync}>
+              <button type="submit">Sync App Users</button>
+            </form>
             <Link href="/app/roles">Role Library</Link>
             <Link href="/app/seasons">Season Builder</Link>
             <Link href="/app/producing-profiles">Producing Profiles</Link>

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
+import { syncAppUsersToControlRoom } from "@/lib/app-user-sync";
 import { hideShowOnlyCastRoleTemplatesForShow } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/rich-text";
 import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
@@ -267,6 +268,11 @@ function withError(path: string, message: string): never {
   redirect(`${path}?${qp.toString()}`);
 }
 
+function withSuccess(path: string, message: string): never {
+  const qp = new URLSearchParams({ success: message });
+  redirect(`${path}?${qp.toString()}`);
+}
+
 function buildProgramLayoutTokens(modules: Array<z.infer<typeof modulePayloadSchema>>) {
   const seen = new Set<string>();
   const ordered: string[] = [];
@@ -302,6 +308,19 @@ export function getProgramTokensFromShowModules(modules: ShowModule[]) {
     settings: module.settings
   }));
   return buildProgramLayoutTokens(mapped);
+}
+
+export async function triggerAppUserSync() {
+  "use server";
+
+  await requireRole(["owner", "admin"]);
+
+  const result = await syncAppUsersToControlRoom();
+  if (!result.ok) {
+    withError("/app/shows", `User sync failed: ${result.error ?? "Unknown sync error"}`);
+  }
+
+  withSuccess("/app/shows", `Synced ${result.syncedCount} app users to control room.`);
 }
 
 export async function createShow(formData: FormData) {
