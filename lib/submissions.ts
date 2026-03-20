@@ -165,6 +165,7 @@ export type ContributorTaskSummary = {
   show_id: string;
   show_title: string;
   show_slug: string;
+  show_is_published: boolean;
   program_slug: string;
   person_id: string;
   person_name: string;
@@ -180,6 +181,7 @@ export type ContributorTaskLoginSummary = {
   task_id: string;
   show_title: string;
   show_slug: string;
+  show_is_published: boolean;
   program_slug: string;
   person_name: string;
   role_title: string;
@@ -314,7 +316,7 @@ function canTransitionSubmissionStatus(
 async function getShowProgramContext(showId: string) {
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
-  const { data: show } = await db.from("shows").select("id, title, slug, program_id").eq("id", showId).single();
+  const { data: show } = await db.from("shows").select("id, title, slug, program_id, is_published").eq("id", showId).single();
   if (!show?.program_id) {
     return null;
   }
@@ -326,6 +328,7 @@ async function getShowProgramContext(showId: string) {
     show_id: String(show.id),
     show_title: String(show.title ?? ""),
     show_slug: String(show.slug ?? ""),
+    show_is_published: Boolean(show.is_published),
     program_id: String(program.id),
     program_slug: String(program.slug ?? "")
   };
@@ -2743,7 +2746,7 @@ export async function getContributorTasksForCurrentUser() {
   const showIds = [...new Set(roleRows.map((row) => String(row.show_id ?? "")).filter(Boolean))];
   const { data: shows } = await db
     .from("shows")
-    .select("id, title, slug, program_id")
+    .select("id, title, slug, program_id, is_published")
     .in("id", showIds);
   const programIds = [...new Set((shows ?? []).map((show) => String(show.program_id ?? "")).filter(Boolean))];
   const { data: programs } =
@@ -2751,12 +2754,13 @@ export async function getContributorTasksForCurrentUser() {
       ? await db.from("programs").select("id, slug").in("id", programIds)
       : { data: [] as Array<Record<string, unknown>> };
 
-  const showByProgramId = new Map<string, { id: string; title: string; slug: string }>();
+  const showByProgramId = new Map<string, { id: string; title: string; slug: string; is_published: boolean }>();
   for (const show of shows ?? []) {
     showByProgramId.set(String(show.program_id ?? ""), {
       id: String(show.id),
       title: String(show.title ?? "Untitled Show"),
-      slug: String(show.slug ?? "")
+      slug: String(show.slug ?? ""),
+      is_published: Boolean(show.is_published)
     });
   }
 
@@ -2789,6 +2793,7 @@ export async function getContributorTasksForCurrentUser() {
         show_id: showMeta.id,
         show_title: showMeta.title,
         show_slug: showMeta.slug,
+        show_is_published: showMeta.is_published,
         program_slug: programSlugById.get(programId) ?? "",
         person_id: roleMeta.person_id,
         person_name: person.person_name,
@@ -2916,6 +2921,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     show_id: context.show_id,
     show_title: context.show_title,
     show_slug: context.show_slug,
+    show_is_published: context.show_is_published,
     program_slug: context.program_slug,
     person: {
       id: String(person.id),
@@ -2978,6 +2984,7 @@ export async function getContributorTaskLoginSummary(showId: string, taskId: str
     task_id: resolvedTask.task_id,
     show_title: context.show_title,
     show_slug: context.show_slug,
+    show_is_published: context.show_is_published,
     program_slug: context.program_slug,
     person_name: String(person.full_name ?? ""),
     role_title: String(person.role_title ?? ""),
