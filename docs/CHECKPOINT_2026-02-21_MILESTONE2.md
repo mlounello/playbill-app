@@ -41,3 +41,5 @@
 2. Replace JSON settings input with module-specific config controls.
 3. Bind Program Plan modules directly to reader preview and booklet preview rendering.
 4. Start Milestone 3 foundations (people/roles + submission request generation).
+
+-
