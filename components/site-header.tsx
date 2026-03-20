@@ -7,18 +7,24 @@ const publicNavItems = [
   { href: "/api/health", label: "System Health" }
 ] as const;
 
-const authedNavItems = [
+const staffNavItems = [
   { href: "/app", label: "Admin" },
   { href: "/app/shows/new", label: "New Show" },
   { href: "/app/roles", label: "Roles" },
   { href: "/app/seasons", label: "Seasons" },
-  { href: "/app/producing-profiles", label: "Profiles" },
+  { href: "/app/producing-profiles", label: "Profiles" }
+] as const;
+
+const contributorNavItems = [
   { href: "/contribute", label: "Contribute" }
 ] as const;
 
 export async function SiteHeader() {
   const current = await getCurrentUserWithProfile();
   const isLoggedIn = Boolean(current?.user?.id);
+  const role = current?.profile.platform_role ?? null;
+  const showStaffNav = role === "owner" || role === "admin" || role === "editor";
+  const showContributorNav = Boolean(role);
 
   return (
     <header className="site-header hide-print">
@@ -32,8 +38,15 @@ export async function SiteHeader() {
               {item.label}
             </Link>
           ))}
-          {isLoggedIn
-            ? authedNavItems.map((item) => (
+          {showStaffNav
+            ? staffNavItems.map((item) => (
+                <Link key={item.href} href={item.href} className="site-nav-link">
+                  {item.label}
+                </Link>
+              ))
+            : null}
+          {showContributorNav
+            ? contributorNavItems.map((item) => (
                 <Link key={item.href} href={item.href} className="site-nav-link">
                   {item.label}
                 </Link>

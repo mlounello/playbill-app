@@ -179,6 +179,7 @@ export type ContributorTaskLoginSummary = {
   show_id: string;
   task_id: string;
   show_title: string;
+  show_slug: string;
   program_slug: string;
   person_name: string;
   role_title: string;
@@ -2976,6 +2977,7 @@ export async function getContributorTaskLoginSummary(showId: string, taskId: str
     show_id: context.show_id,
     task_id: resolvedTask.task_id,
     show_title: context.show_title,
+    show_slug: context.show_slug,
     program_slug: context.program_slug,
     person_name: String(person.full_name ?? ""),
     role_title: String(person.role_title ?? ""),

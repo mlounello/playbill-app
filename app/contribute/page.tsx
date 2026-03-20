@@ -37,7 +37,7 @@ export default async function ContributorHomePage() {
                   </div>
                   <div className="link-row">
                     <Link href={`/contribute/shows/${task.show_id}/tasks/${task.task_id}`}>Open Task</Link>
-                    <Link href={`/programs/${task.program_slug}`}>Preview Program</Link>
+                    <Link href={`/p/${task.show_slug}`}>Preview Program</Link>
                   </div>
                 </div>
               </article>

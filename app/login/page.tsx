@@ -107,7 +107,7 @@ export default async function LoginPage({
             <ContributorMagicLinkForm redirectTo={nextPath || "/contribute"} defaultEmail={contributorTask.email} />
             <div className="top-actions">
               <Link href={`/login?mode=full${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ""}`}>Staff or admin sign in</Link>
-              <Link href={`/programs/${contributorTask.program_slug}`}>Preview Program</Link>
+              <Link href={`/p/${contributorTask.show_slug}`}>Preview Program</Link>
             </div>
           </>
         ) : (

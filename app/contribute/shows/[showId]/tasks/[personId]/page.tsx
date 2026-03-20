@@ -87,7 +87,7 @@ export default async function ContributorTaskPage({
       <div className="container page-shell page-shell-narrow">
         <div className="hide-print top-actions">
           <Link href="/contribute">Back to tasks</Link>
-          <Link href={`/programs/${task.program_slug}`}>Program Preview</Link>
+          <Link href={`/p/${task.show_slug}`}>Program Preview</Link>
         </div>
 
         <section className="card stack-sm contributor-task-hero">
@@ -117,7 +117,7 @@ export default async function ContributorTaskPage({
           <article className="stat-item">
             <div className="stat-label">Program Preview</div>
             <div className="stat-value">
-              <Link href={`/programs/${task.program_slug}`}>Open Program</Link>
+              <Link href={`/p/${task.show_slug}`}>Open Program</Link>
             </div>
           </article>
         </section>
