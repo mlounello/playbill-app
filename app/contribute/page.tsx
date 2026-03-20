@@ -2,13 +2,6 @@ import Link from "next/link";
 import { getCurrentUserWithProfile } from "@/lib/auth";
 import { getContributorTasksForCurrentUser, getSubmissionTypeLabel } from "@/lib/submissions";
 
-function getPreviewHref(task: { show_is_published: boolean; show_slug: string; program_slug: string }) {
-  if (task.show_is_published) {
-    return `/p/${task.show_slug}`;
-  }
-  return `/programs/${task.program_slug}?mode=contributor-preview`;
-}
-
 export default async function ContributorHomePage() {
   const current = await getCurrentUserWithProfile();
   const tasks = await getContributorTasksForCurrentUser();
@@ -44,7 +37,7 @@ export default async function ContributorHomePage() {
                   </div>
                   <div className="link-row">
                     <Link href={`/contribute/shows/${task.show_id}/tasks/${task.task_id}`}>Open Task</Link>
-                    <Link href={getPreviewHref(task)}>Preview Program</Link>
+                    {task.show_is_published ? <Link href={`/p/${task.show_slug}`}>Preview Program</Link> : null}
                   </div>
                 </div>
               </article>

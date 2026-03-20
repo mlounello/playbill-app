@@ -13,13 +13,6 @@ import {
 } from "@/lib/submissions";
 import { richTextHasContent } from "@/lib/rich-text";
 
-function getPreviewHref(task: { show_is_published: boolean; show_slug: string; program_slug: string }) {
-  if (task.show_is_published) {
-    return `/p/${task.show_slug}`;
-  }
-  return `/programs/${task.program_slug}?mode=contributor-preview`;
-}
-
 function formatDueDate(value: string | null) {
   if (!value) {
     return "No due date set";
@@ -94,7 +87,7 @@ export default async function ContributorTaskPage({
       <div className="container page-shell page-shell-narrow">
         <div className="hide-print top-actions">
           <Link href="/contribute">Back to tasks</Link>
-          <Link href={getPreviewHref(task)}>Program Preview</Link>
+          {task.show_is_published ? <Link href={`/p/${task.show_slug}`}>Program Preview</Link> : null}
         </div>
 
         <section className="card stack-sm contributor-task-hero">
@@ -124,7 +117,7 @@ export default async function ContributorTaskPage({
           <article className="stat-item">
             <div className="stat-label">Program Preview</div>
             <div className="stat-value">
-              <Link href={getPreviewHref(task)}>Open Program</Link>
+              {task.show_is_published ? <Link href={`/p/${task.show_slug}`}>Open Program</Link> : "Available after publish"}
             </div>
           </article>
         </section>

@@ -5,13 +5,6 @@ import { LoginOptionsForm } from "@/components/auth/login-options-form";
 import { getCurrentUserWithProfile } from "@/lib/auth";
 import { getContributorTaskLoginSummary, getSubmissionTypeLabel } from "@/lib/submissions";
 
-function getPreviewHref(task: { show_is_published: boolean; show_slug: string; program_slug: string }) {
-  if (task.show_is_published) {
-    return `/p/${task.show_slug}`;
-  }
-  return `/programs/${task.program_slug}?mode=contributor-preview`;
-}
-
 function sanitizeNextPath(rawNext: string | undefined) {
   const next = String(rawNext ?? "").trim();
   if (!next.startsWith("/")) {
@@ -114,7 +107,7 @@ export default async function LoginPage({
             <ContributorMagicLinkForm redirectTo={nextPath || "/contribute"} defaultEmail={contributorTask.email} />
             <div className="top-actions">
               <Link href={`/login?mode=full${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ""}`}>Staff or admin sign in</Link>
-              <Link href={getPreviewHref(contributorTask)}>Preview Program</Link>
+              {contributorTask.show_is_published ? <Link href={`/p/${contributorTask.show_slug}`}>Preview Program</Link> : null}
             </div>
           </>
         ) : (
