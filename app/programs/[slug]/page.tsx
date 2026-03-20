@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/print-button";
+import { requireRole } from "@/lib/auth";
 import { getProgramBySlug } from "@/lib/programs";
 import { sanitizeRichText } from "@/lib/rich-text";
 import { APP_SCHEMA, getSupabaseReadClient } from "@/lib/supabase";
@@ -111,6 +112,7 @@ export default async function ProgramPage({
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ view?: string; export?: string }>;
 }) {
+  await requireRole(["owner", "admin", "editor"]);
   const { slug } = await params;
   const { view, export: exportMode } = await searchParams;
   const program = await getProgramBySlug(slug);
@@ -139,7 +141,6 @@ export default async function ProgramPage({
               <Link href="/programs">All Programs</Link>
               {workspaceHref ? <Link href={`${workspaceHref}?tab=settings`}>Show Settings</Link> : null}
               {workspaceHref ? <Link href={`${workspaceHref}?tab=program-plan`}>Program Plan</Link> : null}
-              <Link href={`/programs/${program.slug}/submit`}>Share Bio Submission Form</Link>
               <Link href={`/programs/${program.slug}`}>Program order view</Link>
               <Link href={`/programs/${program.slug}?view=booklet`}>Booklet imposition view</Link>
               <PrintButton />

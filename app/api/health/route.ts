@@ -1,9 +1,25 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { getCurrentUserWithProfile } from "@/lib/auth";
 import { APP_SCHEMA, getMissingSupabaseEnvVars } from "@/lib/supabase";
 
+function isStaffRole(role: string | null | undefined) {
+  return role === "owner" || role === "admin" || role === "editor";
+}
+
 export async function GET() {
+  const current = await getCurrentUserWithProfile();
+  const role = current?.profile.platform_role ?? null;
+  const isStaff = isStaffRole(role);
+
   const missing = getMissingSupabaseEnvVars();
+  if (!isStaff) {
+    if (missing.length > 0) {
+      return NextResponse.json({ ok: false, status: "degraded" }, { status: 503 });
+    }
+    return NextResponse.json({ ok: true, status: "ok" });
+  }
+
   const base = {
     ok: false,
     schema: APP_SCHEMA,

@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { requireRole } from "@/lib/auth";
 import { getProgramsList } from "@/lib/programs";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProgramsIndexPage() {
+  await requireRole(["owner", "admin", "editor"]);
   const programs = await getProgramsList();
 
   return (
@@ -31,7 +33,6 @@ export default async function ProgramsIndexPage() {
                   <Link href={`/programs/${program.slug}`}>Open</Link>
                   <Link href={`/p/${program.slug}`}>Public View</Link>
                   <Link href={`/programs/${program.slug}/edit`}>Edit</Link>
-                  <Link href={`/programs/${program.slug}/submit`}>Submission Form</Link>
                 </div>
               </article>
             ))}

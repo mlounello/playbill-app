@@ -1,3 +1,11 @@
+-- LEGACY / NON-CANONICAL
+-- This file targets the old public-schema Playbill database shape.
+-- Do not use this file as the setup or verification path for the current schema-scoped Playbill app.
+-- Canonical schema-scoped setup lives in:
+--   - playbill_schema_app.sql
+--   - playbill_data_app.sql
+--
+-- Historical note:
 -- Phase 8 audit queries (read-only)
 -- Run in Supabase SQL editor to inventory current table usage before any destructive cleanup.
 

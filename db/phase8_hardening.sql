@@ -1,3 +1,11 @@
+-- LEGACY / NON-CANONICAL
+-- This file targets the old public-schema Playbill database shape.
+-- Do not use this file to provision or migrate the current schema-scoped Playbill app.
+-- Canonical schema-scoped setup lives in:
+--   - playbill_schema_app.sql
+--   - playbill_data_app.sql
+--
+-- Historical note:
 -- Phase 8 hardening migration (safe / non-destructive)
 -- Purpose: improve query performance and stability on active tables.
 -- This migration does NOT drop tables or columns.

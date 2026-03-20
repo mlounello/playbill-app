@@ -2863,5 +2863,9 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
     redirectWithError(`/programs/${slug}/submit`, updateError.message);
   }
 
-  redirect(`/programs/${program.slug}`);
+  redirect(
+    `/programs/${program.slug}/submit?success=${encodeURIComponent(
+      "Bio submitted successfully. Production will review it from here."
+    )}`
+  );
 }

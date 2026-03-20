@@ -23,9 +23,22 @@ npm install
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_SITE_URL` (for auth redirects, e.g. `https://playbillapp.mlounello.com`)
 
-3. In Supabase SQL editor, run:
+3. Bootstrap the schema-scoped Playbill schema in Supabase SQL editor.
+
+Canonical schema-scoped setup files:
+
+- `playbill_schema_app.sql`
+- `playbill_data_app.sql` (optional sample/import data, only if you intentionally want seeded content)
+
+Do **not** use these legacy public-schema files for new setup:
 
 - `db/schema.sql`
+- `db/phase8_hardening.sql`
+- `db/phase8_audit.sql`
+- `playbill_schema.sql`
+- `playbill_data.sql`
+
+Those files are retained only for historical reference / legacy audit context and do not represent the current canonical `app_playbill` schema path.
 
 4. Start dev server:
 
@@ -89,11 +102,19 @@ In Supabase Dashboard:
   - `/contribute/shows/[showId]/tasks/[personId]`
 - Public program:
   - `/p/[showSlug]` flip viewer + scroll mode + export links
-- Program rendering/debug views (retained for compatibility and print checks):
+- Legacy staff-only rendering/debug views (retained for compatibility and print checks):
   - `/programs`
   - `/programs/[slug]`
   - `/programs/[slug]/submit`
   - `/programs/[slug]/edit` (redirects to show workspace when linked)
+
+## Database source of truth
+
+- Runtime app schema: `app_playbill`
+- Canonical schema dump in this repo: `playbill_schema_app.sql`
+- Canonical data dump in this repo: `playbill_data_app.sql`
+
+Legacy public-schema SQL artifacts remain in the repo for reference only and should not be used to provision a fresh environment.
 
 ## Milestone 1 implemented
 

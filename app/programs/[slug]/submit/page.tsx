@@ -8,10 +8,10 @@ export default async function BioSubmissionPage({
   searchParams
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; success?: string }>;
 }) {
   const { slug } = await params;
-  const { error } = await searchParams;
+  const { error, success } = await searchParams;
   const program = await getProgramBySlug(slug);
 
   if (!program) {
@@ -24,17 +24,25 @@ export default async function BioSubmissionPage({
     <main>
       <div className="container page-shell page-shell-narrow">
         <div className="hide-print top-actions">
-          <Link href={`/programs/${slug}`}>Back to program</Link>
           <Link href="/">Home</Link>
         </div>
 
-        <h1>Bio Submission Form</h1>
+        <h1>Legacy Bio Submission Form</h1>
+        <p>
+          This generic form is a legacy fallback for bio-only submissions. The primary contributor experience uses
+          personalized magic-link task pages.
+        </p>
         <p>
           Submissions are automatically sorted alphabetically in the playbill by group (cast or production team).
         </p>
         {error ? (
           <div className="card alert">
             {error}
+          </div>
+        ) : null}
+        {success ? (
+          <div className="card alert-success">
+            {success}
           </div>
         ) : null}
 
