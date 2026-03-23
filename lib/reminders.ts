@@ -625,10 +625,18 @@ async function buildContributorReminderEmail(params: {
     (params.explicitTargetRequestId
       ? openItems.find((item) => item.requestId === params.explicitTargetRequestId)
       : null) ?? openItems[0];
+  const destinationPath = openItems.length > 1 ? "/contribute" : getContributorTaskPath(targetItem);
   const subject = `${params.context.title}: submission reminder`;
   const daysRemainingPhrase = getDaysRemainingPhrase(openItems);
   const optionalBioNote = getOptionalBioNote(openItems);
-  const accessUrl = getContributorAccessUrl(targetItem);
+  const directLink = await generateDirectMagicLink(params.group.email, destinationPath);
+  if (!directLink) {
+    return {
+      ok: false,
+      reason: "secure_link_generation_failed",
+      openItems
+    };
+  }
   const freshLinkUrl = getContributorLinkRefreshUrl(targetItem);
   const textParts = [
     `Hello ${params.group.name},`,
@@ -636,9 +644,8 @@ async function buildContributorReminderEmail(params: {
     buildOutstandingItemsText(openItems),
     `You have ${daysRemainingPhrase} to complete your outstanding submission items for inclusion in the program.`,
     optionalBioNote,
-    `Please click here to open your submission.`,
-    accessUrl,
-    "When you arrive, click Continue to start your one-time secure session.",
+    `Please click here to submit your materials. (This is a one-time-use link.)`,
+    directLink,
     "Need a new link? Click here to have a fresh secure link sent to you if the one above has expired.",
     freshLinkUrl,
     "Thanks,",
@@ -652,8 +659,7 @@ async function buildContributorReminderEmail(params: {
     buildOutstandingItemsHtml(openItems) +
     `<p>You have ${daysRemainingPhrase} to complete your outstanding submission items for inclusion in the program.</p>` +
     (optionalBioNote ? `<p>${optionalBioNote}</p>` : "") +
-    `<p><a href="${accessUrl}">Please click here to open your submission.</a></p>` +
-    `<p>When you arrive, click Continue to start your one-time secure session.</p>` +
+    `<p><a href="${directLink}">Please click here to submit your materials.</a> (This is a one-time-use link.)</p>` +
     `<p><a href="${freshLinkUrl}">Need a new link? Click here to have a fresh secure link sent to you if the one above has expired.</a></p>` +
     `<p>Thanks,<br/>Mike</p>`;
 
@@ -662,7 +668,7 @@ async function buildContributorReminderEmail(params: {
     subject,
     text,
     html,
-    accessUrl,
+    accessUrl: directLink,
     openItems
   };
 }
@@ -873,13 +879,13 @@ export async function sendReminderPreviewEmail(showId: string) {
     `This is a preview copy of the live reminder email.\n\n` +
     `Originally addressed to: ${recipientGroup.name} <${recipientGroup.email}>\n\n` +
     `${previewEmail.text}\n` +
-    `Live email note: the real recipient email links to a Playbill access page, where the contributor clicks Continue to start a fresh secure session.\n\n` +
+    `Live email note: the real recipient email includes a direct secure sign-in link tied to their inbox.\n\n` +
     `Admin preview link: ${adminPreviewLink}\n`;
   const html =
     `<p><strong>This is a preview copy of the live reminder email.</strong></p>` +
     `<p>Originally addressed to: ${recipientGroup.name} &lt;${recipientGroup.email}&gt;</p>` +
     `<div>${previewEmail.html}</div>` +
-    `<p><strong>Live email note:</strong> the real recipient email links to a Playbill access page, where the contributor clicks Continue to start a fresh secure session.</p>` +
+    `<p><strong>Live email note:</strong> the real recipient email includes a direct secure sign-in link tied to their inbox.</p>` +
     `<p><strong>Admin preview link:</strong><br/><a href="${adminPreviewLink}">Open review in admin workspace</a></p>`;
   const result = await sendEmail({
     to: current.profile.email,
@@ -1176,7 +1182,8 @@ export async function sendContributorSubmissionConfirmation(params: {
   showId: string;
   taskId: string;
 }) {
-  const link = getContributorAccessUrl({ showId: params.showId, requestId: params.taskId });
+  const taskPath = `/contribute/shows/${params.showId}/tasks/${params.taskId}`;
+  const link = await generateDirectMagicLink(params.email, taskPath);
 
   const subject = `${params.showTitle}: ${params.submissionLabel} received`;
   const text = link
@@ -1321,17 +1328,32 @@ export async function requestContributorFreshLink(showId: string, taskId: string
   const context = await getShowContext(showId);
   const showTitle = context?.title || "your production";
   const subject = `${showTitle}: your fresh secure link`;
+  const directLink = await generateDirectMagicLink(accessContext.recipientGroup.email, accessContext.destinationPath);
+  if (!directLink) {
+    await writeReminderAudit({
+      personId: accessContext.recipient.personId,
+      field: "secure_link_requested",
+      reason: "secure_link_generation_failed",
+      payload: {
+        request_ids: accessContext.openItems.map((item) => item.requestId),
+        sent: false,
+        mode: "self_service_refresh",
+        email_matched: true
+      }
+    });
+    withSuccess(responsePath, neutralMessage);
+  }
   const text =
     `Hello ${accessContext.recipientGroup.name},\n\n` +
-    `Here is your fresh Playbill access link:\n\n` +
-    `${accessContext.accessUrl}\n\n` +
-    `When you arrive, click Continue to start your one-time secure session.\n\n` +
+    `Here is your fresh secure link to continue your Playbill submission:\n\n` +
+    `${directLink}\n\n` +
+    `This is a one-time-use link.\n\n` +
     `Thanks,\nMike\n`;
   const html =
     `<p>Hello ${accessContext.recipientGroup.name},</p>` +
-    `<p>Here is your fresh Playbill access link:</p>` +
-    `<p><a href="${accessContext.accessUrl}">${accessContext.accessUrl}</a></p>` +
-    `<p>When you arrive, click Continue to start your one-time secure session.</p>` +
+    `<p>Here is your fresh secure link to continue your Playbill submission:</p>` +
+    `<p><a href="${directLink}">${directLink}</a></p>` +
+    `<p>This is a one-time-use link.</p>` +
     `<p>Thanks,<br/>Mike</p>`;
 
   const result = await sendEmailWithThrottle({
