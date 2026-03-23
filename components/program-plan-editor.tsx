@@ -106,7 +106,10 @@ function normalizeModules(modules: ShowModule[]): ModuleItem[] {
   return modules.map((mod) => ({
     id: mod.id,
     module_type: mod.module_type,
-    display_title: mod.display_title || moduleTypeLabels[mod.module_type] || mod.module_type,
+    display_title:
+      mod.module_type === "actf_sponsorship"
+        ? "ACTF Sponsorship"
+        : mod.display_title || moduleTypeLabels[mod.module_type] || mod.module_type,
     visible: mod.visible,
     filler_eligible: mod.filler_eligible,
     settings: mod.settings || {}
@@ -318,6 +321,27 @@ function ModuleSettings({
               label="Upload header image"
             />
           ) : null}
+          <div className="row-wrap">
+            <label>
+              Page background color
+              <input
+                type="color"
+                value={String(item.settings.background_color ?? "#fffef9")}
+                onChange={(event) => setSetting("background_color", event.target.value)}
+              />
+            </label>
+            <label>
+              Spacing
+              <select
+                value={String(item.settings.spacing ?? "normal")}
+                onChange={(event) => setSetting("spacing", event.target.value)}
+              >
+                <option value="compact">Compact</option>
+                <option value="normal">Normal</option>
+                <option value="relaxed">Relaxed</option>
+              </select>
+            </label>
+          </div>
           <div className="meta-text">This module always renders as its own full page.</div>
         </div>
 
@@ -387,7 +411,20 @@ export function ProgramPlanEditor({
     );
   };
 
-  const payload = useMemo(() => JSON.stringify(items), [items]);
+  const payload = useMemo(
+    () =>
+      JSON.stringify(
+        items.map((item) =>
+          item.module_type === "actf_sponsorship"
+            ? {
+                ...item,
+                display_title: "ACTF Sponsorship"
+              }
+            : item
+        )
+      ),
+    [items]
+  );
 
   const addModule = () => {
     setItems((current) => [
@@ -395,14 +432,20 @@ export function ProgramPlanEditor({
       {
         id: `new-${newModuleType}-${Date.now()}`,
         module_type: newModuleType,
-        display_title: moduleTypeLabels[newModuleType] || newModuleType,
+        display_title: newModuleType === "actf_sponsorship" ? "ACTF Sponsorship" : moduleTypeLabels[newModuleType] || newModuleType,
         visible: true,
         filler_eligible: false,
         settings: {
           placement_mode: isDefaultIsolated(newModuleType) ? "isolated" : "flow",
           separate_page: isDefaultIsolated(newModuleType),
           show_header: true,
-          allow_multiple_pages: newModuleType === "bios" || newModuleType === "custom_pages"
+          allow_multiple_pages: newModuleType === "bios" || newModuleType === "custom_pages",
+          ...(newModuleType === "actf_sponsorship"
+            ? {
+                background_color: "#fffef9",
+                spacing: "normal"
+              }
+            : {})
         }
       }
     ]);
@@ -525,10 +568,17 @@ export function ProgramPlanEditor({
             </div>
           </div>
 
-          <label>
-            Module title
-            <input value={item.display_title} onChange={(event) => update(index, "display_title", event.target.value)} />
-          </label>
+          {item.module_type === "actf_sponsorship" ? (
+            <div>
+              <div className="meta-text">Module title</div>
+              <strong>ACTF Sponsorship</strong>
+            </div>
+          ) : (
+            <label>
+              Module title
+              <input value={item.display_title} onChange={(event) => update(index, "display_title", event.target.value)} />
+            </label>
+          )}
 
           <div className="row-wrap">
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
@@ -540,14 +590,16 @@ export function ProgramPlanEditor({
               Visible
             </label>
 
-            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={Boolean(item.settings.show_header ?? true)}
-                onChange={(event) => updateSettings(index, { ...item.settings, show_header: event.target.checked })}
-              />
-              Show section header
-            </label>
+            {item.module_type === "actf_sponsorship" ? null : (
+              <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(item.settings.show_header ?? true)}
+                  onChange={(event) => updateSettings(index, { ...item.settings, show_header: event.target.checked })}
+                />
+                Show section header
+              </label>
+            )}
 
             <fieldset style={{ border: "none", margin: 0, padding: 0, display: "flex", gap: "0.65rem", alignItems: "center", flexWrap: "wrap" }}>
               <legend className="meta-text" style={{ marginRight: "0.25rem" }}>Page behavior</legend>

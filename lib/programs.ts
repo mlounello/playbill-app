@@ -95,7 +95,15 @@ type DensityMode = "normal" | "compact" | "loose";
 export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string }
-  | { id: string; type: "actf_sponsorship"; title: string; body: string; imageUrl: string }
+  | {
+      id: string;
+      type: "actf_sponsorship";
+      title: string;
+      body: string;
+      imageUrl: string;
+      backgroundColor: string;
+      spacing: "compact" | "normal" | "relaxed";
+    }
   | { id: string; type: "stacked"; title: string; sections: Array<{ title: string; body: string }> }
   | { id: string; type: "bios"; title: string; people: PersonRecord[]; showHeadshots?: boolean }
   | { id: string; type: "image"; title: string; imageUrl: string }
@@ -1480,6 +1488,10 @@ async function renderModulePages(
   if (normalizedType === "actf_sponsorship") {
     const body = String(module.settings.body ?? "");
     const imageUrl = normalizeAssetUrl(String(module.settings.image_url ?? ""));
+    const backgroundColor = String(module.settings.background_color ?? "#fffef9");
+    const spacingRaw = String(module.settings.spacing ?? "normal").toLowerCase();
+    const spacing: "compact" | "normal" | "relaxed" =
+      spacingRaw === "compact" || spacingRaw === "relaxed" ? spacingRaw : "normal";
     const hasBody = richTextHasContent(body);
     const hasImage = Boolean(imageUrl);
     if (!hasBody && !hasImage) {
@@ -1491,7 +1503,9 @@ async function renderModulePages(
         type: "actf_sponsorship",
         title,
         body,
-        imageUrl
+        imageUrl,
+        backgroundColor,
+        spacing
       }
     ] satisfies ProgramPage[];
   }

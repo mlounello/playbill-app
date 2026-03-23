@@ -1335,11 +1335,31 @@ body.density-compact .admin-surface textarea {
   gap: 0.12in;
 }
 
+.actf-sponsorship-spacing-compact {
+  gap: 0.08in;
+}
+
+.actf-sponsorship-spacing-normal {
+  gap: 0.12in;
+}
+
+.actf-sponsorship-spacing-relaxed {
+  gap: 0.2in;
+}
+
 .actf-sponsorship-header-image {
   width: 100%;
   max-height: 2.2in;
   object-fit: contain;
   justify-self: center;
+}
+
+.actf-sponsorship-spacing-compact .actf-sponsorship-header-image {
+  max-height: 1.8in;
+}
+
+.actf-sponsorship-spacing-relaxed .actf-sponsorship-header-image {
+  max-height: 2.45in;
 }
 
 .actf-sponsorship-body {

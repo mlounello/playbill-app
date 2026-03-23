@@ -19,6 +19,7 @@ type FormatState = {
   block: string;
   fontSize: string;
   foreColor: string;
+  backColor: string;
 };
 
 const blockOptions = [
@@ -57,7 +58,8 @@ export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeigh
     orderedList: false,
     block: "P",
     fontSize: "3",
-    foreColor: "#000000"
+    foreColor: "#000000",
+    backColor: "#ffffff"
   });
 
   useEffect(() => {
@@ -71,6 +73,7 @@ export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeigh
     const nextBlock = String(document.queryCommandValue("formatBlock") || "P").replace(/[<>]/g, "").toUpperCase();
     const fontSize = String(document.queryCommandValue("fontSize") || "3");
     const foreColor = normalizeColor(String(document.queryCommandValue("foreColor") || "#000000"));
+    const backColor = normalizeColor(String(document.queryCommandValue("hiliteColor") || document.queryCommandValue("backColor") || "#ffffff"));
     setFormat({
       bold: document.queryCommandState("bold"),
       italic: document.queryCommandState("italic"),
@@ -79,7 +82,8 @@ export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeigh
       orderedList: document.queryCommandState("insertOrderedList"),
       block: nextBlock || "P",
       fontSize,
-      foreColor
+      foreColor,
+      backColor
     });
   };
 
@@ -132,6 +136,16 @@ export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeigh
               value={format.foreColor}
               onChange={(event) => run("foreColor", event.target.value)}
               aria-label="Text color"
+              style={{ width: "2.6rem", height: "2.1rem", padding: "0.2rem" }}
+            />
+          </label>
+          <label className="rich-toolbar-select-wrap">
+            <span className="sr-only">Highlight color</span>
+            <input
+              type="color"
+              value={format.backColor}
+              onChange={(event) => run("hiliteColor", event.target.value)}
+              aria-label="Highlight color"
               style={{ width: "2.6rem", height: "2.1rem", padding: "0.2rem" }}
             />
           </label>
