@@ -1199,14 +1199,15 @@ export async function sendContributorSubmissionConfirmation(params: {
   });
 }
 
-export async function continueContributorTaskAccess(showId: string, taskId: string) {
-  "use server";
-
+export async function getContributorContinueRedirect(showId: string, taskId: string) {
   const accessContext = await resolveContributorAccessContext(showId, taskId);
   const responsePath = getContributorAccessPath({ showId, requestId: taskId });
 
   if (!accessContext) {
-    withError(responsePath, "This submission link is no longer available.");
+    return {
+      ok: false as const,
+      redirectTo: `${responsePath}?${new URLSearchParams({ error: "This submission link is no longer available." }).toString()}`
+    };
   }
 
   const directLink = await generateDirectMagicLink(accessContext.recipientGroup.email, accessContext.destinationPath);
@@ -1222,7 +1223,12 @@ export async function continueContributorTaskAccess(showId: string, taskId: stri
         mode: "intermediate_access_continue"
       }
     });
-    withError(responsePath, "We could not open a secure session right now. You can request a fresh email link below.");
+    return {
+      ok: false as const,
+      redirectTo: `${responsePath}?${new URLSearchParams({
+        error: "We could not open a secure session right now. You can request a fresh email link below."
+      }).toString()}`
+    };
   }
 
   const generatedUrl = new URL(directLink);
@@ -1248,7 +1254,10 @@ export async function continueContributorTaskAccess(showId: string, taskId: stri
     }
   });
 
-  redirect(directLink);
+  return {
+    ok: true as const,
+    redirectTo: directLink
+  };
 }
 
 export async function requestContributorFreshLink(showId: string, taskId: string, formData: FormData) {

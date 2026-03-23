@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { continueContributorTaskAccess } from "@/lib/reminders";
 import { getContributorTaskLoginSummary, getSubmissionTypeLabel } from "@/lib/submissions";
 
 function formatDueDate(value: string | null) {
@@ -31,8 +30,8 @@ export default async function ContributorAccessPage({
     notFound();
   }
 
-  const continueAction = continueContributorTaskAccess.bind(null, showId, taskId);
   const requestLinkHref = `/request-link/shows/${showId}/tasks/${taskId}`;
+  const continueAction = `/access/shows/${showId}/tasks/${taskId}/continue`;
 
   return (
     <main>
@@ -60,7 +59,7 @@ export default async function ContributorAccessPage({
 
         {error ? <div className="card card-error">{decodeURIComponent(error)}</div> : null}
 
-        <form action={continueAction} className="card stack-sm">
+        <form action={continueAction} method="post" className="card stack-sm">
           <button type="submit">Continue</button>
           <p className="section-note">
             This page does not sign you in automatically. The secure session is only created after you click Continue.
