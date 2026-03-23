@@ -395,6 +395,19 @@ function getContributorTaskPath(item: ReminderRecipient) {
   return `/contribute/shows/${item.showId}/tasks/${item.requestId}`;
 }
 
+function getContributorAccessPath(item: Pick<ReminderRecipient, "showId" | "requestId">) {
+  return `/access/shows/${item.showId}/tasks/${item.requestId}`;
+}
+
+function getContributorAccessUrl(item: Pick<ReminderRecipient, "showId" | "requestId">) {
+  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  const path = getContributorAccessPath(item);
+  if (!baseUrl) {
+    return path;
+  }
+  return `${baseUrl}${path}`;
+}
+
 function getContributorLinkRefreshPath(item: Pick<ReminderRecipient, "showId" | "requestId">) {
   return `/request-link/shows/${item.showId}/tasks/${item.requestId}`;
 }
@@ -451,13 +464,56 @@ async function generateDirectMagicLink(email: string, targetPath: string) {
   return "";
 }
 
+type ContributorAccessContext = {
+  recipient: ReminderRecipient;
+  recipientGroup: ReminderRecipientGroup;
+  requestedItem: ReminderRecipient;
+  targetItem: ReminderRecipient;
+  openItems: ReminderRecipient[];
+  destinationPath: string;
+  accessPath: string;
+  accessUrl: string;
+  refreshPath: string;
+  refreshUrl: string;
+};
+
+async function resolveContributorAccessContext(showId: string, requestId: string): Promise<ContributorAccessContext | null> {
+  const recipient = await getReminderRecipientByRequestId(showId, requestId);
+  if (!recipient) {
+    return null;
+  }
+
+  const recipientGroup = groupReminderRecipients(await getReminderRecipients(showId)).find((group) => group.personId === recipient.personId);
+  if (!recipientGroup) {
+    return null;
+  }
+
+  const requestedItem = recipientGroup.items.find((item) => item.requestId === requestId) ?? recipient;
+  const openItems = getOpenReminderItems(recipientGroup);
+  const targetItem = openItems.find((item) => item.requestId === requestId) ?? openItems[0] ?? requestedItem;
+  const destinationPath = openItems.length > 1 ? "/contribute" : getContributorTaskPath(targetItem);
+
+  return {
+    recipient,
+    recipientGroup,
+    requestedItem,
+    targetItem,
+    openItems,
+    destinationPath,
+    accessPath: getContributorAccessPath(requestedItem),
+    accessUrl: getContributorAccessUrl(requestedItem),
+    refreshPath: getContributorLinkRefreshPath(requestedItem),
+    refreshUrl: getContributorLinkRefreshUrl(requestedItem)
+  };
+}
+
 type ContributorReminderEmail =
   | {
       ok: true;
       subject: string;
       text: string;
       html: string;
-      directLink: string;
+      accessUrl: string;
       openItems: ReminderRecipient[];
     }
   | {
@@ -574,18 +630,10 @@ async function buildContributorReminderEmail(params: {
     (params.explicitTargetRequestId
       ? openItems.find((item) => item.requestId === params.explicitTargetRequestId)
       : null) ?? openItems[0];
-  const destinationPath = openItems.length > 1 ? "/contribute" : getContributorTaskPath(targetItem);
-  const directLink = await generateDirectMagicLink(params.group.email, destinationPath);
-  if (!directLink) {
-    return {
-      ok: false,
-      reason: "secure_link_generation_failed",
-      openItems
-    };
-  }
   const subject = `${params.context.title}: submission reminder`;
   const daysRemainingPhrase = getDaysRemainingPhrase(openItems);
   const optionalBioNote = getOptionalBioNote(openItems);
+  const accessUrl = getContributorAccessUrl(targetItem);
   const freshLinkUrl = getContributorLinkRefreshUrl(targetItem);
   const textParts = [
     `Hello ${params.group.name},`,
@@ -593,8 +641,9 @@ async function buildContributorReminderEmail(params: {
     buildOutstandingItemsText(openItems),
     `You have ${daysRemainingPhrase} to complete your outstanding submission items for inclusion in the program.`,
     optionalBioNote,
-    `Please click here to submit your materials. (This is a one-time-use link.)`,
-    directLink,
+    `Please click here to open your submission.`,
+    accessUrl,
+    "When you arrive, click Continue to start your one-time secure session.",
     "Need a new link? Click here to have a fresh secure link sent to you if the one above has expired.",
     freshLinkUrl,
     "Thanks,",
@@ -608,7 +657,8 @@ async function buildContributorReminderEmail(params: {
     buildOutstandingItemsHtml(openItems) +
     `<p>You have ${daysRemainingPhrase} to complete your outstanding submission items for inclusion in the program.</p>` +
     (optionalBioNote ? `<p>${optionalBioNote}</p>` : "") +
-    `<p><a href="${directLink}">Please click here to submit your materials.</a> (This is a one-time-use link.)</p>` +
+    `<p><a href="${accessUrl}">Please click here to open your submission.</a></p>` +
+    `<p>When you arrive, click Continue to start your one-time secure session.</p>` +
     `<p><a href="${freshLinkUrl}">Need a new link? Click here to have a fresh secure link sent to you if the one above has expired.</a></p>` +
     `<p>Thanks,<br/>Mike</p>`;
 
@@ -617,7 +667,7 @@ async function buildContributorReminderEmail(params: {
     subject,
     text,
     html,
-    directLink,
+    accessUrl,
     openItems
   };
 }
@@ -828,13 +878,13 @@ export async function sendReminderPreviewEmail(showId: string) {
     `This is a preview copy of the live reminder email.\n\n` +
     `Originally addressed to: ${recipientGroup.name} <${recipientGroup.email}>\n\n` +
     `${previewEmail.text}\n` +
-    `Live email note: the real recipient email includes a direct secure sign-in link tied to their inbox.\n\n` +
+    `Live email note: the real recipient email links to a Playbill access page, where the contributor clicks Continue to start a fresh secure session.\n\n` +
     `Admin preview link: ${adminPreviewLink}\n`;
   const html =
     `<p><strong>This is a preview copy of the live reminder email.</strong></p>` +
     `<p>Originally addressed to: ${recipientGroup.name} &lt;${recipientGroup.email}&gt;</p>` +
     `<div>${previewEmail.html}</div>` +
-    `<p><strong>Live email note:</strong> the real recipient email includes a direct secure sign-in link tied to their inbox.</p>` +
+    `<p><strong>Live email note:</strong> the real recipient email links to a Playbill access page, where the contributor clicks Continue to start a fresh secure session.</p>` +
     `<p><strong>Admin preview link:</strong><br/><a href="${adminPreviewLink}">Open review in admin workspace</a></p>`;
   const result = await sendEmail({
     to: current.profile.email,
@@ -1131,8 +1181,7 @@ export async function sendContributorSubmissionConfirmation(params: {
   showId: string;
   taskId: string;
 }) {
-  const taskPath = `/contribute/shows/${params.showId}/tasks/${params.taskId}`;
-  const link = await generateDirectMagicLink(params.email, taskPath);
+  const link = getContributorAccessUrl({ showId: params.showId, requestId: params.taskId });
 
   const subject = `${params.showTitle}: ${params.submissionLabel} received`;
   const text = link
@@ -1155,6 +1204,48 @@ export async function sendContributorSubmissionConfirmation(params: {
   });
 }
 
+export async function continueContributorTaskAccess(showId: string, taskId: string) {
+  "use server";
+
+  const accessContext = await resolveContributorAccessContext(showId, taskId);
+  const responsePath = getContributorAccessPath({ showId, requestId: taskId });
+
+  if (!accessContext) {
+    withError(responsePath, "This submission link is no longer available.");
+  }
+
+  const directLink = await generateDirectMagicLink(accessContext.recipientGroup.email, accessContext.destinationPath);
+  if (!directLink) {
+    await writeReminderAudit({
+      personId: accessContext.recipient.personId,
+      field: "secure_link_requested",
+      reason: "intermediate_access_generation_failed",
+      payload: {
+        request_ids: accessContext.openItems.map((item) => item.requestId),
+        requested_task_id: taskId,
+        sent: false,
+        mode: "intermediate_access_continue"
+      }
+    });
+    withError(responsePath, "We could not open a secure session right now. You can request a fresh email link below.");
+  }
+
+  await writeReminderAudit({
+    personId: accessContext.recipient.personId,
+    field: "secure_link_requested",
+    reason: "intermediate_access_redirected",
+    payload: {
+      request_ids: accessContext.openItems.map((item) => item.requestId),
+      requested_task_id: taskId,
+      destination_path: accessContext.destinationPath,
+      sent: true,
+      mode: "intermediate_access_continue"
+    }
+  });
+
+  redirect(directLink);
+}
+
 export async function requestContributorFreshLink(showId: string, taskId: string, formData: FormData) {
   "use server";
 
@@ -1162,51 +1253,34 @@ export async function requestContributorFreshLink(showId: string, taskId: string
   const responsePath = getContributorLinkRefreshPath({ showId, requestId: taskId });
   const neutralMessage = "If that email matches the assignment, a fresh secure link has been sent.";
 
-  const recipient = await getReminderRecipientByRequestId(showId, taskId);
-  if (!recipient || !submittedEmail) {
+  const accessContext = await resolveContributorAccessContext(showId, taskId);
+  if (!accessContext || !submittedEmail) {
     withSuccess(responsePath, neutralMessage);
   }
 
-  const recipientGroup = groupReminderRecipients(await getReminderRecipients(showId)).find((group) => group.personId === recipient.personId);
-  if (!recipientGroup) {
+  if (accessContext.openItems.length === 0) {
     await writeReminderAudit({
-      personId: recipient.personId,
-      field: "secure_link_requested",
-      reason: "group_not_found",
-      payload: {
-        request_id: taskId,
-        sent: false,
-        mode: "self_service_refresh",
-        email_matched: false
-      }
-    });
-    withSuccess(responsePath, neutralMessage);
-  }
-
-  const openItems = getOpenReminderItems(recipientGroup);
-  if (openItems.length === 0) {
-    await writeReminderAudit({
-      personId: recipient.personId,
+      personId: accessContext.recipient.personId,
       field: "secure_link_requested",
       reason: "no_open_items",
       payload: {
-        request_ids: recipientGroup.items.map((item) => item.requestId),
+        request_ids: accessContext.recipientGroup.items.map((item) => item.requestId),
         sent: false,
         mode: "self_service_refresh",
-        email_matched: recipientGroup.email.toLowerCase() === submittedEmail
+        email_matched: accessContext.recipientGroup.email.toLowerCase() === submittedEmail
       }
     });
     withSuccess(responsePath, neutralMessage);
   }
 
-  const emailMatched = recipientGroup.email.toLowerCase() === submittedEmail;
+  const emailMatched = accessContext.recipientGroup.email.toLowerCase() === submittedEmail;
   if (!emailMatched) {
     await writeReminderAudit({
-      personId: recipient.personId,
+      personId: accessContext.recipient.personId,
       field: "secure_link_requested",
       reason: "email_mismatch",
       payload: {
-        request_ids: openItems.map((item) => item.requestId),
+        request_ids: accessContext.openItems.map((item) => item.requestId),
         sent: false,
         mode: "self_service_refresh",
         email_matched: false
@@ -1215,32 +1289,13 @@ export async function requestContributorFreshLink(showId: string, taskId: string
     withSuccess(responsePath, neutralMessage);
   }
 
-  if (await wasSecureLinkRequestedRecently(recipient.personId, 15)) {
+  if (await wasSecureLinkRequestedRecently(accessContext.recipient.personId, 15)) {
     await writeReminderAudit({
-      personId: recipient.personId,
+      personId: accessContext.recipient.personId,
       field: "secure_link_requested",
       reason: "rate_limited",
       payload: {
-        request_ids: openItems.map((item) => item.requestId),
-        sent: false,
-        mode: "self_service_refresh",
-        email_matched: true
-      }
-    });
-    withSuccess(responsePath, neutralMessage);
-  }
-
-  const targetItem = openItems.find((item) => item.requestId === taskId) ?? openItems[0];
-  const destinationPath = openItems.length > 1 ? "/contribute" : getContributorTaskPath(targetItem);
-  const directLink = await generateDirectMagicLink(recipientGroup.email, destinationPath);
-
-  if (!directLink) {
-    await writeReminderAudit({
-      personId: recipient.personId,
-      field: "secure_link_requested",
-      reason: "secure_link_generation_failed",
-      payload: {
-        request_ids: openItems.map((item) => item.requestId),
+        request_ids: accessContext.openItems.map((item) => item.requestId),
         sent: false,
         mode: "self_service_refresh",
         email_matched: true
@@ -1253,31 +1308,31 @@ export async function requestContributorFreshLink(showId: string, taskId: string
   const showTitle = context?.title || "your production";
   const subject = `${showTitle}: your fresh secure link`;
   const text =
-    `Hello ${recipientGroup.name},\n\n` +
-    `Here is your fresh secure link to continue your Playbill submission:\n\n` +
-    `${directLink}\n\n` +
-    `This is a one-time-use link.\n\n` +
+    `Hello ${accessContext.recipientGroup.name},\n\n` +
+    `Here is your fresh Playbill access link:\n\n` +
+    `${accessContext.accessUrl}\n\n` +
+    `When you arrive, click Continue to start your one-time secure session.\n\n` +
     `Thanks,\nMike\n`;
   const html =
-    `<p>Hello ${recipientGroup.name},</p>` +
-    `<p>Here is your fresh secure link to continue your Playbill submission:</p>` +
-    `<p><a href="${directLink}">${directLink}</a></p>` +
-    `<p>This is a one-time-use link.</p>` +
+    `<p>Hello ${accessContext.recipientGroup.name},</p>` +
+    `<p>Here is your fresh Playbill access link:</p>` +
+    `<p><a href="${accessContext.accessUrl}">${accessContext.accessUrl}</a></p>` +
+    `<p>When you arrive, click Continue to start your one-time secure session.</p>` +
     `<p>Thanks,<br/>Mike</p>`;
 
   const result = await sendEmailWithThrottle({
-    to: recipientGroup.email,
+    to: accessContext.recipientGroup.email,
     subject,
     text,
     html
   });
 
   await writeReminderAudit({
-    personId: recipient.personId,
+    personId: accessContext.recipient.personId,
     field: "secure_link_requested",
     reason: result.sent ? "sent" : result.reason,
     payload: {
-      request_ids: openItems.map((item) => item.requestId),
+      request_ids: accessContext.openItems.map((item) => item.requestId),
       sent: result.sent,
       mode: "self_service_refresh",
       email_matched: true
