@@ -395,6 +395,19 @@ function getContributorTaskPath(item: ReminderRecipient) {
   return `/contribute/shows/${item.showId}/tasks/${item.requestId}`;
 }
 
+function getContributorLinkRefreshPath(item: Pick<ReminderRecipient, "showId" | "requestId">) {
+  return `/request-link/shows/${item.showId}/tasks/${item.requestId}`;
+}
+
+function getContributorLinkRefreshUrl(item: Pick<ReminderRecipient, "showId" | "requestId">) {
+  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+  const path = getContributorLinkRefreshPath(item);
+  if (!baseUrl) {
+    return path;
+  }
+  return `${baseUrl}${path}`;
+}
+
 function buildAuthCallbackRedirectUrl(targetPath: string) {
   const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
   if (!baseUrl) {
@@ -494,22 +507,37 @@ function getEarliestDueDate(items: ReminderRecipient[]) {
   return dueTimes.length > 0 ? dueTimes[0] : null;
 }
 
-function getDaysRemainingCopy(items: ReminderRecipient[]) {
+function getDaysRemainingPhrase(items: ReminderRecipient[]) {
   const earliest = getEarliestDueDate(items);
   if (earliest === null) {
-    return "Please submit your materials as soon as possible to be included in the program.";
+    return "as soon as possible";
   }
   const diffDays = Math.ceil((earliest - Date.now()) / (1000 * 60 * 60 * 24));
   if (diffDays > 1) {
-    return `You have ${diffDays} days to complete the submission to be included in the program. If you do not want a bio in the program there is a box you can select to omit your bio.`;
+    return `${diffDays} days`;
   }
   if (diffDays === 1) {
-    return "You have 1 day to complete the submission to be included in the program. If you do not want a bio in the program there is a box you can select to omit your bio.";
+    return "1 day";
   }
   if (diffDays === 0) {
-    return "Your submission is due today to be included in the program. If you do not want a bio in the program there is a box you can select to omit your bio.";
+    return "today";
   }
-  return "The submission deadline has passed, but you can still submit your materials now if the program is still being finalized. If you do not want a bio in the program there is a box you can select to omit your bio.";
+  return "as soon as possible";
+}
+
+function getOptionalBioNote(items: ReminderRecipient[]) {
+  const hasBio = items.some((item) => item.requestType === "bio");
+  const hasNotes = items.some((item) => item.requestType !== "bio");
+
+  if (hasBio && hasNotes) {
+    return "If you do not want a bio included, you can select the box to omit your bio. Any other outstanding items should still be completed.";
+  }
+
+  if (hasBio) {
+    return "If you do not want a bio included, you can select the box to omit your bio.";
+  }
+
+  return "";
 }
 
 function formatStatusLabel(value: string) {
@@ -556,18 +584,33 @@ async function buildContributorReminderEmail(params: {
     };
   }
   const subject = `${params.context.title}: submission reminder`;
+  const daysRemainingPhrase = getDaysRemainingPhrase(openItems);
+  const optionalBioNote = getOptionalBioNote(openItems);
+  const freshLinkUrl = getContributorLinkRefreshUrl(targetItem);
+  const textParts = [
+    `Hello ${params.group.name},`,
+    `This is a reminder that you still have items to submit for ${params.context.title}.`,
+    buildOutstandingItemsText(openItems),
+    `You have ${daysRemainingPhrase} to complete your outstanding submission items for inclusion in the program.`,
+    optionalBioNote,
+    `Please click here to submit your materials. (This is a one-time-use link.)`,
+    directLink,
+    "Need a new link? Click here to have a fresh secure link sent to you if the one above has expired.",
+    freshLinkUrl,
+    "Thanks,",
+    "Mike"
+  ].filter(Boolean);
   const text =
-    `Hello ${params.group.name},\n\n` +
-    `This is a reminder that you have items still needed to be submitted for ${params.context.title}.\n\n` +
-    `${buildOutstandingItemsText(openItems)}\n\n` +
-    `${getDaysRemainingCopy(openItems)}\n\n` +
-    `Please click here to submit your materials:\n${directLink}\n`;
+    `${textParts.join("\n\n")}\n`;
   const html =
     `<p>Hello ${params.group.name},</p>` +
-    `<p>This is a reminder that you have items still needed to be submitted for <strong>${params.context.title}</strong>.</p>` +
+    `<p>This is a reminder that you still have items to submit for <strong>${params.context.title}</strong>.</p>` +
     buildOutstandingItemsHtml(openItems) +
-    `<p>${getDaysRemainingCopy(openItems)}</p>` +
-    `<p><a href="${directLink}">Please click here to submit your materials.</a></p>`;
+    `<p>You have ${daysRemainingPhrase} to complete your outstanding submission items for inclusion in the program.</p>` +
+    (optionalBioNote ? `<p>${optionalBioNote}</p>` : "") +
+    `<p><a href="${directLink}">Please click here to submit your materials.</a> (This is a one-time-use link.)</p>` +
+    `<p><a href="${freshLinkUrl}">Need a new link? Click here to have a fresh secure link sent to you if the one above has expired.</a></p>` +
+    `<p>Thanks,<br/>Mike</p>`;
 
   return {
     ok: true,
@@ -581,7 +624,7 @@ async function buildContributorReminderEmail(params: {
 
 async function writeReminderAudit(params: {
   personId: string;
-  field: "invite_sent" | "reminder_sent";
+  field: "invite_sent" | "reminder_sent" | "secure_link_requested";
   reason: string;
   payload: Record<string, unknown>;
 }) {
@@ -595,6 +638,21 @@ async function writeReminderAudit(params: {
     after_value: params.payload,
     reason: params.reason
   });
+}
+
+async function wasSecureLinkRequestedRecently(personId: string, minutes: number) {
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const since = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+  const { data } = await db
+    .from("audit_log")
+    .select("id")
+    .eq("entity", "people")
+    .eq("entity_id", personId)
+    .eq("field", "secure_link_requested")
+    .gte("changed_at", since)
+    .limit(1);
+  return (data ?? []).length > 0;
 }
 
 export async function getShowReminderSummary(showId: string) {
@@ -1078,17 +1136,13 @@ export async function sendContributorSubmissionConfirmation(params: {
 
   const subject = `${params.showTitle}: ${params.submissionLabel} received`;
   const text = link
-    ? `Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
-      `You can view or edit your bio until it accepted by clicking the link here: ${link}\n\n` +
-      `Thanks,`
+    ? `Thank you ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. You can view or edit your submission until it is accepted by clicking the link here: ${link}\n\nThanks,`
     : `Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
       `If you need to reopen your task, use the secure link from your invite or reminder email. ` +
       `If that link is no longer available, contact the production team and ask them to resend it.\n\n` +
       `Thanks,`;
   const html = link
-    ? `<p>Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
-      `You can view or edit your bio until it accepted by clicking the link <a href="${link}">here</a>.</p>` +
-      `<p>Thanks,</p>`
+    ? `<p>Thank you ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. You can view or edit your submission until it is accepted by clicking the link <a href="${link}">here</a>.</p><p>Thanks,</p>`
     : `<p>Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}.</p>` +
       `<p>If you need to reopen your task, use the secure link from your invite or reminder email. If that link is no longer available, contact the production team and ask them to resend it.</p>` +
       `<p>Thanks,</p>`;
@@ -1099,4 +1153,136 @@ export async function sendContributorSubmissionConfirmation(params: {
     text,
     html
   });
+}
+
+export async function requestContributorFreshLink(showId: string, taskId: string, formData: FormData) {
+  "use server";
+
+  const submittedEmail = String(formData.get("email") ?? "").trim().toLowerCase();
+  const responsePath = getContributorLinkRefreshPath({ showId, requestId: taskId });
+  const neutralMessage = "If that email matches the assignment, a fresh secure link has been sent.";
+
+  const recipient = await getReminderRecipientByRequestId(showId, taskId);
+  if (!recipient || !submittedEmail) {
+    withSuccess(responsePath, neutralMessage);
+  }
+
+  const recipientGroup = groupReminderRecipients(await getReminderRecipients(showId)).find((group) => group.personId === recipient.personId);
+  if (!recipientGroup) {
+    await writeReminderAudit({
+      personId: recipient.personId,
+      field: "secure_link_requested",
+      reason: "group_not_found",
+      payload: {
+        request_id: taskId,
+        sent: false,
+        mode: "self_service_refresh",
+        email_matched: false
+      }
+    });
+    withSuccess(responsePath, neutralMessage);
+  }
+
+  const openItems = getOpenReminderItems(recipientGroup);
+  if (openItems.length === 0) {
+    await writeReminderAudit({
+      personId: recipient.personId,
+      field: "secure_link_requested",
+      reason: "no_open_items",
+      payload: {
+        request_ids: recipientGroup.items.map((item) => item.requestId),
+        sent: false,
+        mode: "self_service_refresh",
+        email_matched: recipientGroup.email.toLowerCase() === submittedEmail
+      }
+    });
+    withSuccess(responsePath, neutralMessage);
+  }
+
+  const emailMatched = recipientGroup.email.toLowerCase() === submittedEmail;
+  if (!emailMatched) {
+    await writeReminderAudit({
+      personId: recipient.personId,
+      field: "secure_link_requested",
+      reason: "email_mismatch",
+      payload: {
+        request_ids: openItems.map((item) => item.requestId),
+        sent: false,
+        mode: "self_service_refresh",
+        email_matched: false
+      }
+    });
+    withSuccess(responsePath, neutralMessage);
+  }
+
+  if (await wasSecureLinkRequestedRecently(recipient.personId, 15)) {
+    await writeReminderAudit({
+      personId: recipient.personId,
+      field: "secure_link_requested",
+      reason: "rate_limited",
+      payload: {
+        request_ids: openItems.map((item) => item.requestId),
+        sent: false,
+        mode: "self_service_refresh",
+        email_matched: true
+      }
+    });
+    withSuccess(responsePath, neutralMessage);
+  }
+
+  const targetItem = openItems.find((item) => item.requestId === taskId) ?? openItems[0];
+  const destinationPath = openItems.length > 1 ? "/contribute" : getContributorTaskPath(targetItem);
+  const directLink = await generateDirectMagicLink(recipientGroup.email, destinationPath);
+
+  if (!directLink) {
+    await writeReminderAudit({
+      personId: recipient.personId,
+      field: "secure_link_requested",
+      reason: "secure_link_generation_failed",
+      payload: {
+        request_ids: openItems.map((item) => item.requestId),
+        sent: false,
+        mode: "self_service_refresh",
+        email_matched: true
+      }
+    });
+    withSuccess(responsePath, neutralMessage);
+  }
+
+  const context = await getShowContext(showId);
+  const showTitle = context?.title || "your production";
+  const subject = `${showTitle}: your fresh secure link`;
+  const text =
+    `Hello ${recipientGroup.name},\n\n` +
+    `Here is your fresh secure link to continue your Playbill submission:\n\n` +
+    `${directLink}\n\n` +
+    `This is a one-time-use link.\n\n` +
+    `Thanks,\nMike\n`;
+  const html =
+    `<p>Hello ${recipientGroup.name},</p>` +
+    `<p>Here is your fresh secure link to continue your Playbill submission:</p>` +
+    `<p><a href="${directLink}">${directLink}</a></p>` +
+    `<p>This is a one-time-use link.</p>` +
+    `<p>Thanks,<br/>Mike</p>`;
+
+  const result = await sendEmailWithThrottle({
+    to: recipientGroup.email,
+    subject,
+    text,
+    html
+  });
+
+  await writeReminderAudit({
+    personId: recipient.personId,
+    field: "secure_link_requested",
+    reason: result.sent ? "sent" : result.reason,
+    payload: {
+      request_ids: openItems.map((item) => item.requestId),
+      sent: result.sent,
+      mode: "self_service_refresh",
+      email_matched: true
+    }
+  });
+
+  withSuccess(responsePath, neutralMessage);
 }
