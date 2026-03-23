@@ -8,9 +8,10 @@ type Props = {
   assetType: "poster" | "actf" | "sponsor" | "photo" | "custom";
   targetInputId?: string;
   label: string;
+  onUploadedUrl?: (url: string) => void;
 };
 
-export function ProgramImageUpload({ programSlug, showId, assetType, targetInputId, label }: Props) {
+export function ProgramImageUpload({ programSlug, showId, assetType, targetInputId, label, onUploadedUrl }: Props) {
   const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
   const MAX_DIMENSION = 2500;
   const [isUploading, setIsUploading] = useState(false);
@@ -110,6 +111,7 @@ export function ProgramImageUpload({ programSlug, showId, assetType, targetInput
       }
       setUploadedUrl(payload.url);
       setStatus("");
+      onUploadedUrl?.(payload.url);
 
       if (targetInputId) {
         const input = document.getElementById(targetInputId) as HTMLInputElement | null;

@@ -319,6 +319,7 @@ function ModuleSettings({
               assetType="sponsor"
               targetInputId={imageInputId}
               label="Upload header image"
+              onUploadedUrl={(url) => setSetting("image_url", url)}
             />
           ) : null}
           <div className="row-wrap">

@@ -1501,7 +1501,7 @@ async function renderModulePages(
       {
         id: idBase,
         type: "actf_sponsorship",
-        title,
+        title: "",
         body,
         imageUrl,
         backgroundColor,
