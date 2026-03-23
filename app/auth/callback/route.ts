@@ -189,7 +189,7 @@ export async function GET(request: Request) {
   if (!authError && (code || (tokenHash && type))) {
     if (user?.id && user?.email) {
       if (code) {
-        const approvedStaff = await getApprovedStaffProfile({ userId: user.id, email: user.email });
+        const approvedStaff = await getApprovedStaffProfile({ supabase, userId: user.id, email: user.email });
         if (!approvedStaff) {
           try {
             await withTimeout(supabase.auth.signOut(), 5_000, "signout_unauthorized_oauth");

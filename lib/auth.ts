@@ -10,10 +10,6 @@ type UserProfile = {
   email: string;
 };
 
-type StoredUserProfile = UserProfile & {
-  platform_role: PlatformRole;
-};
-
 function normalizePlatformRole(value: unknown): PlatformRole | null {
   const role = String(value ?? "").toLowerCase();
   if (role === "owner" || role === "admin" || role === "editor" || role === "contributor") {
@@ -60,7 +56,7 @@ async function resolveRoleViaRpc(supabase: Awaited<ReturnType<typeof createSupab
         continue;
       }
       const role = pickRoleFromRpcPayload(data);
-      if (role) {
+      if (isElevatedRole(role)) {
         return role;
       }
       continue;
@@ -77,21 +73,20 @@ function isElevatedRole(role: PlatformRole | null | undefined) {
   return role === "owner" || role === "admin" || role === "editor";
 }
 
-async function findStoredUserProfileByIdentity(userId: string, email: string): Promise<StoredUserProfile | null> {
+async function findStoredUserProfileByIdentity(userId: string, email: string): Promise<UserProfile | null> {
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
   const normalizedEmail = normalizeEmail(email);
 
   const { data: existingByUserId } = await db
     .from("user_profiles")
-    .select("user_id, email, platform_role")
+    .select("user_id, email")
     .eq("user_id", userId)
     .maybeSingle();
   if (existingByUserId) {
     return {
       user_id: String(existingByUserId.user_id),
-      email: String(existingByUserId.email ?? ""),
-      platform_role: normalizePlatformRole(existingByUserId.platform_role) ?? "contributor"
+      email: String(existingByUserId.email ?? "")
     };
   }
 
@@ -101,26 +96,33 @@ async function findStoredUserProfileByIdentity(userId: string, email: string): P
 
   const { data: existingByEmail } = await db
     .from("user_profiles")
-    .select("user_id, email, platform_role")
+    .select("user_id, email")
     .ilike("email", normalizedEmail)
     .maybeSingle();
   if (existingByEmail) {
     return {
       user_id: String(existingByEmail.user_id),
-      email: String(existingByEmail.email ?? ""),
-      platform_role: normalizePlatformRole(existingByEmail.platform_role) ?? "contributor"
+      email: String(existingByEmail.email ?? "")
     };
   }
 
   return null;
 }
 
-export async function getApprovedStaffProfile(params: { userId: string; email: string }) {
-  const profile = await findStoredUserProfileByIdentity(params.userId, params.email);
-  if (!profile || !isElevatedRole(profile.platform_role)) {
+export async function getApprovedStaffProfile(params: {
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+  userId: string;
+  email: string;
+}) {
+  const role = await resolveRoleViaRpc(params.supabase);
+  if (!role) {
     return null;
   }
-  return profile;
+  return {
+    user_id: params.userId,
+    email: params.email,
+    platform_role: role
+  };
 }
 
 export async function ensureUserProfileIdentity(
@@ -195,14 +197,14 @@ export async function resolvePlatformRoleForUser(params: {
   userId: string;
   email: string;
 }) {
-  const storedProfile = await findStoredUserProfileByIdentity(params.userId, params.email);
-  if (storedProfile) {
-    return storedProfile.platform_role;
+  const membershipRole = await resolveRoleViaRpc(params.supabase);
+  if (membershipRole) {
+    return membershipRole;
   }
 
-  const rpcRole = await resolveRoleViaRpc(params.supabase);
-  if (isElevatedRole(rpcRole)) {
-    return rpcRole;
+  const storedProfile = await findStoredUserProfileByIdentity(params.userId, params.email);
+  if (storedProfile) {
+    return "contributor";
   }
 
   return null;
@@ -222,11 +224,12 @@ export async function getCurrentUserWithProfile() {
   if (!role) {
     return null;
   }
-  const profile: UserProfile = {
+  const profile: UserProfile & { platform_role: PlatformRole } = {
     user_id: user.id,
-    email: user.email
+    email: user.email,
+    platform_role: role
   };
-  return { user, profile: { ...profile, platform_role: role } };
+  return { user, profile };
 }
 
 export async function requireRole(allowed: PlatformRole[]) {
