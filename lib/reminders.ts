@@ -701,6 +701,8 @@ async function wasSecureLinkRequestedRecently(personId: string, minutes: number)
     .eq("entity", "people")
     .eq("entity_id", personId)
     .eq("field", "secure_link_requested")
+    .eq("reason", "sent")
+    .filter("after_value->>mode", "eq", "self_service_refresh")
     .gte("changed_at", since)
     .limit(1);
   return (data ?? []).length > 0;
@@ -1310,7 +1312,7 @@ export async function requestContributorFreshLink(showId: string, taskId: string
     withSuccess(responsePath, neutralMessage);
   }
 
-  if (await wasSecureLinkRequestedRecently(accessContext.recipient.personId, 15)) {
+  if (await wasSecureLinkRequestedRecently(accessContext.recipient.personId, 2)) {
     await writeReminderAudit({
       personId: accessContext.recipient.personId,
       field: "secure_link_requested",
