@@ -1110,20 +1110,12 @@ export async function updateShowAcknowledgements(showId: string, formData: FormD
   }
 
   if (show.program_id) {
-    const metaClient = getSupabaseWriteClientRaw();
-    const { data: columnsData } = await metaClient
-      .from("information_schema.columns")
-      .select("column_name")
-      .eq("table_schema", APP_SCHEMA)
-      .eq("table_name", "programs");
-    const columnSet = new Set((columnsData ?? []).map((item) => String((item as { column_name?: unknown }).column_name ?? "")));
-    const updates: Record<string, string> = { acknowledgements };
-    if (columnSet.has("special_thanks")) {
-      updates.special_thanks = specialThanks;
-    }
     const { error: programUpdateError } = await db
       .from("programs")
-      .update(updates)
+      .update({
+        acknowledgements,
+        special_thanks: specialThanks
+      })
       .eq("id", show.program_id);
     if (programUpdateError) {
       withError(`/app/shows/${showId}?tab=settings`, programUpdateError.message);
