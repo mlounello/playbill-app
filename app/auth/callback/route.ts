@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ensureUserProfileIdentity } from "@/lib/auth";
+import { ensureUserProfileIdentity, getApprovedStaffProfile } from "@/lib/auth";
 import { getSupabaseAuthCookieName } from "@/lib/supabase";
 
 type PendingCookie = {
@@ -188,10 +188,41 @@ export async function GET(request: Request) {
 
   if (!authError && (code || (tokenHash && type))) {
     if (user?.id && user?.email) {
-      try {
-        await withTimeout(ensureUserProfileIdentity(user.id, user.email), 5_000, "profile_bootstrap");
-      } catch {
-        // Do not block auth completion if profile bootstrap has an issue.
+      if (code) {
+        const approvedStaff = await getApprovedStaffProfile({ userId: user.id, email: user.email });
+        if (!approvedStaff) {
+          try {
+            await withTimeout(supabase.auth.signOut(), 5_000, "signout_unauthorized_oauth");
+          } catch {
+            // Best effort only.
+          }
+
+          logCallback("oauth_not_authorized", {
+            user_id: user.id,
+            email: user.email
+          });
+
+          const unauthorizedRedirect = new URL("/login?error=Your+account+is+not+authorized+for+staff+access.", origin);
+          const unauthorizedResponse = NextResponse.redirect(unauthorizedRedirect);
+          unauthorizedResponse.headers.set("Cache-Control", "no-store, max-age=0");
+          return applyPendingCookies(unauthorizedResponse);
+        }
+
+        try {
+          await withTimeout(
+            ensureUserProfileIdentity(user.id, user.email, { allowCreate: false }),
+            5_000,
+            "profile_bootstrap_staff"
+          );
+        } catch {
+          // Do not block auth completion if profile bootstrap has an issue.
+        }
+      } else {
+        try {
+          await withTimeout(ensureUserProfileIdentity(user.id, user.email), 5_000, "profile_bootstrap_contributor");
+        } catch {
+          // Do not block auth completion if profile bootstrap has an issue.
+        }
       }
     }
 

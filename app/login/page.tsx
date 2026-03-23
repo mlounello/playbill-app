@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ContributorMagicLinkForm } from "@/components/auth/contributor-magic-link-form";
 import { LoginOptionsForm } from "@/components/auth/login-options-form";
 import { getCurrentUserWithProfile } from "@/lib/auth";
 import { getContributorTaskLoginSummary, getSubmissionTypeLabel } from "@/lib/submissions";
@@ -100,11 +99,19 @@ export default async function LoginPage({
                 Due: {formatDueDate(contributorTask.due_date)}
               </div>
               <p className="section-note">
-                Enter the email associated with this submission and we&apos;ll send you a secure sign-in link that brings
-                you directly to your task.
+                Contributors should use the secure link sent in their task email. Staff and admins sign in with Google below.
               </p>
             </section>
-            <ContributorMagicLinkForm redirectTo={nextPath || "/contribute"} defaultEmail={contributorTask.email} />
+            <section className="card stack-sm">
+              <strong>Contributor Access</strong>
+              <p className="section-note">
+                This page does not send contributor sign-in emails. Use the one-click link from your invite or reminder email to
+                open your task directly.
+              </p>
+              <p className="section-note">
+                If you no longer have that email, contact the production team and ask them to resend your task link.
+              </p>
+            </section>
             <div className="top-actions">
               <Link href={`/login?mode=full${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ""}`}>Staff or admin sign in</Link>
               {contributorTask.show_is_published ? <Link href={`/p/${contributorTask.show_slug}`}>Preview Program</Link> : null}
@@ -112,6 +119,10 @@ export default async function LoginPage({
           </>
         ) : (
           <>
+            <section className="card stack-sm">
+              <strong>Contributor Access</strong>
+              <p className="section-note">Contributors should use the link sent in their task email. Public email login is not available.</p>
+            </section>
             <LoginOptionsForm redirectTo={nextPath || "/app/shows"} />
             <div className="top-actions">
               <Link href="/">Back Home</Link>

@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     const admin = getSupabaseWriteClient();
     const db = admin.schema(APP_SCHEMA);
     const role = await resolvePlatformRoleForUser({ supabase, userId: user.id, email: user.email });
-    if (!["owner", "admin", "editor"].includes(role)) {
+    if (!role || !["owner", "admin", "editor"].includes(role)) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 

@@ -24,7 +24,7 @@ export async function GET(
   const supabaseAdmin = getSupabaseWriteClient();
   const db = supabaseAdmin.schema(APP_SCHEMA);
   const role = await resolvePlatformRoleForUser({ supabase, userId: user.id, email: user.email });
-  if (!["owner", "admin", "editor"].includes(role)) {
+  if (!role || !["owner", "admin", "editor"].includes(role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

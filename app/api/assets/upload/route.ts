@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Person not found." }, { status: 404 });
     }
 
-    if (!["owner", "admin", "editor"].includes(role)) {
+    if (!role || !["owner", "admin", "editor"].includes(role)) {
       if (String(person.email ?? "").toLowerCase() !== user.email.toLowerCase()) {
         return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
       }

@@ -10,6 +10,10 @@ type UserProfile = {
   email: string;
 };
 
+type StoredUserProfile = UserProfile & {
+  platform_role: PlatformRole;
+};
+
 function normalizePlatformRole(value: unknown): PlatformRole | null {
   const role = String(value ?? "").toLowerCase();
   if (role === "owner" || role === "admin" || role === "editor" || role === "contributor") {
@@ -65,44 +69,125 @@ async function resolveRoleViaRpc(supabase: Awaited<ReturnType<typeof createSupab
   return null;
 }
 
-export async function ensureUserProfileIdentity(userId: string, email: string): Promise<UserProfile> {
+function normalizeEmail(value: string) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isElevatedRole(role: PlatformRole | null | undefined) {
+  return role === "owner" || role === "admin" || role === "editor";
+}
+
+async function findStoredUserProfileByIdentity(userId: string, email: string): Promise<StoredUserProfile | null> {
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
+  const normalizedEmail = normalizeEmail(email);
 
-  const { data: existing } = await db.from("user_profiles").select("user_id, email").eq("user_id", userId).maybeSingle();
+  const { data: existingByUserId } = await db
+    .from("user_profiles")
+    .select("user_id, email, platform_role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existingByUserId) {
+    return {
+      user_id: String(existingByUserId.user_id),
+      email: String(existingByUserId.email ?? ""),
+      platform_role: normalizePlatformRole(existingByUserId.platform_role) ?? "contributor"
+    };
+  }
+
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const { data: existingByEmail } = await db
+    .from("user_profiles")
+    .select("user_id, email, platform_role")
+    .ilike("email", normalizedEmail)
+    .maybeSingle();
+  if (existingByEmail) {
+    return {
+      user_id: String(existingByEmail.user_id),
+      email: String(existingByEmail.email ?? ""),
+      platform_role: normalizePlatformRole(existingByEmail.platform_role) ?? "contributor"
+    };
+  }
+
+  return null;
+}
+
+export async function getApprovedStaffProfile(params: { userId: string; email: string }) {
+  const profile = await findStoredUserProfileByIdentity(params.userId, params.email);
+  if (!profile || !isElevatedRole(profile.platform_role)) {
+    return null;
+  }
+  return profile;
+}
+
+export async function ensureUserProfileIdentity(
+  userId: string,
+  email: string,
+  options?: { allowCreate?: boolean }
+): Promise<UserProfile> {
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const normalizedEmail = normalizeEmail(email);
+  const allowCreate = options?.allowCreate !== false;
+
+  const { data: existing } = await db
+    .from("user_profiles")
+    .select("user_id, email, platform_role")
+    .eq("user_id", userId)
+    .maybeSingle();
   if (existing) {
-    const existingEmail = String(existing.email ?? "");
-    if (existingEmail && existingEmail.toLowerCase() === email.toLowerCase()) {
-      return { user_id: String(existing.user_id), email: existingEmail };
+    const existingEmail = normalizeEmail(existing.email);
+    const existingRole = normalizePlatformRole(existing.platform_role);
+    if (existingEmail === normalizedEmail && existingRole) {
+      return { user_id: String(existing.user_id), email: String(existing.email ?? normalizedEmail) };
     }
-    await db.from("user_profiles").update({ email }).eq("user_id", userId);
+    const updatePayload: { email: string; platform_role?: PlatformRole } = { email: normalizedEmail };
+    if (!existingRole) {
+      updatePayload.platform_role = "contributor";
+    }
+    await db.from("user_profiles").update(updatePayload).eq("user_id", userId);
     await tryAutoSyncAppUsers("profile-email-updated");
-    return { user_id: String(existing.user_id), email };
+    return { user_id: String(existing.user_id), email: normalizedEmail };
+  }
+
+  const { data: existingByEmail } = await db
+    .from("user_profiles")
+    .select("user_id, email, platform_role")
+    .ilike("email", normalizedEmail)
+    .maybeSingle();
+  if (existingByEmail?.user_id) {
+    const previousUserId = String(existingByEmail.user_id);
+    const relinkPayload: { user_id: string; email: string; platform_role?: PlatformRole } = {
+      user_id: userId,
+      email: normalizedEmail
+    };
+    if (!normalizePlatformRole(existingByEmail.platform_role)) {
+      relinkPayload.platform_role = "contributor";
+    }
+    await db.from("user_profiles").update(relinkPayload).eq("user_id", previousUserId);
+    await tryAutoSyncAppUsers(previousUserId === userId ? "profile-email-updated" : "profile-relinked-by-email");
+    return { user_id: userId, email: normalizedEmail };
+  }
+
+  if (!allowCreate) {
+    return { user_id: userId, email: normalizedEmail };
   }
 
   const { data: inserted, error: insertError } = await db
     .from("user_profiles")
-    .insert({ user_id: userId, email })
+    .insert({ user_id: userId, email: normalizedEmail, platform_role: "contributor" })
     .select("user_id, email")
     .maybeSingle();
 
   if (insertError || !inserted) {
-    return { user_id: userId, email };
+    return { user_id: userId, email: normalizedEmail };
   }
 
   await tryAutoSyncAppUsers("profile-created");
-  return { user_id: String(inserted.user_id), email: String(inserted.email ?? email) };
-}
-
-async function resolveRoleFromLegacyProfile(userId: string): Promise<PlatformRole | null> {
-  const supabase = getSupabaseWriteClient();
-  const db = supabase.schema(APP_SCHEMA);
-  const { data } = await db.from("user_profiles").select("platform_role").eq("user_id", userId).maybeSingle();
-  return normalizePlatformRole((data as { platform_role?: unknown } | null)?.platform_role ?? null);
-}
-
-async function ensureProfile(userId: string, email: string): Promise<UserProfile> {
-  return ensureUserProfileIdentity(userId, email);
+  return { user_id: String(inserted.user_id), email: String(inserted.email ?? normalizedEmail) };
 }
 
 export async function resolvePlatformRoleForUser(params: {
@@ -110,14 +195,17 @@ export async function resolvePlatformRoleForUser(params: {
   userId: string;
   email: string;
 }) {
+  const storedProfile = await findStoredUserProfileByIdentity(params.userId, params.email);
+  if (storedProfile) {
+    return storedProfile.platform_role;
+  }
+
   const rpcRole = await resolveRoleViaRpc(params.supabase);
-  if (rpcRole) {
-    await ensureProfile(params.userId, params.email);
+  if (isElevatedRole(rpcRole)) {
     return rpcRole;
   }
-  await ensureProfile(params.userId, params.email);
-  const legacyRole = await resolveRoleFromLegacyProfile(params.userId);
-  return legacyRole ?? "contributor";
+
+  return null;
 }
 
 export async function getCurrentUserWithProfile() {
@@ -131,6 +219,9 @@ export async function getCurrentUserWithProfile() {
   }
 
   const role = await resolvePlatformRoleForUser({ supabase, userId: user.id, email: user.email });
+  if (!role) {
+    return null;
+  }
   const profile: UserProfile = {
     user_id: user.id,
     email: user.email

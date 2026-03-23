@@ -1,59 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-
 export function MagicLinkForm({ redirectTo }: { redirectTo: string }) {
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setLoading(true);
-    setMessage(null);
-
-    try {
-      const supabase = createSupabaseBrowserClient();
-      const baseUrl = (window.location.origin || "").replace(/\/+$/, "");
-      const callback = `${baseUrl}/auth/callback?next=${encodeURIComponent(redirectTo)}`;
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: callback
-        }
-      });
-
-      if (error) {
-        setMessage(error.message);
-      } else {
-        setMessage("Magic link sent. Check your email.");
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not send magic link.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <form className="card stack-sm" onSubmit={onSubmit}>
-      <label>
-        Email
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="name@siena.edu"
-        />
-      </label>
-
-      <button type="submit" disabled={loading}>
-        {loading ? "Sending..." : "Send Magic Link"}
-      </button>
-
-      {message ? <p className="section-note">{message}</p> : null}
-    </form>
+    <section className="card stack-sm">
+      <strong>Sign-In Link Required</strong>
+      <p className="section-note">
+        Public magic-link requests are disabled in Playbill. Use your emailed access link to continue to{" "}
+        <code>{redirectTo}</code>.
+      </p>
+    </section>
   );
 }

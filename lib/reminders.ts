@@ -395,16 +395,6 @@ function getContributorTaskPath(item: ReminderRecipient) {
   return `/contribute/shows/${item.showId}/tasks/${item.requestId}`;
 }
 
-function getContributorTaskLink(item: ReminderRecipient) {
-  const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
-  const taskPath = getContributorTaskPath(item);
-  const loginPath = `/login?next=${encodeURIComponent(taskPath)}`;
-  if (!baseUrl) {
-    return loginPath;
-  }
-  return `${baseUrl}${loginPath}`;
-}
-
 function buildAuthCallbackRedirectUrl(targetPath: string) {
   const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
   if (!baseUrl) {
@@ -447,6 +437,21 @@ async function generateDirectMagicLink(email: string, targetPath: string) {
 
   return "";
 }
+
+type ContributorReminderEmail =
+  | {
+      ok: true;
+      subject: string;
+      text: string;
+      html: string;
+      directLink: string;
+      openItems: ReminderRecipient[];
+    }
+  | {
+      ok: false;
+      reason: "secure_link_generation_failed";
+      openItems: ReminderRecipient[];
+    };
 
 function groupReminderRecipients(items: ReminderRecipient[]) {
   const grouped = new Map<string, ReminderRecipientGroup>();
@@ -531,7 +536,7 @@ async function buildContributorReminderEmail(params: {
   context: Awaited<ReturnType<typeof getShowContext>>;
   group: ReminderRecipientGroup;
   explicitTargetRequestId?: string;
-}) {
+}): Promise<ContributorReminderEmail | null> {
   const openItems = getOpenReminderItems(params.group);
   if (!params.context || openItems.length === 0) {
     return null;
@@ -542,7 +547,14 @@ async function buildContributorReminderEmail(params: {
       ? openItems.find((item) => item.requestId === params.explicitTargetRequestId)
       : null) ?? openItems[0];
   const destinationPath = openItems.length > 1 ? "/contribute" : getContributorTaskPath(targetItem);
-  const directLink = (await generateDirectMagicLink(params.group.email, destinationPath)) || getContributorTaskLink(targetItem);
+  const directLink = await generateDirectMagicLink(params.group.email, destinationPath);
+  if (!directLink) {
+    return {
+      ok: false,
+      reason: "secure_link_generation_failed",
+      openItems
+    };
+  }
   const subject = `${params.context.title}: submission reminder`;
   const text =
     `Hello ${params.group.name},\n\n` +
@@ -558,6 +570,7 @@ async function buildContributorReminderEmail(params: {
     `<p><a href="${directLink}">Please click here to submit your materials.</a></p>`;
 
   return {
+    ok: true,
     subject,
     text,
     html,
@@ -658,6 +671,19 @@ export async function sendShowInvites(showId: string) {
     if (!email) {
       continue;
     }
+    if (!email.ok) {
+      await writeReminderAudit({
+        personId: group.personId,
+        field: "invite_sent",
+        reason: email.reason,
+        payload: {
+          request_ids: email.openItems.map((item) => item.requestId),
+          due_dates: email.openItems.map((item) => item.dueDate),
+          sent: false
+        }
+      });
+      continue;
+    }
 
     const result = await sendEmailWithThrottle({ to: group.email, subject: email.subject, text: email.text, html: email.html });
     await writeReminderAudit({
@@ -726,8 +752,14 @@ export async function sendReminderPreviewEmail(showId: string) {
   const deliveryMode = getReminderDeliveryMode();
   const baseUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
   const previewEmail = await buildContributorReminderEmail({ context, group: recipientGroup });
-  const firstOpenItem = previewEmail?.openItems[0] ?? null;
-  if (!previewEmail || !firstOpenItem) {
+  if (!previewEmail) {
+    withError(`/app/shows/${showId}?tab=overview`, "No open reminder-eligible requests were found for this show.");
+  }
+  if (!previewEmail.ok) {
+    withError(`/app/shows/${showId}?tab=overview`, "Could not generate a secure contributor link for this reminder preview.");
+  }
+  const firstOpenItem = previewEmail.openItems[0] ?? null;
+  if (!firstOpenItem) {
     withError(`/app/shows/${showId}?tab=overview`, "No open reminder-eligible requests were found for this show.");
   }
   const adminPreviewLink = baseUrl
@@ -793,6 +825,20 @@ export async function sendSingleReminderNow(showId: string, requestId: string) {
   const email = await buildContributorReminderEmail({ context, group: recipientGroup, explicitTargetRequestId: requestId });
   if (!email) {
     withError(`/app/shows/${showId}?tab=submissions`, "No open reminder items were found for this person.");
+  }
+  if (!email.ok) {
+    await writeReminderAudit({
+      personId: recipientGroup.personId,
+      field: "reminder_sent",
+      reason: `manual_single_${email.reason}`,
+      payload: {
+        request_ids: email.openItems.map((item) => item.requestId),
+        due_dates: email.openItems.map((item) => item.dueDate),
+        sent: false,
+        mode: "manual_single"
+      }
+    });
+    withError(`/app/shows/${showId}?tab=submissions`, "Could not generate a secure contributor link for this reminder.");
   }
   const result = await sendEmail({ to: recipientGroup.email, subject: email.subject, text: email.text, html: email.html });
 
@@ -943,6 +989,28 @@ async function dispatchReminderRun(
       });
       continue;
     }
+    if (!email.ok) {
+      await writeReminderAudit({
+        personId: group.personId,
+        field: "reminder_sent",
+        reason: mode === "manual" ? `manual_${email.reason}` : isLastDay ? `last_day_${email.reason}` : `weekly_${email.reason}`,
+        payload: {
+          request_ids: email.openItems.map((item) => item.requestId),
+          due_dates: email.openItems.map((item) => item.dueDate),
+          sent: false,
+          mode
+        }
+      });
+      processed += 1;
+      await onProgress?.({
+        processed,
+        sent,
+        total: recipients.length,
+        recipientName: group.name,
+        reason: email.reason
+      });
+      continue;
+    }
     const result = await sendEmailWithThrottle({ to: group.email, subject: email.subject, text: email.text, html: email.html });
 
     await writeReminderAudit({
@@ -1006,27 +1074,24 @@ export async function sendContributorSubmissionConfirmation(params: {
   taskId: string;
 }) {
   const taskPath = `/contribute/shows/${params.showId}/tasks/${params.taskId}`;
-  const link = (await generateDirectMagicLink(params.email, taskPath)) || getContributorTaskLink({
-    showId: params.showId,
-    personId: "",
-    email: params.email,
-    name: params.name,
-    roleTitle: "",
-    requestId: params.taskId,
-    requestType: "bio",
-    dueDate: null,
-    status: "submitted"
-  });
+  const link = await generateDirectMagicLink(params.email, taskPath);
 
   const subject = `${params.showTitle}: ${params.submissionLabel} received`;
-  const text =
-    `Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
-    `You can view or edit your bio until it accepted by clicking the link here: ${link}\n\n` +
-    `Thanks,`;
-  const html =
-    `<p>Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
-    `You can view or edit your bio until it accepted by clicking the link <a href="${link}">here</a>.</p>` +
-    `<p>Thanks,</p>`;
+  const text = link
+    ? `Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
+      `You can view or edit your bio until it accepted by clicking the link here: ${link}\n\n` +
+      `Thanks,`
+    : `Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
+      `If you need to reopen your task, use the secure link from your invite or reminder email. ` +
+      `If that link is no longer available, contact the production team and ask them to resend it.\n\n` +
+      `Thanks,`;
+  const html = link
+    ? `<p>Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. ` +
+      `You can view or edit your bio until it accepted by clicking the link <a href="${link}">here</a>.</p>` +
+      `<p>Thanks,</p>`
+    : `<p>Thank You ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}.</p>` +
+      `<p>If you need to reopen your task, use the secure link from your invite or reminder email. If that link is no longer available, contact the production team and ask them to resend it.</p>` +
+      `<p>Thanks,</p>`;
 
   return sendEmail({
     to: params.email,
