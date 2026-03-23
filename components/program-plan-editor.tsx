@@ -342,6 +342,18 @@ function ModuleSettings({
                 <option value="relaxed">Relaxed</option>
               </select>
             </label>
+            <label>
+              Header image size
+              <select
+                value={String(item.settings.image_size ?? "medium")}
+                onChange={(event) => setSetting("image_size", event.target.value)}
+              >
+                <option value="small">Small</option>
+                <option value="medium">Medium</option>
+                <option value="large">Large</option>
+                <option value="full">Full width</option>
+              </select>
+            </label>
           </div>
           <div className="meta-text">This module always renders as its own full page.</div>
         </div>

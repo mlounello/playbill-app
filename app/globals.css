@@ -1354,6 +1354,26 @@ body.density-compact .admin-surface textarea {
   justify-self: center;
 }
 
+.actf-sponsorship-image-small .actf-sponsorship-header-image {
+  width: 55%;
+  max-height: 1.5in;
+}
+
+.actf-sponsorship-image-medium .actf-sponsorship-header-image {
+  width: 72%;
+  max-height: 2.2in;
+}
+
+.actf-sponsorship-image-large .actf-sponsorship-header-image {
+  width: 88%;
+  max-height: 2.8in;
+}
+
+.actf-sponsorship-image-full .actf-sponsorship-header-image {
+  width: 100%;
+  max-height: 3.2in;
+}
+
 .actf-sponsorship-spacing-compact .actf-sponsorship-header-image {
   max-height: 1.8in;
 }

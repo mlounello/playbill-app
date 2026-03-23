@@ -27,7 +27,7 @@ export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
   if (page.type === "actf_sponsorship") {
     return (
       <article
-        className={`booklet-page actf-sponsorship-page actf-sponsorship-spacing-${page.spacing}`}
+        className={`booklet-page actf-sponsorship-page actf-sponsorship-spacing-${page.spacing} actf-sponsorship-image-${page.imageSize}`}
         style={{ backgroundColor: page.backgroundColor }}
       >
         {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}

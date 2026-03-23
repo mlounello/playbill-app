@@ -103,6 +103,7 @@ export type ProgramPage =
       imageUrl: string;
       backgroundColor: string;
       spacing: "compact" | "normal" | "relaxed";
+      imageSize: "small" | "medium" | "large" | "full";
     }
   | { id: string; type: "stacked"; title: string; sections: Array<{ title: string; body: string }> }
   | { id: string; type: "bios"; title: string; people: PersonRecord[]; showHeadshots?: boolean }
@@ -1492,6 +1493,9 @@ async function renderModulePages(
     const spacingRaw = String(module.settings.spacing ?? "normal").toLowerCase();
     const spacing: "compact" | "normal" | "relaxed" =
       spacingRaw === "compact" || spacingRaw === "relaxed" ? spacingRaw : "normal";
+    const imageSizeRaw = String(module.settings.image_size ?? "medium").toLowerCase();
+    const imageSize: "small" | "medium" | "large" | "full" =
+      imageSizeRaw === "small" || imageSizeRaw === "large" || imageSizeRaw === "full" ? imageSizeRaw : "medium";
     const hasBody = richTextHasContent(body);
     const hasImage = Boolean(imageUrl);
     if (!hasBody && !hasImage) {
@@ -1505,7 +1509,8 @@ async function renderModulePages(
         body,
         imageUrl,
         backgroundColor,
-        spacing
+        spacing,
+        imageSize
       }
     ] satisfies ProgramPage[];
   }
