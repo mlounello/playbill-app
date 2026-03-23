@@ -454,11 +454,6 @@ async function generateDirectMagicLink(email: string, targetPath: string) {
       directCallback.searchParams.set("type", type);
       return directCallback.toString();
     }
-
-    const actionLink = String(data?.properties?.action_link ?? "").trim();
-    if (!error && actionLink) {
-      return actionLink;
-    }
   }
 
   return "";
@@ -1229,6 +1224,16 @@ export async function continueContributorTaskAccess(showId: string, taskId: stri
     });
     withError(responsePath, "We could not open a secure session right now. You can request a fresh email link below.");
   }
+
+  const generatedUrl = new URL(directLink);
+  console.info("[contributor/access]", "continue_redirect", {
+    requested_task_id: taskId,
+    destination_path: accessContext.destinationPath,
+    pathname: generatedUrl.pathname,
+    has_token_hash: generatedUrl.searchParams.has("token_hash"),
+    type: generatedUrl.searchParams.get("type"),
+    next: generatedUrl.searchParams.get("next")
+  });
 
   await writeReminderAudit({
     personId: accessContext.recipient.personId,
