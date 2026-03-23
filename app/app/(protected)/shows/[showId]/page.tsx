@@ -632,6 +632,8 @@ export default async function ShowWorkspacePage({
                 previewModuleId={modulePreviewId}
                 previewBasePath={`/app/shows/${show.id}`}
                 paddingSimIds={paddingSimIds}
+                showId={show.id}
+                programSlug={show.program_slug}
               />
             </section>
           ) : null}

@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ModuleHtmlEditor } from "@/components/module-html-editor";
+import { ProgramImageUpload } from "@/components/program-image-upload";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import type { ShowModule } from "@/lib/shows";
 
@@ -29,6 +31,7 @@ const moduleTypeLabels: Record<string, string> = {
   headshots_grid: "Headshots Grid",
   production_photos: "Production Photos",
   sponsors: "Sponsors",
+  actf_sponsorship: "ACTF Sponsorship",
   acknowledgements: "Acknowledgements",
   special_thanks: "Special Thanks",
   back_cover: "Back Cover",
@@ -52,6 +55,7 @@ const moduleTokenMap: Record<string, string[]> = {
   department_info: ["department_info"],
   headshots_grid: ["production_photos"],
   sponsors: ["sponsorships"],
+  actf_sponsorship: [],
   acknowledgements: ["acknowledgements"],
   special_thanks: ["special_thanks"],
   back_cover: ["season_calendar"],
@@ -76,6 +80,7 @@ const addableModuleTypes = [
   "headshots_grid",
   "production_photos",
   "sponsors",
+  "actf_sponsorship",
   "acknowledgements",
   "special_thanks",
   "back_cover",
@@ -90,6 +95,7 @@ function isDefaultIsolated(moduleType: string) {
     "bios",
     "headshots_grid",
     "production_photos",
+    "actf_sponsorship",
     "custom_image",
     "back_cover"
   ]);
@@ -116,10 +122,14 @@ function moveItem<T>(array: T[], from: number, to: number) {
 
 function ModuleSettings({
   item,
-  onUpdate
+  onUpdate,
+  showId,
+  programSlug
 }: {
   item: ModuleItem;
   onUpdate: (next: Record<string, unknown>) => void;
+  showId?: string;
+  programSlug?: string | null;
 }) {
   const setSetting = (key: string, value: unknown) => {
     onUpdate({ ...item.settings, [key]: value });
@@ -285,6 +295,46 @@ function ModuleSettings({
     );
   }
 
+  if (item.module_type === "actf_sponsorship") {
+    const imageInputId = `actf-sponsorship-image-${item.id}`;
+    return (
+      <div className="module-settings-grid">
+        <div className="stack-sm">
+          <label>
+            Header image URL
+            <input
+              id={imageInputId}
+              value={String(item.settings.image_url ?? "")}
+              onChange={(event) => setSetting("image_url", event.target.value)}
+              placeholder="https://..."
+            />
+          </label>
+          {programSlug ? (
+            <ProgramImageUpload
+              programSlug={programSlug}
+              showId={showId}
+              assetType="sponsor"
+              targetInputId={imageInputId}
+              label="Upload header image"
+            />
+          ) : null}
+          <div className="meta-text">This module always renders as its own full page.</div>
+        </div>
+
+        <div className="stack-sm">
+          <div style={{ fontWeight: 600 }}>Formatted body content</div>
+          <ModuleHtmlEditor
+            label={`${item.display_title || "ACTF Sponsorship"} body`}
+            value={String(item.settings.body ?? "")}
+            onChange={(next) => setSetting("body", next)}
+            placeholder="Add ACTF sponsorship copy here."
+            minHeightPx={320}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }
 
@@ -293,13 +343,17 @@ export function ProgramPlanEditor({
   onSubmitAction,
   previewModuleId,
   previewBasePath,
-  paddingSimIds
+  paddingSimIds,
+  showId,
+  programSlug
 }: {
   modules: ShowModule[];
   onSubmitAction: (formData: FormData) => void;
   previewModuleId?: string;
   previewBasePath?: string;
   paddingSimIds?: string[];
+  showId?: string;
+  programSlug?: string | null;
 }) {
   const [items, setItems] = useState<ModuleItem[]>(() => normalizeModules(modules));
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -501,6 +555,7 @@ export function ProgramPlanEditor({
                 <input
                   type="radio"
                   name={`page-behavior-${item.id}`}
+                  disabled={item.module_type === "actf_sponsorship"}
                   checked={
                     String(item.settings.placement_mode ?? "").toLowerCase() === "flow" ||
                     !Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type))
@@ -513,6 +568,7 @@ export function ProgramPlanEditor({
                 <input
                   type="radio"
                   name={`page-behavior-${item.id}`}
+                  disabled={item.module_type === "actf_sponsorship"}
                   checked={
                     String(item.settings.placement_mode ?? "").toLowerCase() === "isolated" ||
                     Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type))
@@ -551,7 +607,7 @@ export function ProgramPlanEditor({
               : "No direct token mapping yet (module stored for future renderer)."}
           </div>
 
-          <ModuleSettings item={item} onUpdate={(next) => update(index, "settings", next)} />
+          <ModuleSettings item={item} onUpdate={(next) => update(index, "settings", next)} showId={showId} programSlug={programSlug} />
         </article>
       ))}
 

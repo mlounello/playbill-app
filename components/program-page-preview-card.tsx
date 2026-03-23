@@ -24,6 +24,16 @@ export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
     );
   }
 
+  if (page.type === "actf_sponsorship") {
+    return (
+      <article className="booklet-page actf-sponsorship-page">
+        {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
+        {page.imageUrl ? <img src={page.imageUrl} alt={page.title || "ACTF Sponsorship"} className="actf-sponsorship-header-image" /> : null}
+        <div className="page-body rich-render actf-sponsorship-body" dangerouslySetInnerHTML={{ __html: page.body }} />
+      </article>
+    );
+  }
+
   if (page.type === "photo_grid") {
     return (
       <article className="booklet-page">

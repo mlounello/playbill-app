@@ -96,6 +96,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   headshots_grid: ["production_photos"],
   production_photos: ["production_photos"],
   sponsors: ["sponsorships"],
+  actf_sponsorship: [],
   acknowledgements: ["acknowledgements"],
   special_thanks: ["special_thanks"],
   back_cover: ["season_calendar"],
@@ -112,20 +113,23 @@ function normalizeModuleType(value: string) {
   if (normalized === "director_notes") return "director_note";
   if (normalized === "acknowledgments") return "acknowledgements";
   if (normalized === "specialthanks") return "special_thanks";
+  if (normalized === "actfsponsorship") return "actf_sponsorship";
   if (normalized === "department") return "department_info";
   return normalized;
 }
 
 function normalizeModuleSettings(settings: Record<string, unknown> | undefined, moduleType: string) {
   const next: Record<string, unknown> = { ...(settings ?? {}) };
+  const normalizedType = normalizeModuleType(moduleType);
   const defaultIsolated = new Set([
     "cover",
     "bios",
     "headshots_grid",
     "production_photos",
+    "actf_sponsorship",
     "custom_image",
     "back_cover"
-  ]).has(normalizeModuleType(moduleType));
+  ]).has(normalizedType);
 
   const placementRaw = String(next.placement_mode ?? "").trim().toLowerCase();
   if (placementRaw === "flow" || placementRaw === "isolated") {
@@ -141,7 +145,14 @@ function normalizeModuleSettings(settings: Record<string, unknown> | undefined, 
     next.show_header = true;
   }
   if (next.allow_multiple_pages === undefined) {
-    next.allow_multiple_pages = normalizeModuleType(moduleType) === "bios" || normalizeModuleType(moduleType) === "custom_pages";
+    next.allow_multiple_pages = normalizedType === "bios" || normalizedType === "custom_pages";
+  }
+
+  if (normalizedType === "actf_sponsorship") {
+    next.placement_mode = "isolated";
+    next.separate_page = true;
+    next.keep_together = true;
+    next.allow_multiple_pages = false;
   }
 
   return next;
@@ -418,6 +429,7 @@ export async function createShow(formData: FormData) {
     "department_info",
     "headshots_grid",
     "sponsors",
+    "actf_sponsorship",
     "special_thanks",
     "back_cover"
   ];
@@ -428,7 +440,7 @@ export async function createShow(formData: FormData) {
       module_type: module,
       display_title: module.replace(/_/g, " "),
       module_order: index,
-      visible: true,
+      visible: module !== "actf_sponsorship",
       filler_eligible: ["bios", "special_thanks", "sponsors"].includes(module)
     }))
   );

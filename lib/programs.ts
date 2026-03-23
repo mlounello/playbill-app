@@ -95,6 +95,7 @@ type DensityMode = "normal" | "compact" | "loose";
 export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string }
+  | { id: string; type: "actf_sponsorship"; title: string; body: string; imageUrl: string }
   | { id: string; type: "stacked"; title: string; sections: Array<{ title: string; body: string }> }
   | { id: string; type: "bios"; title: string; people: PersonRecord[]; showHeadshots?: boolean }
   | { id: string; type: "image"; title: string; imageUrl: string }
@@ -829,6 +830,7 @@ function normalizeModuleType(value: string) {
   if (normalized === "director_notes") return "director_note";
   if (normalized === "acknowledgments") return "acknowledgements";
   if (normalized === "specialthanks") return "special_thanks";
+  if (normalized === "actfsponsorship") return "actf_sponsorship";
   if (normalized === "department") return "department_info";
   return normalized;
 }
@@ -840,6 +842,7 @@ function moduleDefaultPlacementMode(moduleType: string): "flow" | "isolated" {
     "bios",
     "headshots_grid",
     "production_photos",
+    "actf_sponsorship",
     "custom_image",
     "back_cover"
   ]);
@@ -1472,6 +1475,25 @@ async function renderModulePages(
       pages.push({ id: `${idBase}-text`, type: "text", title, body: sponsorshipBody });
     }
     return pages;
+  }
+
+  if (normalizedType === "actf_sponsorship") {
+    const body = String(module.settings.body ?? "");
+    const imageUrl = normalizeAssetUrl(String(module.settings.image_url ?? ""));
+    const hasBody = richTextHasContent(body);
+    const hasImage = Boolean(imageUrl);
+    if (!hasBody && !hasImage) {
+      return emptyPlaceholder(title, "ACTF Sponsorship module is enabled, but no image or sponsorship content was added yet.");
+    }
+    return [
+      {
+        id: idBase,
+        type: "actf_sponsorship",
+        title,
+        body,
+        imageUrl
+      }
+    ] satisfies ProgramPage[];
   }
 
   if (normalizedType === "special_thanks") {
