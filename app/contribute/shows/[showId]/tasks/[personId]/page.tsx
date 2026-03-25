@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { HeadshotUploadField } from "@/components/headshot-upload-field";
-import { RichTextField } from "@/components/rich-text-field";
+import { ContributorTaskForm } from "@/components/contributor-task-form";
 import {
   BIO_CHAR_LIMIT_DEFAULT,
   NO_BIO_PLACEHOLDER,
@@ -163,49 +162,19 @@ export default async function ContributorTaskPage({
           </article>
         </section>
 
-        <form action={saveAction} className="card stack-md">
-          <div className="stack-sm">
-            <strong>Edit Your {submissionLabel}</strong>
-            <p className="section-note">
-              Use the editor below, then save a draft or submit when you are ready.
-            </p>
-          </div>
-          <RichTextField
-            name="bio"
-            label={submissionLabel}
-            required={false}
-            initialValue={hasNoBio ? "" : task.person.bio}
-            placeholder={isBioTask ? "Share your short bio." : `Share your ${submissionLabel.toLowerCase()}.`}
-          />
-          {isBioTask ? (
-            <label className="checkbox-inline">
-              <input type="checkbox" name="skipBio" defaultChecked={hasNoBio} disabled={isReadOnly} />
-              <span>I prefer not to include a bio.</span>
-            </label>
-          ) : null}
-
-          {isBioTask ? (
-            <HeadshotUploadField
-              showId={showId}
-              personId={task.person.id}
-              initialUrl={task.person.headshot_url}
-              disabled={isReadOnly}
-            />
-          ) : null}
-
-          {isReadOnly ? (
-            <p className="section-note">This task is read-only because it has been {task.person.submission_status}.</p>
-          ) : (
-            <div className="top-actions">
-              <button type="submit" name="intent" value="save">
-                Save Draft
-              </button>
-              <button type="submit" name="intent" value="submit">
-                Submit for Review
-              </button>
-            </div>
-          )}
-        </form>
+        <ContributorTaskForm
+          action={saveAction}
+          showId={showId}
+          personId={task.person.id}
+          submissionLabel={submissionLabel}
+          bioCharLimit={BIO_CHAR_LIMIT_DEFAULT}
+          isBioTask={isBioTask}
+          hasNoBio={hasNoBio}
+          initialBio={hasNoBio ? "" : task.person.bio}
+          placeholder={isBioTask ? "Share your short bio." : `Share your ${submissionLabel.toLowerCase()}.`}
+          headshotUrl={task.person.headshot_url}
+          isReadOnly={isReadOnly}
+        />
       </div>
     </main>
   );

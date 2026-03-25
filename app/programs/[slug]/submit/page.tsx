@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { RichTextField } from "@/components/rich-text-field";
+import { BIO_CHAR_LIMIT_DEFAULT } from "@/lib/submissions";
 import { getProgramBySlug, submitBioForProgram } from "@/lib/programs";
 
 export default async function BioSubmissionPage({
@@ -71,7 +72,12 @@ export default async function BioSubmissionPage({
             <input name="email" type="email" required placeholder="you@example.com" />
           </label>
 
-          <RichTextField name="bio" label="Bio" required />
+          <RichTextField
+            name="bio"
+            label="Bio"
+            required
+            counter={{ mode: "characters", limit: BIO_CHAR_LIMIT_DEFAULT }}
+          />
 
           <label>
             Headshot URL (optional)

@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { buildDepartmentInfoHtml } from "@/lib/departments";
+import { sendAdminSubmissionNotification, sendContributorSubmissionConfirmation } from "@/lib/reminders";
 import { buildSeasonCalendarHtml } from "@/lib/seasons";
 import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
+import { BIO_CHAR_LIMIT_DEFAULT } from "@/lib/submissions";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
@@ -185,6 +187,19 @@ function normalizeName(value: string) {
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
+}
+
+function stripRichTextToPlain(value: string) {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|ul|ol|h1|h2|h3|h4|h5|h6)>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function personKey(name: string, role: string, teamType: "cast" | "production") {
@@ -2850,6 +2865,9 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   if (!richTextHasContent(cleanBio)) {
     redirectWithError(`/programs/${slug}/submit`, "Bio cannot be empty.");
   }
+  if (stripRichTextToPlain(cleanBio).length > BIO_CHAR_LIMIT_DEFAULT) {
+    redirectWithError(`/programs/${slug}/submit`, `Bio exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.`);
+  }
 
   const missingEnv = getMissingSupabaseEnvVars();
   if (missingEnv.length > 0) {
@@ -2902,6 +2920,101 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   const { error: updateError } = await db.from("people").update(updatePayload).eq("id", targetPerson.id);
   if (updateError) {
     redirectWithError(`/programs/${slug}/submit`, updateError.message);
+  }
+
+  const { data: show } = await db
+    .from("shows")
+    .select("id, title")
+    .eq("program_id", String(program.id))
+    .maybeSingle();
+  if (!show?.id) {
+    redirectWithError(`/programs/${slug}/submit`, "This legacy form is no longer available for this program.");
+  }
+
+  const { data: roleRows } = await db
+    .from("show_roles")
+    .select("id")
+    .eq("show_id", String(show.id))
+    .eq("person_id", String(targetPerson.id));
+  const roleIds = (roleRows ?? []).map((row) => String(row.id));
+  if (roleIds.length === 0) {
+    redirectWithError(`/programs/${slug}/submit`, "No active bio request was found for this person.");
+  }
+
+  const { data: bioRequest } = await db
+    .from("submission_requests")
+    .select("id")
+    .in("show_role_id", roleIds)
+    .eq("request_type", "bio")
+    .maybeSingle();
+  if (!bioRequest?.id) {
+    redirectWithError(`/programs/${slug}/submit`, "No active bio request was found for this person.");
+  }
+
+  const nowIso = new Date().toISOString();
+  const { error: requestUpdateError } = await db
+    .from("submission_requests")
+    .update({
+      status: "submitted",
+      updated_at: nowIso
+    })
+    .eq("id", String(bioRequest.id));
+  if (requestUpdateError) {
+    redirectWithError(`/programs/${slug}/submit`, requestUpdateError.message);
+  }
+
+  const { data: existingSubmission } = await db
+    .from("submissions")
+    .select("id")
+    .eq("request_id", String(bioRequest.id))
+    .maybeSingle();
+  if (existingSubmission?.id) {
+    const { error: submissionUpdateError } = await db
+      .from("submissions")
+      .update({
+        plain_text: stripRichTextToPlain(cleanBio),
+        status: "submitted",
+        updated_at: nowIso
+      })
+      .eq("id", String(existingSubmission.id));
+    if (submissionUpdateError) {
+      redirectWithError(`/programs/${slug}/submit`, submissionUpdateError.message);
+    }
+  } else {
+    const { error: submissionInsertError } = await db.from("submissions").insert({
+      request_id: String(bioRequest.id),
+      plain_text: stripRichTextToPlain(cleanBio),
+      status: "submitted"
+    });
+    if (submissionInsertError) {
+      redirectWithError(`/programs/${slug}/submit`, submissionInsertError.message);
+    }
+  }
+
+  try {
+    await sendContributorSubmissionConfirmation({
+      email: rosterEmail,
+      name: String(targetPerson.full_name ?? ""),
+      showTitle: String(show.title ?? ""),
+      submissionLabel: "Bio",
+      showId: String(show.id),
+      taskId: String(bioRequest.id)
+    });
+  } catch {
+    // Do not block contributor success if the confirmation email fails.
+  }
+
+  try {
+    await sendAdminSubmissionNotification({
+      showId: String(show.id),
+      showTitle: String(show.title ?? ""),
+      personName: String(targetPerson.full_name ?? ""),
+      roleTitle: String(targetPerson.role_title ?? ""),
+      submissionType: "bio",
+      taskId: String(bioRequest.id)
+    });
+  } catch {
+    // Do not block contributor success if admin notification fails.
   }
 
   redirect(
