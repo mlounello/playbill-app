@@ -136,6 +136,11 @@ export default async function ShowSubmissionReviewPage({
             label={`${submissionLabel} (admin editable)`}
             required={false}
             initialValue={hasNoBio ? "" : review.person.bio}
+            counter={
+              isBioTask
+                ? { mode: "characters", limit: BIO_CHAR_LIMIT_DEFAULT }
+                : { mode: "words", limit: SPECIAL_NOTE_WORD_LIMIT_DEFAULT }
+            }
           />
           {isBioTask ? (
             <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
