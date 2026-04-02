@@ -284,16 +284,33 @@ function ModuleSettings({
   }
 
   if (item.module_type === "custom_image") {
+    const imageInputId = `custom-image-${item.id}`;
     return (
       <div className="module-settings-grid">
-        <label>
-          Image URL
-          <input
-            value={String(item.settings.image_url ?? "")}
-            onChange={(event) => setSetting("image_url", event.target.value)}
-            placeholder="https://..."
-          />
-        </label>
+        <div className="stack-sm">
+          <label>
+            Image URL
+            <input
+              id={imageInputId}
+              value={String(item.settings.image_url ?? "")}
+              onChange={(event) => setSetting("image_url", event.target.value)}
+              placeholder="https://..."
+            />
+          </label>
+          {programSlug ? (
+            <ProgramImageUpload
+              programSlug={programSlug}
+              showId={showId}
+              assetType="custom"
+              targetInputId={imageInputId}
+              label="Upload image"
+              onUploadedUrl={(url) => setSetting("image_url", url)}
+            />
+          ) : null}
+          <div className="meta-text">
+            Uploaded images are optimized automatically and scaled to fit the page.
+          </div>
+        </div>
       </div>
     );
   }

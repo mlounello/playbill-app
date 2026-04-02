@@ -1348,7 +1348,7 @@ body.density-compact .admin-surface textarea {
 }
 
 .image-page-full .full-page-image {
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .actf-sponsorship-page {
