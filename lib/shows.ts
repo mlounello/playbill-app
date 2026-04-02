@@ -99,6 +99,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   actf_sponsorship: [],
   acknowledgements: ["acknowledgements"],
   special_thanks: ["special_thanks"],
+  season_calendar: ["season_calendar"],
   back_cover: ["season_calendar"],
   custom_pages: ["custom_pages"],
   custom_text: [],

@@ -1543,6 +1543,19 @@ async function renderModulePages(
     });
   }
 
+  if (normalizedType === "season_calendar") {
+    if (!hasSeasonCalendar) {
+      return emptyPlaceholder(title, "Season Calendar module is enabled, but no upcoming events content was added yet.");
+    }
+    return paginateTextModulePages({
+      idBase,
+      title,
+      body: program.season_calendar,
+      densityMode,
+      allowMultiplePages
+    });
+  }
+
   if (normalizedType === "acknowledgements") {
     if (!hasAcknowledgements) {
       return emptyPlaceholder(title, "Acknowledgements module is enabled, but no acknowledgements content was added yet.");
@@ -1629,7 +1642,7 @@ async function renderModulePages(
 
   if (normalizedType === "custom_image") {
     const imageUrl = getSettingString(module.settings, "image_url");
-    if (!isValidHttpUrl(imageUrl)) {
+    if (!isValidHttpUrl(imageUrl) && !isSupportedAssetUrl(imageUrl)) {
       return [] as ProgramPage[];
     }
     return [{ id: idBase, type: "image", title, imageUrl }] satisfies ProgramPage[];
