@@ -1949,9 +1949,13 @@ body.density-compact .admin-surface textarea {
   .sheet {
     border: 0;
     padding: 0;
-    break-after: page;
+    break-after: auto;
     width: 11in;
     height: 8.5in;
+  }
+
+  .sheet:not(:last-child) {
+    break-after: page;
   }
 
   .export-sequence-item {
