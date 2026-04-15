@@ -285,7 +285,7 @@ export default async function ShowWorkspacePage({
   const reminderSummary =
     activeTab === "overview"
       ? await getShowReminderSummary(show.id)
-      : { missing: 0, overdue: 0, dueSoon: 0, currentDueDate: null };
+      : { missing: 0, overdue: 0, dueSoon: 0, currentDueDate: null, currentBioDueDate: null, currentNotesDueDate: null };
   const paddingSimIds =
     activeTab === "program-plan"
       ? (paddingSim ?? "")
@@ -457,10 +457,24 @@ export default async function ShowWorkspacePage({
                         type="date"
                         name="dueDate"
                         required
-                        defaultValue={reminderSummary.currentDueDate ? String(reminderSummary.currentDueDate).slice(0, 10) : ""}
+                        defaultValue={reminderSummary.currentBioDueDate ? String(reminderSummary.currentBioDueDate).slice(0, 10) : ""}
                       />
                     </label>
+                    <input type="hidden" name="dueScope" value="bio" />
                     <button type="submit">Set Due Date</button>
+                  </form>
+                  <form action={setDueDateAction} className="top-actions" data-pending-label="Saving notes due date..." data-preserve-scroll="true">
+                    <label>
+                      Global notes due date
+                      <input
+                        type="date"
+                        name="dueDate"
+                        required
+                        defaultValue={reminderSummary.currentNotesDueDate ? String(reminderSummary.currentNotesDueDate).slice(0, 10) : ""}
+                      />
+                    </label>
+                    <input type="hidden" name="dueScope" value="notes" />
+                    <button type="submit">Set Notes Due Date</button>
                   </form>
                   <div className="top-actions">
                     <form action={sendInvitesAction} data-pending-label="Sending invites..." data-preserve-scroll="true" data-no-overlay="true">

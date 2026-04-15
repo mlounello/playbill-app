@@ -1306,7 +1306,7 @@ body.density-compact .admin-surface textarea {
   height: 8.5in;
   overflow: hidden;
   border: 1px solid #bdb5a7;
-  background: #fffef9;
+  background: #ffffff;
   padding: 0.36in;
   position: relative;
 }
@@ -1951,6 +1951,11 @@ body.density-compact .admin-surface textarea {
     gap: 0;
   }
 
+  .sequence-view {
+    display: block;
+    gap: 0;
+  }
+
   .sheet {
     border: 0;
     border-radius: 0;
@@ -1965,7 +1970,17 @@ body.density-compact .admin-surface textarea {
     break-after: page;
   }
 
+  .sequence-item,
   .export-sequence-item {
+    margin: 0;
+    padding: 0;
+    width: 5.5in;
+    height: 8.5in;
+    break-after: auto;
+  }
+
+  .sequence-item:not(:last-child),
+  .export-sequence-item:not(:last-child) {
     break-after: page;
   }
 

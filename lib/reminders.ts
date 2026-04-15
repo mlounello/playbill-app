@@ -714,8 +714,14 @@ export async function getShowReminderSummary(showId: string) {
   const now = Date.now();
   const dueSoonWindow = context?.reminderDueSoonDays ?? 7;
   const openItems = recipients.filter((item) => shouldRemind(item.status));
-  const currentDueDate =
-    openItems
+  const openBios = openItems.filter((item) => item.requestType === "bio");
+  const openNotes = openItems.filter((item) => item.requestType !== "bio");
+  const currentBioDueDate =
+    openBios
+      .map((item) => item.dueDate)
+      .find((value): value is string => Boolean(value)) ?? null;
+  const currentNotesDueDate =
+    openNotes
       .map((item) => item.dueDate)
       .find((value): value is string => Boolean(value)) ?? null;
 
@@ -730,7 +736,7 @@ export async function getShowReminderSummary(showId: string) {
     return diffDays >= 0 && diffDays <= dueSoonWindow;
   }).length;
 
-  return { missing, overdue, dueSoon, currentDueDate };
+  return { missing, overdue, dueSoon, currentDueDate: currentBioDueDate, currentBioDueDate, currentNotesDueDate };
 }
 
 export async function setShowDueDate(showId: string, formData: FormData) {
@@ -738,6 +744,7 @@ export async function setShowDueDate(showId: string, formData: FormData) {
   await requireRole(["owner", "admin", "editor"]);
 
   const dueDate = String(formData.get("dueDate") ?? "").trim();
+  const dueScope = String(formData.get("dueScope") ?? "bio").trim().toLowerCase();
   if (!dueDate) {
     withError(`/app/shows/${showId}?tab=overview`, "Please choose a due date.");
   }
@@ -750,15 +757,21 @@ export async function setShowDueDate(showId: string, formData: FormData) {
     withError(`/app/shows/${showId}?tab=overview`, "No roles found. Add people first.");
   }
 
+  const requestTypes =
+    dueScope === "notes"
+      ? ["director_note", "dramaturgical_note", "music_director_note"]
+      : ["bio"];
+
   const { error } = await db
     .from("submission_requests")
     .update({ due_date: `${dueDate}T23:59:59.000Z` })
-    .in("show_role_id", roleIds);
+    .in("show_role_id", roleIds)
+    .in("request_type", requestTypes);
   if (error) {
     withError(`/app/shows/${showId}?tab=overview`, error.message);
   }
 
-  withSuccess(`/app/shows/${showId}?tab=overview`, "Submission due date updated.");
+  withSuccess(`/app/shows/${showId}?tab=overview`, dueScope === "notes" ? "Notes due date updated." : "Bio due date updated.");
 }
 
 export async function sendShowInvites(showId: string) {
