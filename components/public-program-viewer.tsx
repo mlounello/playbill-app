@@ -105,6 +105,60 @@ function PublicRenderPage({ page }: { page: ProgramPage }) {
   );
 }
 
+export function PublicDigitalProgramViewer({
+  pages,
+  title,
+  showSlug
+}: {
+  pages: ProgramPage[];
+  title: string;
+  showSlug: string;
+}) {
+  const readablePages = pages.filter((page) => !(page.type === "filler" && !page.body.trim()));
+  const toc = readablePages
+    .map((page, index) => ({
+      id: `digital-page-${index + 1}`,
+      title: page.title?.trim() || `Page ${index + 1}`,
+      pageNumber: index + 1
+    }))
+    .filter((item, index, rows) => rows.findIndex((row) => row.title === item.title) === index);
+
+  return (
+    <section className="digital-playbill" aria-label={`${title} digital playbill`}>
+      <header className="digital-playbill-header">
+        <div>
+          <p className="eyebrow">Digital Playbill</p>
+          <h1>{title}</h1>
+        </div>
+        <a href={`/api/public/exports/${showSlug}/proof`} data-no-overlay="true">
+          PDF
+        </a>
+      </header>
+
+      {toc.length > 1 ? (
+        <details className="digital-playbill-toc">
+          <summary>Contents</summary>
+          <div className="digital-playbill-toc-list">
+            {toc.map((item) => (
+              <a key={`${item.title}-${item.pageNumber}`} href={`#${item.id}`}>
+                {item.title}
+              </a>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
+      <div className="digital-playbill-pages">
+        {readablePages.map((page, index) => (
+          <section key={`${page.id}-${index}`} id={`digital-page-${index + 1}`} className="digital-playbill-page-shell">
+            <PublicRenderPage page={page} />
+          </section>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function PublicProgramViewer({
   pages,
   showSlug,

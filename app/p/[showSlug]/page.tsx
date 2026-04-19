@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PublicProgramViewer } from "@/components/public-program-viewer";
+import { PublicDigitalProgramViewer, PublicProgramViewer } from "@/components/public-program-viewer";
 import { getProgramBySlug } from "@/lib/programs";
 import { APP_SCHEMA, getSupabaseReadClient } from "@/lib/supabase";
 
@@ -50,34 +50,27 @@ export default async function PublicProgramPage({
     notFound();
   }
 
-  const scrollView = view === "scroll";
+  const flipView = view === "flip";
 
   return (
-    <main>
-      <div className="container page-shell">
-        <div className="card top-actions">
-          <strong>{program.title}</strong>
-          <Link href={`/p/${canonicalShowSlug}`}>Flip view</Link>
-          <Link href={`/p/${canonicalShowSlug}?view=scroll`}>Scroll view</Link>
-          <a href={`/api/public/exports/${canonicalShowSlug}/proof`} data-no-overlay="true">
-            Proof PDF
-          </a>
-          <a href={`/api/public/exports/${canonicalShowSlug}/print`} data-no-overlay="true">
-            Print PDF
-          </a>
-        </div>
-
-        {scrollView ? (
-          <section className="card-list">
-            {program.paddedPages.map((page, index) => (
-              <article key={`${page.id}-${index}`} className="card card-soft stack-sm">
-                <strong>Page {index + 1}</strong>
-                <div>{page.title}</div>
-              </article>
-            ))}
-          </section>
+    <main className="public-playbill-main">
+      <div className="public-playbill-shell">
+        {flipView ? (
+          <>
+            <div className="card top-actions">
+              <strong>{program.title}</strong>
+              <Link href={`/p/${canonicalShowSlug}`}>Digital view</Link>
+              <a href={`/api/public/exports/${canonicalShowSlug}/proof`} data-no-overlay="true">
+                Proof PDF
+              </a>
+              <a href={`/api/public/exports/${canonicalShowSlug}/print`} data-no-overlay="true">
+                Print PDF
+              </a>
+            </div>
+            <PublicProgramViewer pages={program.paddedPages} showSlug={canonicalShowSlug} programSlug={program.slug} />
+          </>
         ) : (
-          <PublicProgramViewer pages={program.paddedPages} showSlug={canonicalShowSlug} programSlug={program.slug} />
+          <PublicDigitalProgramViewer pages={program.paddedPages} title={program.title} showSlug={canonicalShowSlug} />
         )}
       </div>
     </main>

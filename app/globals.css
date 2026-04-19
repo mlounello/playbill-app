@@ -1278,6 +1278,140 @@ body.density-compact .admin-surface textarea {
   opacity: 0.42;
 }
 
+.public-playbill-main {
+  background: #ffffff;
+  min-height: 100vh;
+}
+
+.public-playbill-shell {
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: clamp(0.75rem, 3vw, 1.5rem);
+}
+
+.digital-playbill {
+  display: grid;
+  gap: clamp(0.75rem, 3vw, 1.25rem);
+}
+
+.digital-playbill-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #e6dfd2;
+}
+
+.digital-playbill-header h1 {
+  margin: 0;
+  color: #123d34;
+  font-family: var(--font-title);
+  font-size: clamp(1.25rem, 5.5vw, 2rem);
+  line-height: 0.95;
+}
+
+.digital-playbill-header .eyebrow {
+  margin: 0 0 0.15rem;
+  color: #00705a;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.digital-playbill-header a,
+.digital-playbill-toc summary {
+  border: 1px solid #b8d1c8;
+  border-radius: 999px;
+  background: #f4fbf7;
+  color: #0f4c3f;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.digital-playbill-header a {
+  padding: 0.45rem 0.75rem;
+  white-space: nowrap;
+}
+
+.digital-playbill-toc {
+  border: 1px solid #e6dfd2;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 0.45rem;
+}
+
+.digital-playbill-toc summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.55rem 0.75rem;
+}
+
+.digital-playbill-toc summary::-webkit-details-marker {
+  display: none;
+}
+
+.digital-playbill-toc-list {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.15rem 0.15rem;
+}
+
+.digital-playbill-toc-list a {
+  border: 1px solid #eee4d3;
+  border-radius: 999px;
+  padding: 0.45rem 0.65rem;
+  background: #fffaf0;
+  color: #173d35;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.digital-playbill-pages {
+  display: grid;
+  gap: clamp(0.9rem, 4vw, 1.4rem);
+}
+
+.digital-playbill-page-shell {
+  scroll-margin-top: 5rem;
+}
+
+.digital-playbill .booklet-page {
+  width: min(100%, 5.5in);
+  height: auto;
+  min-height: auto;
+  margin: 0 auto;
+  overflow: visible;
+  border: 1px solid #e5dece;
+  border-radius: 1rem;
+  box-shadow: 0 16px 45px rgba(24, 44, 38, 0.08);
+}
+
+.digital-playbill .poster-page,
+.digital-playbill .image-page-full {
+  overflow: hidden;
+  padding: 0;
+}
+
+.digital-playbill .poster-image,
+.digital-playbill .image-page-full .full-page-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.digital-playbill .image-page:not(.image-page-full) .full-page-image {
+  max-height: none;
+}
+
 @keyframes flipForward {
   0% {
     opacity: 0.45;
@@ -1912,6 +2046,59 @@ body.density-compact .admin-surface textarea {
 
   .preset-row select {
     width: 100%;
+  }
+
+  .public-playbill-shell {
+    padding: 0 0.75rem 1rem;
+  }
+
+  .digital-playbill-header {
+    margin: 0 -0.75rem;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .digital-playbill .booklet-page {
+    padding: clamp(1rem, 5vw, 1.35rem);
+    border-radius: 0.85rem;
+  }
+
+  .digital-playbill .poster-page,
+  .digital-playbill .image-page-full {
+    padding: 0;
+  }
+
+  .digital-playbill .playbill-title {
+    font-size: clamp(1.2rem, 5.2vw, 1.55rem);
+    line-height: 1.05;
+  }
+
+  .digital-playbill .page-body,
+  .digital-playbill .bio-body {
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .digital-playbill .bio-name {
+    font-size: 1.05rem;
+  }
+
+  .digital-playbill .bio-row {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+
+  .digital-playbill .headshot {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+
+  .digital-playbill .photo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .digital-playbill .photo-grid-item {
+    height: auto;
+    max-height: none;
   }
 }
 
