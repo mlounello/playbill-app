@@ -5,6 +5,7 @@ import { syncAppUsersToControlRoom } from "@/lib/app-user-sync";
 import { hideShowOnlyCastRoleTemplatesForShow } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/rich-text";
 import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
+import { BIO_CHAR_LIMIT_DEFAULT, normalizeBioCharLimit } from "@/lib/submissions";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 
 export type ShowSummary = {
@@ -27,6 +28,7 @@ export type ShowSummary = {
   reminder_send_last_day: boolean;
   admin_submission_notifications_enabled: boolean;
   admin_submission_notification_emails: string;
+  bio_char_limit: number;
   acts_and_songs: string;
   season_calendar: string;
   sponsorships: string;
@@ -513,6 +515,7 @@ export async function getShowsForDashboard() {
             ? false
             : Boolean(show.admin_submission_notifications_enabled),
         admin_submission_notification_emails: String(show.admin_submission_notification_emails ?? ""),
+        bio_char_limit: normalizeBioCharLimit((show as Record<string, unknown>).bio_char_limit),
         acts_and_songs: String(program?.acts_songs ?? ""),
         season_calendar: String(program?.season_calendar ?? ""),
         sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
@@ -591,6 +594,7 @@ export async function getShowById(showId: string) {
           ? false
           : Boolean(show.admin_submission_notifications_enabled),
       admin_submission_notification_emails: String(show.admin_submission_notification_emails ?? ""),
+      bio_char_limit: normalizeBioCharLimit((show as Record<string, unknown>).bio_char_limit),
       acts_and_songs: String(program?.acts_songs ?? ""),
       season_calendar: String(program?.season_calendar ?? ""),
       sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
@@ -731,6 +735,41 @@ export async function updateShowReminderSettings(showId: string, formData: FormD
   }
 
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Reminder settings saved.")}`);
+}
+
+export async function updateShowSubmissionSettings(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    withError(`/app/shows/${showId}?tab=settings`, `Supabase is not configured: ${missing.join(", ")}`);
+  }
+
+  const bioCharLimit = normalizeBioCharLimit(String(formData.get("bioCharLimit") ?? BIO_CHAR_LIMIT_DEFAULT));
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const showColumns = await getTableColumns(db, "shows");
+  if (!showColumns.has("bio_char_limit")) {
+    withError(
+      `/app/shows/${showId}?tab=settings`,
+      "Bio character limit settings need the Phase 11 database migration before they can be saved."
+    );
+  }
+
+  const { error } = await db
+    .from("shows")
+    .update({
+      bio_char_limit: bioCharLimit,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", showId);
+  if (error) {
+    withError(`/app/shows/${showId}?tab=settings`, error.message);
+  }
+
+  redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Submission settings saved.")}`);
 }
 
 export async function reorderShowModules(showId: string, formData: FormData) {

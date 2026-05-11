@@ -30,12 +30,12 @@ import {
   updateShowActsAndSongs,
   updateShowAcknowledgements,
   updateShowReminderSettings,
+  updateShowSubmissionSettings,
   updateShowSponsorships,
   updateShowPresentation,
   updateShowModules
 } from "@/lib/shows";
 import {
-  BIO_CHAR_LIMIT_DEFAULT,
   SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
   addRoleAssignmentToPerson,
   archiveSpecialNoteTemplate,
@@ -51,6 +51,7 @@ import {
   getShowSpecialNoteAssignments,
   getShowSpecialNoteTemplates,
   getShowSubmissionQueue,
+  getSubmissionTypeLabel,
   removePersonFromShow,
   removeRoleAssignment,
   reorderRoleListOrder,
@@ -169,6 +170,7 @@ export default async function ShowWorkspacePage({
   const assignSeasonToShowAction = assignSeasonToShow.bind(null, show.id);
   const updateShowDepartmentsAction = updateShowDepartments.bind(null, show.id);
   const updateShowReminderSettingsAction = updateShowReminderSettings.bind(null, show.id);
+  const updateShowSubmissionSettingsAction = updateShowSubmissionSettings.bind(null, show.id);
   const setReminderPausedAction = setShowRemindersPaused.bind(null, show.id);
   const setDueDateAction = setShowDueDate.bind(null, show.id);
   const sendReminderPreviewEmailAction = sendReminderPreviewEmail.bind(null, show.id);
@@ -207,6 +209,7 @@ export default async function ShowWorkspacePage({
     task.submission_status === "approved" ||
     task.submission_status === "locked" ||
     (task.submission_type === "bio" && task.no_bio);
+  const completedSubmissionCount = submissionQueue.filter((task) => isTaskComplete(task)).length;
   const getTaskNextStep = (task: (typeof submissionQueue)[number]) => {
     if (task.submission_type === "bio" && task.no_bio) return "No bio requested";
     if (task.submission_status === "pending") return "Submit initial draft";
@@ -222,7 +225,7 @@ export default async function ShowWorkspacePage({
       ? submissionQueue
           .filter((task) => {
             const isOverLimit = task.submission_type === "bio"
-              ? task.bio_char_count > BIO_CHAR_LIMIT_DEFAULT
+              ? task.bio_char_count > task.bio_char_limit
               : countWordsFromRichText(task.bio) > SPECIAL_NOTE_WORD_LIMIT_DEFAULT;
             if (activeSubmissionFilter === "all") return true;
             if (activeSubmissionFilter === "needs_review") return task.submission_status === "submitted";
@@ -269,7 +272,7 @@ export default async function ShowWorkspacePage({
           returnedForEdits: submissionQueue.filter((task) => task.submission_status === "returned").length,
           overLimit: submissionQueue.filter((task) =>
             task.submission_type === "bio"
-              ? task.bio_char_count > BIO_CHAR_LIMIT_DEFAULT
+              ? task.bio_char_count > task.bio_char_limit
               : countWordsFromRichText(task.bio) > SPECIAL_NOTE_WORD_LIMIT_DEFAULT
           ).length,
           needsReview: submissionQueue.filter((task) => task.submission_status === "submitted").length
@@ -409,7 +412,7 @@ export default async function ShowWorkspacePage({
               <div className="pane-header">
                 <strong>Overview</strong>
                 <div className="kpi-inline">
-                  <span className="kpi-badge">{show.submission_submitted}/{show.submission_total} submitted</span>
+                  <span className="kpi-badge">{completedSubmissionCount}/{submissionQueue.length} complete</span>
                   <span className="kpi-badge">{reminderSummary.missing} outstanding</span>
                   <span className="kpi-badge">{show.reminders_paused ? "Reminders Paused" : "Reminders Active"}</span>
                   {deliveryMode ? <span className="kpi-badge">{deliveryMode.label}</span> : null}
@@ -423,7 +426,7 @@ export default async function ShowWorkspacePage({
                   </div>
                   <div className="stat-item">
                     <div className="stat-label">Submissions Complete</div>
-                    <div className="stat-value">{show.submission_submitted}/{show.submission_total}</div>
+                    <div className="stat-value">{completedSubmissionCount}/{submissionQueue.length}</div>
                   </div>
                   <div className="stat-item">
                     <div className="stat-label">Outstanding</div>
@@ -869,16 +872,21 @@ export default async function ShowWorkspacePage({
                       Email
                       <input name="email" type="email" required placeholder="name@example.com" />
                     </label>
-                    <label>
-                      Submission requirement
-                      <select name="submissionType" defaultValue="bio">
-                        <option value="bio">Bio</option>
-                        <option value="director_note">Director's Note</option>
-                        <option value="dramaturgical_note">Dramaturgical Note</option>
-                        <option value="music_director_note">Music Director's Note</option>
-                      </select>
+                    <div className="stack-sm">
+                      What should this person submit?
+                      <span className="section-note">
+                        Choose exactly what you need from them. Notes can be requested without a bio.
+                      </span>
+                    </div>
+                    <label className="checkbox-inline">
+                      <input type="checkbox" name="requestBio" defaultChecked />
+                      <span>Request a program bio</span>
                     </label>
-                    <button type="submit">Add Person</button>
+                    <label className="checkbox-inline">
+                      <input type="checkbox" name="requestNotes" />
+                      <span>Request notes or production information</span>
+                    </label>
+                    <button type="submit">Add Person and Create Requests</button>
                   </form>
                 </article>
 
@@ -974,6 +982,9 @@ export default async function ShowWorkspacePage({
                   role_count: roleAssignmentSummaryByPersonId.get(person.id)?.count ?? 1,
                   role_summary: roleAssignmentSummaryByPersonId.get(person.id)?.summary ?? person.role_title,
                   submission_type: person.submission_type,
+                  request_bio: person.request_bio,
+                  request_notes: person.request_notes,
+                  request_summary: person.request_summary,
                   submission_status: person.submission_status,
                   submitted_at: person.submitted_at
                 }))}
@@ -1020,7 +1031,7 @@ export default async function ShowWorkspacePage({
                 <strong>Submissions</strong>
                 <div className="kpi-inline">
                   <span className="kpi-badge">
-                    {submissionQueue.filter((task) => isTaskComplete(task)).length}
+                    {completedSubmissionCount}
                     /{submissionQueue.length} complete
                   </span>
                 </div>
@@ -1138,11 +1149,11 @@ export default async function ShowWorkspacePage({
                                 </td>
                                 <td>{task.role_title}</td>
                                 <td style={{ textTransform: "capitalize" }}>{task.role_category_display ?? task.team_type}</td>
-                                <td>{task.submission_type.replace(/_/g, " ")}</td>
+                                <td>{getSubmissionTypeLabel(task.submission_type)}</td>
                                 <td><span className="status-pill">{task.submission_status}</span></td>
                                 <td>
                                   {task.submission_type === "bio"
-                                    ? `${task.bio_char_count} chars`
+                                    ? `${task.bio_char_count}/${task.bio_char_limit} chars`
                                     : `${countWordsFromRichText(task.bio)} words`}
                                 </td>
                                 <td>{getTaskNextStep(task)}</td>
@@ -1188,8 +1199,8 @@ export default async function ShowWorkspacePage({
                                 </div>
                               </div>
                               <div className="submission-meta">
-                                Requirement: {task.submission_type.replace(/_/g, " ")} • Status: <span className="status-pill">{task.submission_status}</span> • {task.submission_type === "bio"
-                                  ? `${task.bio_char_count} chars`
+                                Requirement: {getSubmissionTypeLabel(task.submission_type)} • Status: <span className="status-pill">{task.submission_status}</span> • {task.submission_type === "bio"
+                                  ? `${task.bio_char_count}/${task.bio_char_limit} chars`
                                   : `${countWordsFromRichText(task.bio)} words`}
                               </div>
                               <div className="submission-meta">Next step: {getTaskNextStep(task)}</div>
@@ -1360,6 +1371,30 @@ export default async function ShowWorkspacePage({
                 <div className="meta-text">
                   Automated reminder cron currently runs daily at 9:00 AM Eastern (13:00 UTC) and then applies this show&apos;s reminder automation settings.
                 </div>
+              </article>
+
+              <article className="card stack-sm">
+                <strong>Submission Settings</strong>
+                <div className="meta-text">
+                  Set the bio length for this playbill. Contributors and reviewers will see and enforce this exact limit.
+                </div>
+                <form action={updateShowSubmissionSettingsAction} className="stack-sm" data-pending-label="Saving submission settings..." data-preserve-scroll="true">
+                  <label>
+                    Bio character limit
+                    <input
+                      type="number"
+                      name="bioCharLimit"
+                      min={100}
+                      max={2000}
+                      defaultValue={show.bio_char_limit}
+                      required
+                    />
+                  </label>
+                  <div className="meta-text">
+                    Current playbill limit: {show.bio_char_limit} characters. Existing playbills use 375 until changed.
+                  </div>
+                  <button type="submit">Save Submission Settings</button>
+                </form>
               </article>
 
               <article className="card stack-sm">

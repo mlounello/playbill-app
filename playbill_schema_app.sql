@@ -346,7 +346,8 @@ CREATE TABLE app_playbill.shows (
     published_at timestamp with time zone,
     program_id uuid,
     reminders_paused boolean DEFAULT false NOT NULL,
-    season_id uuid
+    season_id uuid,
+    bio_char_limit integer DEFAULT 375 NOT NULL
 );
 
 
@@ -571,6 +572,14 @@ ALTER TABLE ONLY app_playbill.shows
 
 ALTER TABLE ONLY app_playbill.shows
     ADD CONSTRAINT shows_slug_key UNIQUE (slug);
+
+
+--
+-- Name: shows shows_bio_char_limit_range; Type: CHECK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY app_playbill.shows
+    ADD CONSTRAINT shows_bio_char_limit_range CHECK (((bio_char_limit >= 100) AND (bio_char_limit <= 2000)));
 
 
 --
@@ -1281,4 +1290,3 @@ ALTER TABLE app_playbill.user_profiles ENABLE ROW LEVEL SECURITY;
 --
 
 \unrestrict j82worMtAYhLCcqpl9WZylerdBctevXazA85w9jGrspgjVKtoL2e9vK1WolUPGl
-

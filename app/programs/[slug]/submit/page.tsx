@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { RichTextField } from "@/components/rich-text-field";
-import { BIO_CHAR_LIMIT_DEFAULT } from "@/lib/submissions";
-import { getProgramBySlug, submitBioForProgram } from "@/lib/programs";
+import { getBioCharLimitForProgramSlug, getProgramBySlug, submitBioForProgram } from "@/lib/programs";
 import { richTextHasContent } from "@/lib/rich-text";
 
 export default async function BioSubmissionPage({
@@ -15,6 +14,7 @@ export default async function BioSubmissionPage({
   const { slug } = await params;
   const { error, success } = await searchParams;
   const program = await getProgramBySlug(slug);
+  const bioCharLimit = await getBioCharLimitForProgramSlug(slug);
 
   if (!program) {
     notFound();
@@ -85,7 +85,7 @@ export default async function BioSubmissionPage({
             name="bio"
             label="Bio"
             required
-            counter={{ mode: "characters", limit: BIO_CHAR_LIMIT_DEFAULT }}
+            counter={{ mode: "characters", limit: bioCharLimit }}
           />
 
           <label>

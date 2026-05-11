@@ -9,10 +9,13 @@ import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupab
 export const BIO_CHAR_LIMIT_DEFAULT = 375;
 export const SPECIAL_NOTE_WORD_LIMIT_DEFAULT = 400;
 export const NO_BIO_PLACEHOLDER = "<p><em>No biography provided.</em></p>";
-export type SubmissionType = "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
+export type SubmissionType = "bio" | "note" | "director_note" | "dramaturgical_note" | "music_director_note";
 export type RoleCategory = "cast" | "creative" | "production";
 
 export function normalizeSubmissionType(value: string): SubmissionType {
+  if (value === "note" || value === "notes" || value === "generic_note" || value === "production_note") {
+    return "note";
+  }
   if (value === "director_note" || value === "dramaturgical_note" || value === "music_director_note") {
     return value;
   }
@@ -20,10 +23,19 @@ export function normalizeSubmissionType(value: string): SubmissionType {
 }
 
 export function getSubmissionTypeLabel(type: SubmissionType) {
+  if (type === "note") return "Notes";
   if (type === "director_note") return "Director's Note";
   if (type === "dramaturgical_note") return "Dramaturgical Note";
   if (type === "music_director_note") return "Music Director's Note";
   return "Bio";
+}
+
+export function normalizeBioCharLimit(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return BIO_CHAR_LIMIT_DEFAULT;
+  }
+  return Math.min(2000, Math.max(100, Math.round(parsed)));
 }
 
 export function countWordsFromRichText(input: string | undefined) {
@@ -37,10 +49,10 @@ export function countWordsFromRichText(input: string | undefined) {
     .filter(Boolean).length;
 }
 
-function getSubmissionConstraints(type: SubmissionType) {
+function getSubmissionConstraints(type: SubmissionType, bioCharLimit = BIO_CHAR_LIMIT_DEFAULT) {
   const constraints: Record<string, number> = {};
   if (type === "bio") {
-    constraints.maxChars = BIO_CHAR_LIMIT_DEFAULT;
+    constraints.maxChars = normalizeBioCharLimit(bioCharLimit);
     return constraints;
   }
   constraints.maxWords = SPECIAL_NOTE_WORD_LIMIT_DEFAULT;
@@ -105,7 +117,9 @@ const manualPersonSchema = z.object({
   preferredName: z.string().optional(),
   pronouns: z.string().optional()
   ,
-  submissionType: z.enum(["bio", "director_note", "dramaturgical_note", "music_director_note"]).optional()
+  submissionType: z.enum(["bio", "note", "director_note", "dramaturgical_note", "music_director_note"]).optional(),
+  requestBio: z.boolean().optional(),
+  requestNotes: z.boolean().optional()
 });
 
 const reviewSchema = z.object({
@@ -141,6 +155,10 @@ export type ShowSubmissionPerson = {
   submission_status: "pending" | "draft" | "submitted" | "returned" | "approved" | "locked";
   submitted_at: string | null;
   bio_char_count: number;
+  bio_char_limit: number;
+  request_bio: boolean;
+  request_notes: boolean;
+  request_summary: string;
 };
 
 export type ShowSubmissionQueueItem = {
@@ -158,6 +176,7 @@ export type ShowSubmissionQueueItem = {
   submission_status: "pending" | "draft" | "submitted" | "returned" | "approved" | "locked";
   submitted_at: string | null;
   bio_char_count: number;
+  bio_char_limit: number;
 };
 
 export type ContributorTaskSummary = {
@@ -290,6 +309,37 @@ function stripRichTextToPlain(value: string) {
     .trim();
 }
 
+function getHtmlFromSubmissionRow(row: Record<string, unknown> | null | undefined) {
+  if (!row) {
+    return "";
+  }
+  const rich = row.rich_text_json;
+  if (rich && typeof rich === "object" && !Array.isArray(rich)) {
+    const html = (rich as { html?: unknown }).html;
+    if (typeof html === "string") {
+      return html;
+    }
+  }
+  return String(row.plain_text ?? "");
+}
+
+function getRequestSummary(requestBio: boolean, requestNotes: boolean) {
+  if (requestBio && requestNotes) return "Bio + notes";
+  if (requestBio) return "Bio only";
+  if (requestNotes) return "Notes only";
+  return "Nothing requested";
+}
+
+function getPrimaryRequirementForPerson(requestBio: boolean, requestNotes: boolean) {
+  if (requestBio) return "bio";
+  if (requestNotes) return "note";
+  return "none";
+}
+
+function isOpenSubmissionStatus(status: string) {
+  return !["submitted", "approved", "locked"].includes(normalizeSubmissionStatus(status));
+}
+
 function normalizeSubmissionStatus(value: string): ShowSubmissionPerson["submission_status"] {
   if (value === "draft" || value === "submitted" || value === "returned" || value === "approved" || value === "locked") {
     return value;
@@ -316,7 +366,7 @@ function canTransitionSubmissionStatus(
 async function getShowProgramContext(showId: string) {
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
-  const { data: show } = await db.from("shows").select("id, title, slug, program_id, is_published").eq("id", showId).single();
+  const { data: show } = await db.from("shows").select("*").eq("id", showId).single();
   if (!show?.program_id) {
     return null;
   }
@@ -329,6 +379,7 @@ async function getShowProgramContext(showId: string) {
     show_title: String(show.title ?? ""),
     show_slug: String(show.slug ?? ""),
     show_is_published: Boolean(show.is_published),
+    bio_char_limit: normalizeBioCharLimit((show as Record<string, unknown>).bio_char_limit),
     program_id: String(program.id),
     program_slug: String(program.slug ?? "")
   };
@@ -672,12 +723,14 @@ export async function getShowSubmissionPeople(showId: string) {
     .order("full_name", { ascending: true });
   const { data: roleRows } = await db
     .from("show_roles")
-    .select("person_id, role_name, category, billing_order")
+    .select("id, person_id, role_name, category, billing_order")
     .eq("show_id", showId);
   const rolesByPersonId = new Map<string, Array<{ role_name: string; category: string; billing_order: number | null }>>();
+  const personIdByRoleId = new Map<string, string>();
   for (const role of roleRows ?? []) {
     const personId = String(role.person_id ?? "");
     if (!personId) continue;
+    personIdByRoleId.set(String(role.id ?? ""), personId);
     const list = rolesByPersonId.get(personId) ?? [];
     list.push({
       role_name: String(role.role_name ?? ""),
@@ -685,6 +738,25 @@ export async function getShowSubmissionPeople(showId: string) {
       billing_order: role.billing_order === null ? null : Number(role.billing_order ?? null)
     });
     rolesByPersonId.set(personId, list);
+  }
+  const roleIds = [...personIdByRoleId.keys()].filter(Boolean);
+  const { data: requestRows } = roleIds.length
+    ? await db
+        .from("submission_requests")
+        .select("show_role_id, request_type, status")
+        .in("show_role_id", roleIds)
+    : { data: [] as Array<Record<string, unknown>> };
+  const requestedTypesByPersonId = new Map<string, Set<SubmissionType>>();
+  const requestStatusesByPersonId = new Map<string, ShowSubmissionPerson["submission_status"][]>();
+  for (const request of requestRows ?? []) {
+    const personId = personIdByRoleId.get(String(request.show_role_id ?? ""));
+    if (!personId) continue;
+    const current = requestedTypesByPersonId.get(personId) ?? new Set<SubmissionType>();
+    current.add(normalizeSubmissionType(String(request.request_type ?? "bio")));
+    requestedTypesByPersonId.set(personId, current);
+    const statuses = requestStatusesByPersonId.get(personId) ?? [];
+    statuses.push(normalizeSubmissionStatus(String(request.status ?? "pending")));
+    requestStatusesByPersonId.set(personId, statuses);
   }
 
   return (peopleRows ?? []).map((person) => {
@@ -700,6 +772,19 @@ export async function getShowSubmissionPeople(showId: string) {
       .filter((role) => role.category.toLowerCase() !== "cast")
       .map((role) => role.role_name);
     const roleCategoryDisplay = getRoleCategoryDisplay(roles.map((role) => role.category));
+    const requestedTypes = requestedTypesByPersonId.get(personId) ?? new Set<SubmissionType>();
+    const requestBio = requestedTypes.has("bio");
+    const requestNotes = [...requestedTypes].some((type) => type !== "bio");
+    const requestStatuses = requestStatusesByPersonId.get(personId) ?? [];
+    const aggregateStatus = requestStatuses.includes("returned")
+      ? "returned"
+      : requestStatuses.includes("submitted")
+        ? "submitted"
+        : requestStatuses.includes("draft")
+          ? "draft"
+          : requestStatuses.length > 0 && requestStatuses.every((status) => status === "approved" || status === "locked")
+            ? requestStatuses.includes("approved") ? "approved" : "locked"
+            : normalizeSubmissionStatus(String(person.submission_status ?? "pending"));
     const combinedRoleTitle = castRoles.length > 0
       ? `${joinRoles(castRoles)}${nonCastRoles.length > 0 ? ` (${joinRoles(nonCastRoles)})` : ""}`
       : nonCastRoles.length > 0
@@ -718,9 +803,13 @@ export async function getShowSubmissionPeople(showId: string) {
       bio: cleanBio,
       no_bio: rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
-      submission_status: normalizeSubmissionStatus(String(person.submission_status ?? "pending")),
+      submission_status: aggregateStatus,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
-      bio_char_count: stripRichTextToPlain(cleanBio).length
+      bio_char_count: stripRichTextToPlain(cleanBio).length,
+      bio_char_limit: context.bio_char_limit,
+      request_bio: requestBio,
+      request_notes: requestNotes,
+      request_summary: getRequestSummary(requestBio, requestNotes)
     } satisfies ShowSubmissionPerson;
   });
 }
@@ -755,13 +844,23 @@ export async function getShowSubmissionQueue(showId: string) {
     .from("submission_requests")
     .select("id, show_role_id, request_type, status")
     .in("show_role_id", roleIds);
+  const requestIds = (requests ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
+  const { data: submissionRows } = requestIds.length
+    ? await db
+        .from("submissions")
+        .select("request_id, rich_text_json, plain_text")
+        .in("request_id", requestIds)
+    : { data: [] as Array<Record<string, unknown>> };
+  const submissionBodyByRequestId = new Map(
+    (submissionRows ?? []).map((row) => [String(row.request_id ?? ""), getHtmlFromSubmissionRow(row as Record<string, unknown>)])
+  );
   const { data: program } = await db
     .from("programs")
     .select("director_notes, dramaturgical_note, music_director_note")
     .eq("id", context.program_id)
     .maybeSingle();
 
-  const supportedTypes = new Set<SubmissionType>(["bio", "director_note", "dramaturgical_note", "music_director_note"]);
+  const supportedTypes = new Set<SubmissionType>(["bio", "note", "director_note", "dramaturgical_note", "music_director_note"]);
   const categoriesByPersonId = new Map<string, string[]>();
   for (const role of roles ?? []) {
     const personId = String(role.person_id ?? "");
@@ -799,6 +898,8 @@ export async function getShowSubmissionQueue(showId: string) {
       const programField = getProgramFieldForSubmissionType(requestType);
       if (programField) {
         taskBody = String(programRecord?.[programField] ?? "");
+      } else {
+        taskBody = submissionBodyByRequestId.get(String(request.id ?? "")) ?? "";
       }
     }
 
@@ -820,7 +921,8 @@ export async function getShowSubmissionQueue(showId: string) {
       headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
       submission_status: normalizeSubmissionStatus(String(request.status ?? person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
-      bio_char_count: stripRichTextToPlain(taskBody).length
+      bio_char_count: stripRichTextToPlain(taskBody).length,
+      bio_char_limit: context.bio_char_limit
     });
   }
 
@@ -924,6 +1026,115 @@ export async function getShowSpecialNoteTemplates(showId: string) {
     return defaultSpecialNoteTemplates();
   }
   return listSpecialNoteTemplatesForShow(showId);
+}
+
+async function syncPersonRequestRequirements(params: {
+  showId: string;
+  programId: string;
+  personId: string;
+  requestBio: boolean;
+  requestNotes: boolean;
+  bioCharLimit: number;
+}) {
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: roleRows } = await db
+    .from("show_roles")
+    .select("id, category, billing_order")
+    .eq("show_id", params.showId)
+    .eq("person_id", params.personId);
+
+  const sortedRoles = [...(roleRows ?? [])].sort((a, b) => {
+    const aCast = String(a.category ?? "").toLowerCase() === "cast" ? 0 : 1;
+    const bCast = String(b.category ?? "").toLowerCase() === "cast" ? 0 : 1;
+    if (aCast !== bCast) return aCast - bCast;
+    return Number(a.billing_order ?? Number.MAX_SAFE_INTEGER) - Number(b.billing_order ?? Number.MAX_SAFE_INTEGER);
+  });
+  const primaryRoleId = sortedRoles[0]?.id ? String(sortedRoles[0].id) : "";
+  if (!primaryRoleId) {
+    return { created: 0, removed: 0 };
+  }
+
+  const roleIds = sortedRoles.map((row) => String(row.id ?? "")).filter(Boolean);
+  const { data: requestRows } = await db
+    .from("submission_requests")
+    .select("id, show_role_id, request_type, status")
+    .in("show_role_id", roleIds);
+  const requests = (requestRows ?? []).map((row) => ({
+    id: String(row.id ?? ""),
+    show_role_id: String(row.show_role_id ?? ""),
+    request_type: normalizeSubmissionType(String(row.request_type ?? "bio")),
+    status: normalizeSubmissionStatus(String(row.status ?? "pending"))
+  }));
+
+  let created = 0;
+  let removed = 0;
+  async function setRequestTypeEnabled(type: SubmissionType, enabled: boolean) {
+    const existing = requests.filter((request) => request.request_type === type);
+    if (enabled) {
+      if (existing.length === 0) {
+        await db.from("submission_requests").insert({
+          show_role_id: primaryRoleId,
+          request_type: type,
+          label: `${getSubmissionTypeLabel(type)} Submission`,
+          constraints: getSubmissionConstraints(type, params.bioCharLimit),
+          status: "pending"
+        });
+        created += 1;
+        return;
+      }
+      const keep = existing[0];
+      if (keep.show_role_id !== primaryRoleId) {
+        await db
+          .from("submission_requests")
+          .update({
+            show_role_id: primaryRoleId,
+            constraints: getSubmissionConstraints(type, params.bioCharLimit),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", keep.id);
+      } else {
+        await db
+          .from("submission_requests")
+          .update({
+            constraints: getSubmissionConstraints(type, params.bioCharLimit),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", keep.id);
+      }
+      for (const duplicate of existing.slice(1)) {
+        await db.from("submission_requests").delete().eq("id", duplicate.id);
+        removed += 1;
+      }
+      return;
+    }
+
+    for (const request of existing) {
+      if (isOpenSubmissionStatus(request.status)) {
+        await db.from("submission_requests").delete().eq("id", request.id);
+        removed += 1;
+      }
+    }
+  }
+
+  await setRequestTypeEnabled("bio", params.requestBio);
+  await setRequestTypeEnabled("note", params.requestNotes);
+
+  const peopleColumns = await getTableColumns(db, "people");
+  await db
+    .from("people")
+    .update(
+      filterToColumns(
+        {
+          submission_type: getPrimaryRequirementForPerson(params.requestBio, params.requestNotes)
+        },
+        peopleColumns
+      )
+    )
+    .eq("id", params.personId)
+    .eq("program_id", params.programId);
+
+  return { created, removed };
 }
 
 export async function createSpecialNoteTemplate(showId: string, formData: FormData) {
@@ -1040,13 +1251,17 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
       const text = await csvFile.text();
       records = parseCsvPeople(text);
     } else {
+      const requestBio = String(formData.get("requestBio") ?? "") === "on";
+      const requestNotes = String(formData.get("requestNotes") ?? "") === "on";
       records = [
         manualPersonSchema.parse({
           fullName: formData.get("fullName"),
           roleTitle: formData.get("roleTitle"),
           roleCategory: formData.get("roleCategory"),
           email: formData.get("email"),
-          submissionType: formData.get("submissionType")
+          submissionType: requestNotes && !requestBio ? "note" : "bio",
+          requestBio,
+          requestNotes
         })
       ];
     }
@@ -1082,6 +1297,8 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     team_type: row.team_type === "cast" ? "cast" : "production"
   }));
   const peopleByEmail = new Map(existingPeople.map((person) => [person.email, person]));
+  const wantsBio = (record: z.infer<typeof manualPersonSchema>) => record.requestBio ?? true;
+  const wantsNotes = (record: z.infer<typeof manualPersonSchema>) => record.requestNotes ?? false;
 
   const newPeopleRecords = records.filter((record) => !peopleByEmail.has(normalizeEmail(record.email)));
   const insertRows = newPeopleRecords.map((record) =>
@@ -1092,7 +1309,7 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
         role_title: record.roleTitle.trim(),
         team_type: record.roleCategory === "cast" ? "cast" : "production",
         email: normalizeEmail(record.email),
-        submission_type: "bio",
+        submission_type: getPrimaryRequirementForPerson(wantsBio(record), wantsNotes(record)),
         bio: "",
         headshot_url: "",
         submission_status: "pending",
@@ -1304,60 +1521,20 @@ export async function addPeopleToShow(showId: string, formData: FormData) {
     await db.from("show_roles").insert(newRoleRows);
   }
 
-  // Ensure exactly one bio request per person (not per role).
-  const personIds = [...new Set(records.map((record) => personIdByEmail.get(normalizeEmail(record.email)) ?? "").filter(Boolean))];
-  if (personIds.length > 0) {
-    const { data: allRolesForPeople } = await db
-      .from("show_roles")
-      .select("id, person_id, category, billing_order")
-      .eq("show_id", showId)
-      .in("person_id", personIds);
-    const roleIds = (allRolesForPeople ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
-    const { data: existingBioRequests } = roleIds.length
-      ? await db
-          .from("submission_requests")
-          .select("id, show_role_id, request_type")
-          .in("show_role_id", roleIds)
-      : { data: [] as Array<Record<string, unknown>> };
-    const roleById = new Map((allRolesForPeople ?? []).map((row) => [String(row.id), String(row.person_id ?? "")]));
-    const hasBioByPersonId = new Set(
-      (existingBioRequests ?? [])
-        .filter((row) => String(row.request_type ?? "bio") === "bio")
-        .map((row) => roleById.get(String(row.show_role_id ?? "")) ?? "")
-        .filter(Boolean)
-    );
-    const rowsToInsert: Array<{
-      show_role_id: string;
-      request_type: string;
-      label: string;
-      constraints: Record<string, number>;
-      status: string;
-    }> = [];
-    for (const personId of personIds) {
-      if (hasBioByPersonId.has(personId)) {
-        continue;
-      }
-      const rolesForPerson = (allRolesForPeople ?? [])
-        .filter((row) => String(row.person_id ?? "") === personId)
-        .sort((a, b) => {
-          const aCast = String(a.category ?? "").toLowerCase() === "cast" ? 0 : 1;
-          const bCast = String(b.category ?? "").toLowerCase() === "cast" ? 0 : 1;
-          if (aCast !== bCast) return aCast - bCast;
-          return Number(a.billing_order ?? Number.MAX_SAFE_INTEGER) - Number(b.billing_order ?? Number.MAX_SAFE_INTEGER);
-        });
-      const chosenRoleId = rolesForPerson[0]?.id ? String(rolesForPerson[0].id) : "";
-      if (!chosenRoleId) continue;
-      rowsToInsert.push({
-        show_role_id: chosenRoleId,
-        request_type: "bio",
-        label: `${getSubmissionTypeLabel("bio")} Submission`,
-        constraints: getSubmissionConstraints("bio"),
-        status: "pending"
-      });
+  // Keep submission requests explicit: bio, notes, both, or neither.
+  for (const record of records) {
+    const personId = personIdByEmail.get(normalizeEmail(record.email));
+    if (!personId) {
+      continue;
     }
-    if (rowsToInsert.length > 0) {
-      await db.from("submission_requests").insert(rowsToInsert);
-    }
+    await syncPersonRequestRequirements({
+      showId,
+      programId: context.program_id,
+      personId,
+      requestBio: wantsBio(record),
+      requestNotes: wantsNotes(record),
+      bioCharLimit: context.bio_char_limit
+    });
   }
 
   await writeAuditLog({
@@ -1789,7 +1966,9 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
   const personId = String(formData.get("personId") ?? "").trim();
   const fullName = String(formData.get("fullName") ?? "").trim();
   const email = normalizeEmail(String(formData.get("email") ?? "").trim());
-  const submissionType = normalizeSubmissionType(String(formData.get("submissionType") ?? "bio"));
+  const requestBio = String(formData.get("requestBio") ?? "") === "on";
+  const requestNotes = String(formData.get("requestNotes") ?? "") === "on";
+  const primaryRequirement = getPrimaryRequirementForPerson(requestBio, requestNotes);
 
   if (!personId) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Person id is required.");
@@ -1822,7 +2001,7 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
     id: String(personRow.id),
     full_name: String(personRow.full_name ?? ""),
     email: normalizeEmail(String(personRow.email ?? "")),
-    submission_type: normalizeSubmissionType(String(personRow.submission_type ?? "bio"))
+    submission_type: String(personRow.submission_type ?? "bio")
   };
 
   const peopleUpdate: Record<string, string> = {};
@@ -1836,9 +2015,9 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
     peopleUpdate.email = email;
     audits.push({ field: "email", beforeValue: current.email, afterValue: email });
   }
-  if (current.submission_type !== submissionType) {
-    peopleUpdate.submission_type = submissionType;
-    audits.push({ field: "submission_type", beforeValue: current.submission_type, afterValue: submissionType });
+  if (current.submission_type !== primaryRequirement) {
+    peopleUpdate.submission_type = primaryRequirement;
+    audits.push({ field: "submission_type", beforeValue: current.submission_type, afterValue: primaryRequirement });
   }
 
   if (Object.keys(peopleUpdate).length > 0) {
@@ -1848,23 +2027,14 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
     }
   }
 
-  if (current.submission_type !== submissionType) {
-    const { data: roleRow } = await db
-      .from("show_roles")
-      .select("id")
-      .eq("show_id", showId)
-      .eq("person_id", current.id)
-      .maybeSingle();
-    if (roleRow?.id) {
-      await db
-        .from("submission_requests")
-        .update({
-          request_type: submissionType,
-          label: `${getSubmissionTypeLabel(submissionType)} Submission`
-        })
-        .eq("show_role_id", String(roleRow.id));
-    }
-  }
+  await syncPersonRequestRequirements({
+    showId,
+    programId: context.program_id,
+    personId: current.id,
+    requestBio,
+    requestNotes,
+    bioCharLimit: context.bio_char_limit
+  });
 
   for (const audit of audits) {
     await writeAuditLog({
@@ -2455,21 +2625,6 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
     return (nonCast ?? personRoles[0]).id;
   }
 
-  // Bio stays default for everyone.
-  for (const role of roles) {
-    const roleRequests = requestsByRoleId.get(role.id) ?? [];
-    const hasBio = roleRequests.some((item) => item.request_type === "bio");
-    if (!hasBio) {
-      await db.from("submission_requests").insert({
-        show_role_id: role.id,
-        request_type: "bio",
-        label: `${getSubmissionTypeLabel("bio")} Submission`,
-        constraints: getSubmissionConstraints("bio"),
-        status: "pending"
-      });
-    }
-  }
-
   const requestedAssignments: Array<{ type: SubmissionType; personId: string }> = [
     { type: "director_note", personId: directorPersonId },
     { type: "dramaturgical_note", personId: dramaturgPersonId },
@@ -2501,7 +2656,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
         request_type: assignment.type,
         label: requestLabel,
         constraints: {
-          ...getSubmissionConstraints(assignment.type),
+          ...getSubmissionConstraints(assignment.type, context.bio_char_limit),
           template_id: template?.id ?? "",
           template_name: template?.name ?? getSubmissionTypeLabel(assignment.type)
         },
@@ -2540,7 +2695,7 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
 
   redirect(
     `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
-      "Special note assignments updated. Bio remains default and note requests were synced."
+      "Special note assignments updated. Existing bio requests were left unchanged."
     )}`
   );
 }
@@ -2561,12 +2716,13 @@ export async function resyncShowSubmissionRequests(showId: string) {
 
   const { data: peopleRows } = await db
     .from("people")
-    .select("id, role_title, team_type")
+    .select("id, role_title, team_type, submission_type")
     .eq("program_id", context.program_id);
   const people = (peopleRows ?? []).map((row) => ({
     id: String(row.id),
     role_title: String(row.role_title ?? ""),
-    team_type: String(row.team_type ?? "") === "cast" ? "cast" : "production"
+    team_type: String(row.team_type ?? "") === "cast" ? "cast" : "production",
+    submission_type: String(row.submission_type ?? "bio")
   }));
 
   const { data: roleRows } = await db
@@ -2654,12 +2810,12 @@ export async function resyncShowSubmissionRequests(showId: string) {
       .flatMap((role) => requestsByRoleId.get(role.id) ?? [])
       .filter((request) => request.request_type === "bio");
 
-    if (personBioRequests.length === 0) {
+    if (personBioRequests.length === 0 && person.submission_type !== "note" && person.submission_type !== "none") {
       await db.from("submission_requests").insert({
         show_role_id: primaryRoleId,
         request_type: "bio",
         label: `${getSubmissionTypeLabel("bio")} Submission`,
-        constraints: getSubmissionConstraints("bio"),
+        constraints: getSubmissionConstraints("bio", context.bio_char_limit),
         status: "pending"
       });
       createdBioRequests += 1;
@@ -2737,7 +2893,7 @@ export async function getContributorTasksForCurrentUser() {
     .select("id, show_role_id, due_date, status, request_type")
     .in("show_role_id", roleIds);
   const requestRows = (requests ?? []).filter((row) =>
-    ["bio", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio"))
+    ["bio", "note", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio"))
   );
   if (requestRows.length === 0) {
     return [] as ContributorTaskSummary[];
@@ -2909,7 +3065,12 @@ export async function getContributorTaskById(showId: string, taskId: string) {
         .maybeSingle();
       taskBody = String((program as Record<string, unknown> | null)?.[programField] ?? "");
     } else {
-      taskBody = "";
+      const { data: submission } = await db
+        .from("submissions")
+        .select("rich_text_json, plain_text")
+        .eq("request_id", resolvedRequestId)
+        .maybeSingle();
+      taskBody = getHtmlFromSubmissionRow((submission as Record<string, unknown> | null) ?? null);
     }
   }
 
@@ -2935,7 +3096,11 @@ export async function getContributorTaskById(showId: string, taskId: string) {
       headshot_url: String(person.headshot_url ?? ""),
       submission_status: resolvedRequestStatus,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
-      bio_char_count: stripRichTextToPlain(taskBody).length
+      bio_char_count: stripRichTextToPlain(taskBody).length,
+      bio_char_limit: context.bio_char_limit,
+      request_bio: resolvedRequestType === "bio",
+      request_notes: resolvedRequestType !== "bio",
+      request_summary: getRequestSummary(resolvedRequestType === "bio", resolvedRequestType !== "bio")
     } satisfies ShowSubmissionPerson,
     return_message: returnMessageAudit?.[0]
       ? {
@@ -3054,8 +3219,8 @@ async function updateSubmissionCore(args: {
     return { ok: false as const, message: `${submissionLabel} is required before submitting.` };
   }
 
-  if (isBioType && !args.skipBio && plainLength > BIO_CHAR_LIMIT_DEFAULT) {
-    return { ok: false as const, message: `${submissionLabel} exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.` };
+  if (isBioType && !args.skipBio && plainLength > context.bio_char_limit) {
+    return { ok: false as const, message: `${submissionLabel} exceeds ${context.bio_char_limit} character limit.` };
   }
   if (!isBioType && wordCount > SPECIAL_NOTE_WORD_LIMIT_DEFAULT) {
     return { ok: false as const, message: `${submissionLabel} exceeds ${SPECIAL_NOTE_WORD_LIMIT_DEFAULT} word limit.` };
@@ -3148,6 +3313,7 @@ async function updateSubmissionCore(args: {
     await db
       .from("submissions")
       .update({
+        rich_text_json: { html: cleanBio },
         plain_text: stripRichTextToPlain(cleanBio),
         status: args.status,
         updated_at: nowIso
@@ -3156,6 +3322,7 @@ async function updateSubmissionCore(args: {
   } else {
     await db.from("submissions").insert({
       request_id: args.requestId,
+      rich_text_json: { html: cleanBio },
       plain_text: stripRichTextToPlain(cleanBio),
       status: args.status
     });
@@ -3368,7 +3535,12 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
         .maybeSingle();
       taskBody = String((program as Record<string, unknown> | null)?.[programField] ?? "");
     } else {
-      taskBody = "";
+      const { data: submission } = await db
+        .from("submissions")
+        .select("rich_text_json, plain_text")
+        .eq("request_id", resolvedTask.task_id)
+        .maybeSingle();
+      taskBody = getHtmlFromSubmissionRow((submission as Record<string, unknown> | null) ?? null);
     }
   }
 
@@ -3387,7 +3559,11 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
       headshot_url: String(person.headshot_url ?? ""),
       submission_status: resolvedTask.status,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
-      bio_char_count: stripRichTextToPlain(taskBody).length
+      bio_char_count: stripRichTextToPlain(taskBody).length,
+      bio_char_limit: context.bio_char_limit,
+      request_bio: resolvedTask.request_type === "bio",
+      request_notes: resolvedTask.request_type !== "bio",
+      request_summary: getRequestSummary(resolvedTask.request_type === "bio", resolvedTask.request_type !== "bio")
     } satisfies ShowSubmissionPerson,
     task_id: resolvedTask.task_id,
     history: (historyRows ?? []).map((row) => ({

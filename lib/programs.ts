@@ -4,7 +4,7 @@ import { buildDepartmentInfoHtml } from "@/lib/departments";
 import { sendAdminSubmissionNotification, sendContributorSubmissionConfirmation } from "@/lib/reminders";
 import { buildSeasonCalendarHtml } from "@/lib/seasons";
 import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
-import { BIO_CHAR_LIMIT_DEFAULT } from "@/lib/submissions";
+import { BIO_CHAR_LIMIT_DEFAULT, normalizeBioCharLimit } from "@/lib/submissions";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
@@ -2859,6 +2859,23 @@ export async function getProgramWorkspaceById(showId: string) {
   return workspace.find((item) => item.id === showId) ?? null;
 }
 
+export async function getBioCharLimitForProgramSlug(slug: string) {
+  const missingEnv = getMissingSupabaseEnvVars();
+  if (missingEnv.length > 0) {
+    return BIO_CHAR_LIMIT_DEFAULT;
+  }
+
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: program } = await db.from("programs").select("id").eq("slug", slug).maybeSingle();
+  if (!program?.id) {
+    return BIO_CHAR_LIMIT_DEFAULT;
+  }
+
+  const { data: show } = await db.from("shows").select("*").eq("program_id", String(program.id)).maybeSingle();
+  return normalizeBioCharLimit((show as Record<string, unknown> | null)?.bio_char_limit);
+}
+
 export async function submitBioForProgram(slug: string, formData: FormData) {
   "use server";
 
@@ -2878,9 +2895,6 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   if (!richTextHasContent(cleanBio)) {
     redirectWithError(`/programs/${slug}/submit`, "Bio cannot be empty.");
   }
-  if (stripRichTextToPlain(cleanBio).length > BIO_CHAR_LIMIT_DEFAULT) {
-    redirectWithError(`/programs/${slug}/submit`, `Bio exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.`);
-  }
 
   const missingEnv = getMissingSupabaseEnvVars();
   if (missingEnv.length > 0) {
@@ -2893,6 +2907,19 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
 
   if (programError || !program) {
     redirectWithError(`/programs/${slug}/submit`, "Program not found.");
+  }
+
+  const { data: show } = await db
+    .from("shows")
+    .select("*")
+    .eq("program_id", String(program.id))
+    .maybeSingle();
+  if (!show?.id) {
+    redirectWithError(`/programs/${slug}/submit`, "This legacy form is no longer available for this program.");
+  }
+  const bioCharLimit = normalizeBioCharLimit((show as Record<string, unknown>).bio_char_limit);
+  if (stripRichTextToPlain(cleanBio).length > bioCharLimit) {
+    redirectWithError(`/programs/${slug}/submit`, `Bio exceeds ${bioCharLimit} character limit.`);
   }
 
   const { data: targetPerson, error: personError } = await db
@@ -2933,15 +2960,6 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   const { error: updateError } = await db.from("people").update(updatePayload).eq("id", targetPerson.id);
   if (updateError) {
     redirectWithError(`/programs/${slug}/submit`, updateError.message);
-  }
-
-  const { data: show } = await db
-    .from("shows")
-    .select("id, title")
-    .eq("program_id", String(program.id))
-    .maybeSingle();
-  if (!show?.id) {
-    redirectWithError(`/programs/${slug}/submit`, "This legacy form is no longer available for this program.");
   }
 
   const { data: roleRows } = await db
@@ -2985,6 +3003,7 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
     const { error: submissionUpdateError } = await db
       .from("submissions")
       .update({
+        rich_text_json: { html: cleanBio },
         plain_text: stripRichTextToPlain(cleanBio),
         status: "submitted",
         updated_at: nowIso
@@ -2996,6 +3015,7 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   } else {
     const { error: submissionInsertError } = await db.from("submissions").insert({
       request_id: String(bioRequest.id),
+      rich_text_json: { html: cleanBio },
       plain_text: stripRichTextToPlain(cleanBio),
       status: "submitted"
     });

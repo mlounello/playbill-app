@@ -38,7 +38,7 @@ type AdminSubmissionNotificationArgs = {
   showTitle: string;
   personName: string;
   roleTitle: string;
-  submissionType: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
+  submissionType: "bio" | "note" | "director_note" | "dramaturgical_note" | "music_director_note";
   taskId: string;
 };
 
@@ -243,6 +243,7 @@ export async function sendAdminSubmissionNotification(args: AdminSubmissionNotif
   }
 
   const submissionLabel = (() => {
+    if (args.submissionType === "note") return "Notes";
     if (args.submissionType === "director_note") return "Director's Note";
     if (args.submissionType === "dramaturgical_note") return "Dramaturgical Note";
     if (args.submissionType === "music_director_note") return "Music Director's Note";
@@ -326,7 +327,7 @@ async function getReminderRecipients(showId: string) {
     .select("id, show_role_id, due_date, status, request_type")
     .in("show_role_id", roleIds);
   const requestRows = (requests ?? []).filter((row) =>
-    ["bio", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio"))
+    ["bio", "note", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio"))
   );
   if (requestRows.length === 0) {
     return [] as ReminderRecipient[];
@@ -385,6 +386,7 @@ function formatDate(value: string | null) {
 }
 
 function getRequestLabel(value: string) {
+  if (value === "note") return "notes";
   if (value === "director_note") return "director's note";
   if (value === "dramaturgical_note") return "dramaturgical note";
   if (value === "music_director_note") return "music director's note";
@@ -759,7 +761,7 @@ export async function setShowDueDate(showId: string, formData: FormData) {
 
   const requestTypes =
     dueScope === "notes"
-      ? ["director_note", "dramaturgical_note", "music_director_note"]
+      ? ["note", "director_note", "dramaturgical_note", "music_director_note"]
       : ["bio"];
 
   const { error } = await db

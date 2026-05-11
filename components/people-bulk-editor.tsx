@@ -10,7 +10,10 @@ type PersonRow = {
   email: string;
   role_count?: number;
   role_summary?: string;
-  submission_type?: "bio" | "director_note" | "dramaturgical_note" | "music_director_note";
+  submission_type?: "bio" | "note" | "director_note" | "dramaturgical_note" | "music_director_note";
+  request_bio?: boolean;
+  request_notes?: boolean;
+  request_summary?: string;
   submission_status?: "pending" | "draft" | "submitted" | "returned" | "approved" | "locked";
   submitted_at?: string | null;
 };
@@ -68,9 +71,8 @@ export function PeopleBulkEditor({
   const [editPersonId, setEditPersonId] = useState("");
   const [editFullName, setEditFullName] = useState("");
   const [editEmail, setEditEmail] = useState("");
-  const [editSubmissionType, setEditSubmissionType] = useState<
-    "bio" | "director_note" | "dramaturgical_note" | "music_director_note"
-  >("bio");
+  const [editRequestBio, setEditRequestBio] = useState(true);
+  const [editRequestNotes, setEditRequestNotes] = useState(false);
 
   const sortedPeople = useMemo(
     () => [...people].sort((a, b) => a.full_name.localeCompare(b.full_name) || a.role_title.localeCompare(b.role_title)),
@@ -106,7 +108,8 @@ export function PeopleBulkEditor({
     setEditPersonId(person.id);
     setEditFullName(person.full_name);
     setEditEmail(person.email);
-    setEditSubmissionType(person.submission_type ?? "bio");
+    setEditRequestBio(person.request_bio ?? (person.submission_type ?? "bio") === "bio");
+    setEditRequestNotes(person.request_notes ?? (person.submission_type ?? "") === "note");
     setEditOpen(true);
   };
   const editPersonRoles = useMemo(
@@ -197,7 +200,7 @@ export function PeopleBulkEditor({
                     </td>
                     <td style={{ textTransform: "capitalize" }}>{person.team_type}</td>
                     <td>{person.email || "No email"}</td>
-                    <td>{person.submission_type ?? "bio"}</td>
+                    <td>{person.request_summary ?? person.submission_type ?? "Bio only"}</td>
                     <td>
                       <span className="status-pill">{person.submission_status ?? "pending"}</span>
                     </td>
@@ -319,6 +322,7 @@ export function PeopleBulkEditor({
                 </label>
                 <select name="submissionType" defaultValue="bio" disabled={!enableSubmissionType}>
                   <option value="bio">Bio</option>
+                  <option value="note">Notes</option>
                   <option value="director_note">Director's Note</option>
                   <option value="dramaturgical_note">Dramaturgical Note</option>
                   <option value="music_director_note">Music Director's Note</option>
@@ -361,17 +365,28 @@ export function PeopleBulkEditor({
                 <input name="email" type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} required />
               </div>
               <div className="people-field-row">
-                <label className="people-field-toggle">Submission Requirement</label>
-                <select
-                  name="submissionType"
-                  value={editSubmissionType}
-                  onChange={(event) => setEditSubmissionType(event.target.value as "bio" | "director_note" | "dramaturgical_note" | "music_director_note")}
-                >
-                  <option value="bio">Bio</option>
-                  <option value="director_note">Director&apos;s Note</option>
-                  <option value="dramaturgical_note">Dramaturgical Note</option>
-                  <option value="music_director_note">Music Director&apos;s Note</option>
-                </select>
+                <label className="people-field-toggle">Submission Requests</label>
+                <div className="stack-sm">
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      name="requestBio"
+                      checked={editRequestBio}
+                      onChange={(event) => setEditRequestBio(event.target.checked)}
+                    />
+                    <span>Request a program bio</span>
+                  </label>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      name="requestNotes"
+                      checked={editRequestNotes}
+                      onChange={(event) => setEditRequestNotes(event.target.checked)}
+                    />
+                    <span>Request notes or production information</span>
+                  </label>
+                  <div className="meta-text">Leave both unchecked when this person does not need to submit anything.</div>
+                </div>
               </div>
               <div className="people-modal-actions">
                 <button type="submit">Save Person</button>

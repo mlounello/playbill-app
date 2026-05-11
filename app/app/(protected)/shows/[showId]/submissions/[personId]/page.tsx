@@ -4,7 +4,6 @@ import { FlashToast } from "@/components/flash-toast";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
 import {
-  BIO_CHAR_LIMIT_DEFAULT,
   NO_BIO_PLACEHOLDER,
   SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
   adminSaveSubmission,
@@ -122,7 +121,7 @@ export default async function ShowSubmissionReviewPage({
           </div>
           <div className="meta-text" style={{ marginTop: "0.35rem" }}>
             {isBioTask
-              ? `${submissionLabel} chars: ${review.person.bio_char_count}/${BIO_CHAR_LIMIT_DEFAULT}`
+              ? `${submissionLabel} chars: ${review.person.bio_char_count}/${review.person.bio_char_limit}`
               : `${submissionLabel} words: ${noteWordCount}/${SPECIAL_NOTE_WORD_LIMIT_DEFAULT}`}
           </div>
         </section>
@@ -138,7 +137,7 @@ export default async function ShowSubmissionReviewPage({
             initialValue={hasNoBio ? "" : review.person.bio}
             counter={
               isBioTask
-                ? { mode: "characters", limit: BIO_CHAR_LIMIT_DEFAULT }
+                ? { mode: "characters", limit: review.person.bio_char_limit }
                 : { mode: "words", limit: SPECIAL_NOTE_WORD_LIMIT_DEFAULT }
             }
           />
