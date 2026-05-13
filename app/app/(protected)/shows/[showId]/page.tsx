@@ -374,6 +374,11 @@ export default async function ShowWorkspacePage({
   const currentDirectorTemplateId = specialNoteAssignments.directorTemplateId || "default:director_note";
   const currentDramaturgTemplateId = specialNoteAssignments.dramaturgTemplateId || "default:dramaturgical_note";
   const currentMusicDirectorTemplateId = specialNoteAssignments.musicDirectorTemplateId || "default:music_director_note";
+  const hasLegacyNoteSetup =
+    show.modules.some((module) =>
+      ["director_note", "dramaturgical_note", "music_director_note"].includes(module.module_type)
+    ) ||
+    Boolean(currentDirectorNotePersonId || currentDramaturgNotePersonId || currentMusicDirectorNotePersonId);
   const roleAssignments = activeTab === "people-roles" ? await getShowRoleAssignments(show.id) : [];
   const roleLibrary =
     activeTab === "people-roles"
@@ -749,12 +754,15 @@ export default async function ShowWorkspacePage({
                 )}
               </article>
 
+              {hasLegacyNoteSetup ? (
               <article className="card stack-sm">
-                <strong>Special Note Assignments</strong>
+                <strong>Legacy Note Assignments</strong>
                 <p className="section-note">
-                  Assign who should submit Director, Dramaturgical, and Music Director notes. This updates submission requirements automatically.
+                  This show still has older fixed note slots. New playbills should use Program Note Assignments above, where each Contributor Note section can be titled and assigned freely.
                 </p>
-                <form action={updateSpecialNotesAction} className="grid" style={{ gap: "0.75rem" }} data-pending-label="Saving special note assignments..." data-preserve-scroll="true">
+                <details>
+                  <summary><strong>Show legacy Director / Dramaturgical / Music Director controls</strong></summary>
+                <form action={updateSpecialNotesAction} className="grid" style={{ gap: "0.75rem", marginTop: "0.75rem" }} data-pending-label="Saving legacy note assignments..." data-preserve-scroll="true">
                   <div className="form-row-2">
                     <label>
                       Director Note Template
@@ -830,10 +838,11 @@ export default async function ShowWorkspacePage({
                       </select>
                     </label>
                   </div>
-                  <button type="submit">Save Special Note Assignments</button>
+                  <button type="submit">Save Legacy Note Assignments</button>
                 </form>
+                </details>
                 <details>
-                  <summary><strong>Manage Special Note Templates</strong></summary>
+                  <summary><strong>Manage Legacy Note Templates</strong></summary>
                   <div className="stack-sm" style={{ marginTop: "0.5rem" }}>
                     <form action={createSpecialNoteTemplateAction} className="form-row-3" data-pending-label="Creating note template..." data-preserve-scroll="true">
                       <label>
@@ -890,6 +899,10 @@ export default async function ShowWorkspacePage({
                     </div>
                   </div>
                 </details>
+              </article>
+              ) : null}
+              <article className="card stack-sm">
+                <strong>Submission Request Repair</strong>
                 <form action={resyncSubmissionRequestsAction} className="top-actions" data-pending-label="Resyncing submission requests..." data-preserve-scroll="true">
                   <button type="submit">Resync Submission Requests</button>
                   <span className="section-note">

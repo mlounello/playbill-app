@@ -34,6 +34,16 @@ type ModuleItem = {
 
 type PlanMode = "sections" | "order";
 
+const legacyNoteModuleTitles: Record<string, string> = {
+  director_note: "Director's Note",
+  dramaturgical_note: "Dramaturgical Note",
+  music_director_note: "Music Director's Note"
+};
+
+function normalizeEditorModuleType(moduleType: string) {
+  return legacyNoteModuleTitles[moduleType] ? "contributor_note" : moduleType;
+}
+
 const moduleTypeLabels: Record<string, string> = {
   cover: "Cover",
   production_info: "Production Info",
@@ -42,9 +52,6 @@ const moduleTypeLabels: Record<string, string> = {
   production_team: "Production Team",
   bios: "Bio Collection",
   contributor_note: "Contributor Note",
-  director_note: "Contributor Note",
-  dramaturgical_note: "Contributor Note",
-  music_director_note: "Contributor Note",
   acts_scenes: "Acts / Scenes",
   songs: "Songs",
   department_info: "Producing Organization",
@@ -69,9 +76,6 @@ const moduleTypeDescriptions: Record<string, string> = {
   production_team: "Production team list from people and roles.",
   bios: "Collected bios from requested submissions.",
   contributor_note: "A flexible note request. Title it Director's Note, Choreographer's Note, Playwright's Note, or anything else.",
-  director_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
-  dramaturgical_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
-  music_director_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
   acts_scenes: "Uses the Acts & Songs content source.",
   songs: "Uses the Acts & Songs content source.",
   department_info: "Selected producing profiles and department information.",
@@ -96,9 +100,6 @@ const addableModuleTypes = [
   "cast_list",
   "creative_team",
   "production_team",
-  "director_note",
-  "dramaturgical_note",
-  "music_director_note",
   "acts_scenes",
   "songs",
   "department_info",
@@ -129,17 +130,20 @@ function isDefaultIsolated(moduleType: string) {
 }
 
 function normalizeModules(modules: ShowModule[]): ModuleItem[] {
-  return modules.map((mod) => ({
-    id: mod.id,
-    module_type: mod.module_type,
-    display_title:
-      mod.module_type === "actf_sponsorship"
-        ? "ACTF Sponsorship"
-        : mod.display_title || moduleTypeLabels[mod.module_type] || mod.module_type,
-    visible: mod.visible,
-    filler_eligible: mod.filler_eligible,
-    settings: mod.settings || {}
-  }));
+  return modules.map((mod) => {
+    const moduleType = normalizeEditorModuleType(mod.module_type);
+    return {
+      id: mod.id,
+      module_type: moduleType,
+      display_title:
+        mod.module_type === "actf_sponsorship"
+          ? "ACTF Sponsorship"
+          : mod.display_title || legacyNoteModuleTitles[mod.module_type] || moduleTypeLabels[moduleType] || moduleType,
+      visible: mod.visible,
+      filler_eligible: mod.filler_eligible,
+      settings: mod.settings || {}
+    };
+  });
 }
 
 function getPlacementLabel(item: ModuleItem) {
