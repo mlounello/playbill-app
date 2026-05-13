@@ -41,6 +41,7 @@ const moduleTypeLabels: Record<string, string> = {
   creative_team: "Creative Team",
   production_team: "Production Team",
   bios: "Bio Collection",
+  contributor_note: "Contributor Note",
   director_note: "Contributor Note",
   dramaturgical_note: "Contributor Note",
   music_director_note: "Contributor Note",
@@ -67,6 +68,7 @@ const moduleTypeDescriptions: Record<string, string> = {
   creative_team: "Creative team list from people and roles.",
   production_team: "Production team list from people and roles.",
   bios: "Collected bios from requested submissions.",
+  contributor_note: "A flexible note request. Title it Director's Note, Choreographer's Note, Playwright's Note, or anything else.",
   director_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
   dramaturgical_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
   music_director_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
@@ -89,6 +91,7 @@ const moduleTypeDescriptions: Record<string, string> = {
 const addableModuleTypes = [
   "custom_text",
   "custom_image",
+  "contributor_note",
   "bios",
   "cast_list",
   "creative_team",
@@ -593,7 +596,12 @@ export function ProgramPlanEditor({
       {
         id: `new-${newModuleType}-${Date.now()}`,
         module_type: newModuleType,
-        display_title: newModuleType === "actf_sponsorship" ? "ACTF Sponsorship" : moduleTypeLabels[newModuleType] || newModuleType,
+        display_title:
+          newModuleType === "actf_sponsorship"
+            ? "ACTF Sponsorship"
+            : newModuleType === "contributor_note"
+              ? "Contributor Note"
+              : moduleTypeLabels[newModuleType] || newModuleType,
         visible: true,
         filler_eligible: false,
         settings: {

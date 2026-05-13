@@ -97,7 +97,7 @@ export default async function ShowSubmissionReviewPage({
   }
 
   const saveAction = adminSaveSubmission.bind(null, showId, personId);
-  const submissionLabel = getSubmissionTypeLabel(review.person.submission_type);
+  const submissionLabel = review.person.submission_label || getSubmissionTypeLabel(review.person.submission_type);
   const isBioTask = review.person.submission_type === "bio";
   const noteWordCount = countWordsFromRichText(review.person.bio);
   const hasNoBio =

@@ -30,6 +30,22 @@ export function getSubmissionTypeLabel(type: SubmissionType) {
   return "Bio";
 }
 
+function getSubmissionLabel(type: SubmissionType, label?: string | null) {
+  const cleaned = String(label ?? "").trim();
+  if (cleaned) {
+    return cleaned.replace(/\s+Submission$/i, "");
+  }
+  return getSubmissionTypeLabel(type);
+}
+
+function getConstraintString(constraints: unknown, key: string) {
+  if (constraints && typeof constraints === "object" && !Array.isArray(constraints)) {
+    const value = (constraints as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : "";
+  }
+  return "";
+}
+
 export function normalizeBioCharLimit(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -149,6 +165,7 @@ export type ShowSubmissionPerson = {
   role_category_display?: "cast" | "creative" | "production" | "mixed";
   email: string;
   submission_type: SubmissionType;
+  submission_label: string;
   bio: string;
   no_bio: boolean;
   headshot_url: string;
@@ -170,6 +187,7 @@ export type ShowSubmissionQueueItem = {
   role_category_display?: "cast" | "creative" | "production" | "mixed";
   email: string;
   submission_type: SubmissionType;
+  submission_label: string;
   bio: string;
   no_bio: boolean;
   headshot_url: string;
@@ -190,6 +208,7 @@ export type ContributorTaskSummary = {
   person_name: string;
   role_title: string;
   submission_type: SubmissionType;
+  submission_label: string;
   submission_status: ShowSubmissionPerson["submission_status"];
   due_date: string | null;
   submitted_at: string | null;
@@ -205,6 +224,7 @@ export type ContributorTaskLoginSummary = {
   person_name: string;
   role_title: string;
   submission_type: SubmissionType;
+  submission_label: string;
   due_date: string | null;
   submission_status: ShowSubmissionPerson["submission_status"];
   email: string;
@@ -226,6 +246,14 @@ export type SpecialNoteTemplateOption = {
   name: string;
   request_type: Exclude<SubmissionType, "bio">;
   scope: "global" | "show";
+};
+
+export type ContributorNoteAssignment = {
+  module_id: string;
+  module_title: string;
+  assigned_person_id: string;
+  request_id: string;
+  request_status: ShowSubmissionPerson["submission_status"] | "";
 };
 
 function withError(path: string, message: string): never {
@@ -800,6 +828,11 @@ export async function getShowSubmissionPeople(showId: string) {
       submission_type: rowHasColumn(row, "submission_type")
         ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
         : inferSubmissionTypeFromRole(String(person.role_title ?? "")),
+      submission_label: getSubmissionTypeLabel(
+        rowHasColumn(row, "submission_type")
+          ? normalizeSubmissionType(String(person.submission_type ?? "bio"))
+          : inferSubmissionTypeFromRole(String(person.role_title ?? ""))
+      ),
       bio: cleanBio,
       no_bio: rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
@@ -842,7 +875,7 @@ export async function getShowSubmissionQueue(showId: string) {
 
   const { data: requests } = await db
     .from("submission_requests")
-    .select("id, show_role_id, request_type, status")
+    .select("id, show_role_id, request_type, label, status, constraints")
     .in("show_role_id", roleIds);
   const requestIds = (requests ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
   const { data: submissionRows } = requestIds.length
@@ -887,7 +920,9 @@ export async function getShowSubmissionQueue(showId: string) {
     if (!person) {
       continue;
     }
-    const dedupeKey = `${personId}|${requestType}`;
+    const moduleId = getConstraintString(request.constraints, "module_id");
+    const requestLabel = getSubmissionLabel(requestType, String(request.label ?? "") || getConstraintString(request.constraints, "module_title"));
+    const dedupeKey = `${personId}|${requestType}|${moduleId || String(request.id ?? "")}`;
     if (seenTaskTypes.has(dedupeKey)) {
       continue;
     }
@@ -916,6 +951,7 @@ export async function getShowSubmissionQueue(showId: string) {
       role_category_display: roleCategoryDisplay,
       email: String(person.email ?? ""),
       submission_type: requestType,
+      submission_label: requestLabel,
       bio: taskBody,
       no_bio: requestType === "bio" && rowHasColumn(personRecord, "no_bio") ? Boolean(person.no_bio) : false,
       headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
@@ -1026,6 +1062,68 @@ export async function getShowSpecialNoteTemplates(showId: string) {
     return defaultSpecialNoteTemplates();
   }
   return listSpecialNoteTemplatesForShow(showId);
+}
+
+export async function getShowContributorNoteAssignments(showId: string) {
+  const missing = getMissingSupabaseEnvVars();
+  if (missing.length > 0) {
+    return [] as ContributorNoteAssignment[];
+  }
+
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: modules } = await db
+    .from("program_modules")
+    .select("id, module_type, display_title, module_order")
+    .eq("show_id", showId)
+    .order("module_order", { ascending: true });
+  const noteModules = (modules ?? [])
+    .filter((module) => String(module.module_type ?? "").trim().toLowerCase() === "contributor_note")
+    .map((module) => ({
+      id: String(module.id ?? ""),
+      title: String(module.display_title ?? "").trim() || "Contributor Note"
+    }))
+    .filter((module) => Boolean(module.id));
+  if (noteModules.length === 0) {
+    return [] as ContributorNoteAssignment[];
+  }
+
+  const { data: roles } = await db.from("show_roles").select("id, person_id").eq("show_id", showId);
+  const roleById = new Map((roles ?? []).map((row) => [String(row.id ?? ""), String(row.person_id ?? "")]));
+  const roleIds = [...roleById.keys()].filter(Boolean);
+  const { data: requests } = roleIds.length
+    ? await db
+        .from("submission_requests")
+        .select("id, show_role_id, status, constraints")
+        .in("show_role_id", roleIds)
+        .eq("request_type", "note")
+    : { data: [] as Array<Record<string, unknown>> };
+
+  const assignmentByModuleId = new Map<string, ContributorNoteAssignment>();
+  for (const request of requests ?? []) {
+    const moduleId = getConstraintString(request.constraints, "module_id");
+    if (!moduleId || assignmentByModuleId.has(moduleId)) {
+      continue;
+    }
+    assignmentByModuleId.set(moduleId, {
+      module_id: moduleId,
+      module_title: getConstraintString(request.constraints, "module_title"),
+      assigned_person_id: roleById.get(String(request.show_role_id ?? "")) ?? "",
+      request_id: String(request.id ?? ""),
+      request_status: normalizeSubmissionStatus(String(request.status ?? "pending"))
+    });
+  }
+
+  return noteModules.map((module) => {
+    const existing = assignmentByModuleId.get(module.id);
+    return {
+      module_id: module.id,
+      module_title: module.title,
+      assigned_person_id: existing?.assigned_person_id ?? "",
+      request_id: existing?.request_id ?? "",
+      request_status: existing?.request_status ?? ""
+    } satisfies ContributorNoteAssignment;
+  });
 }
 
 async function syncPersonRequestRequirements(params: {
@@ -2700,6 +2798,175 @@ export async function updateSpecialNoteAssignments(showId: string, formData: For
   );
 }
 
+export async function updateContributorNoteAssignments(showId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+
+  const context = await getShowProgramContext(showId);
+  if (!context) {
+    withError("/app/shows", "Show was not found.");
+  }
+
+  const moduleIds = formData.getAll("noteModuleIds").map((value) => String(value).trim()).filter(Boolean);
+  if (moduleIds.length === 0) {
+    redirect(`/app/shows/${showId}?tab=people-roles`);
+  }
+
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: moduleRows } = await db
+    .from("program_modules")
+    .select("id, module_type, display_title")
+    .eq("show_id", showId)
+    .in("id", moduleIds);
+  const moduleById = new Map(
+    (moduleRows ?? [])
+      .filter((module) => String(module.module_type ?? "").trim().toLowerCase() === "contributor_note")
+      .map((module) => [
+        String(module.id ?? ""),
+        String(module.display_title ?? "").trim() || "Contributor Note"
+      ])
+  );
+  if (moduleById.size === 0) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Add a Contributor Note section before assigning note requests.");
+  }
+
+  const { data: peopleRows } = await db
+    .from("people")
+    .select("id, full_name, role_title, team_type")
+    .eq("program_id", context.program_id);
+  const peopleById = new Map((peopleRows ?? []).map((person) => [String(person.id ?? ""), person]));
+
+  const { data: roleRows } = await db
+    .from("show_roles")
+    .select("id, person_id, category")
+    .eq("show_id", showId);
+  const rolesByPersonId = new Map<string, Array<{ id: string; category: RoleCategory }>>();
+  for (const role of roleRows ?? []) {
+    const personId = String(role.person_id ?? "");
+    if (!personId) continue;
+    const list = rolesByPersonId.get(personId) ?? [];
+    list.push({ id: String(role.id ?? ""), category: normalizeRoleCategoryValue(String(role.category ?? "production")) });
+    rolesByPersonId.set(personId, list);
+  }
+
+  const showRolesColumns = await getTableColumns(db, "show_roles");
+  const castBillingValues = await db
+    .from("show_roles")
+    .select("billing_order, category")
+    .eq("show_id", showId);
+  let nextCastBillingOrder =
+    Math.max(
+      0,
+      ...((castBillingValues.data ?? [])
+        .filter((row) => String(row.category ?? "").toLowerCase() === "cast")
+        .map((row) => Number(row.billing_order ?? 0)))
+    ) + 1;
+
+  async function getPreferredRoleIdForPerson(personId: string) {
+    const existing = rolesByPersonId.get(personId) ?? [];
+    if (existing.length > 0) {
+      const nonCast = existing.find((role) => role.category !== "cast");
+      return (nonCast ?? existing[0]).id;
+    }
+    const person = peopleById.get(personId);
+    if (!person) {
+      return "";
+    }
+    const roleTitle = String(person.role_title ?? "").trim() || "Contributor";
+    const inferredCategory = String(person.team_type ?? "") === "cast" ? "cast" : inferRoleCategoryFromRole(roleTitle);
+    const roleInsert = filterToColumns(
+      {
+        show_id: showId,
+        person_id: personId,
+        role_name: roleTitle,
+        category: inferredCategory,
+        role_template_id: null,
+        billing_order: inferredCategory === "cast" ? nextCastBillingOrder++ : null,
+        bio_order: null
+      },
+      showRolesColumns
+    );
+    const { data: insertedRole } = await db.from("show_roles").insert(roleInsert).select("id").maybeSingle();
+    if (!insertedRole?.id) {
+      return "";
+    }
+    const inserted = { id: String(insertedRole.id), category: inferredCategory as RoleCategory };
+    const list = rolesByPersonId.get(personId) ?? [];
+    list.push(inserted);
+    rolesByPersonId.set(personId, list);
+    return inserted.id;
+  }
+
+  const allRoleIds = [...new Set([...rolesByPersonId.values()].flatMap((roles) => roles.map((role) => role.id)))].filter(Boolean);
+  const { data: existingRequests } = allRoleIds.length
+    ? await db
+        .from("submission_requests")
+        .select("id, show_role_id, request_type, status, constraints")
+        .in("show_role_id", allRoleIds)
+        .eq("request_type", "note")
+    : { data: [] as Array<Record<string, unknown>> };
+
+  let assigned = 0;
+  let unassigned = 0;
+  for (const moduleId of moduleIds) {
+    const moduleTitle = moduleById.get(moduleId);
+    if (!moduleTitle) continue;
+    const selectedPersonId = String(formData.get(`notePersonId:${moduleId}`) ?? "").trim();
+    if (selectedPersonId && !peopleById.has(selectedPersonId)) {
+      withError(`/app/shows/${showId}?tab=people-roles`, "One or more selected note contributors are no longer available.");
+    }
+
+    const existingForModule = (existingRequests ?? []).filter(
+      (request) => getConstraintString(request.constraints, "module_id") === moduleId
+    );
+    if (existingForModule.length > 0) {
+      await db.from("submission_requests").delete().in("id", existingForModule.map((request) => String(request.id ?? "")));
+    }
+
+    if (!selectedPersonId) {
+      unassigned += 1;
+      continue;
+    }
+    const roleId = await getPreferredRoleIdForPerson(selectedPersonId);
+    if (!roleId) {
+      continue;
+    }
+    await db.from("submission_requests").insert({
+      show_role_id: roleId,
+      request_type: "note",
+      label: `${moduleTitle} Submission`,
+      constraints: {
+        ...getSubmissionConstraints("note", context.bio_char_limit),
+        module_id: moduleId,
+        module_title: moduleTitle
+      },
+      status: "pending"
+    });
+    assigned += 1;
+  }
+
+  await writeAuditLog({
+    entity: "show",
+    entityId: showId,
+    field: "contributor_note_assignments",
+    beforeValue: null,
+    afterValue: {
+      module_ids: moduleIds,
+      assigned,
+      unassigned
+    },
+    reason: "dynamic contributor note assignments"
+  });
+
+  redirect(
+    `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
+      `Contributor note assignments saved. ${assigned} assigned, ${unassigned} unassigned.`
+    )}`
+  );
+}
+
 export async function resyncShowSubmissionRequests(showId: string) {
   "use server";
 
@@ -2890,7 +3157,7 @@ export async function getContributorTasksForCurrentUser() {
 
   const { data: requests } = await db
     .from("submission_requests")
-    .select("id, show_role_id, due_date, status, request_type")
+    .select("id, show_role_id, due_date, status, request_type, label, constraints")
     .in("show_role_id", roleIds);
   const requestRows = (requests ?? []).filter((row) =>
     ["bio", "note", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio"))
@@ -2955,6 +3222,10 @@ export async function getContributorTasksForCurrentUser() {
         person_name: person.person_name,
         role_title: person.role_title,
         submission_type: normalizeSubmissionType(String(request.request_type ?? "bio")),
+        submission_label: getSubmissionLabel(
+          normalizeSubmissionType(String(request.request_type ?? "bio")),
+          String(request.label ?? "") || getConstraintString(request.constraints, "module_title")
+        ),
         submission_status: normalizeSubmissionStatus(String(request.status ?? person.fallback_status)),
         due_date: request.due_date ? String(request.due_date) : null,
         submitted_at: person.submitted_at
@@ -2992,7 +3263,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
 
   const { data: requestById } = await db
     .from("submission_requests")
-    .select("id, show_role_id, request_type, status, due_date")
+    .select("id, show_role_id, request_type, label, status, due_date, constraints")
     .eq("id", taskId)
     .maybeSingle();
 
@@ -3001,10 +3272,15 @@ export async function getContributorTaskById(showId: string, taskId: string) {
   let resolvedRequestStatus: ShowSubmissionPerson["submission_status"] = "pending";
   let resolvedDueDate: string | null = null;
   let resolvedPersonId = "";
+  let resolvedSubmissionLabel = getSubmissionTypeLabel(resolvedRequestType);
 
   if (requestById && roleById.has(String(requestById.show_role_id ?? ""))) {
     resolvedRequestId = String(requestById.id);
     resolvedRequestType = normalizeSubmissionType(String(requestById.request_type ?? "bio"));
+    resolvedSubmissionLabel = getSubmissionLabel(
+      resolvedRequestType,
+      String(requestById.label ?? "") || getConstraintString(requestById.constraints, "module_title")
+    );
     resolvedRequestStatus = normalizeSubmissionStatus(String(requestById.status ?? "pending"));
     resolvedDueDate = requestById.due_date ? String(requestById.due_date) : null;
     resolvedPersonId = roleById.get(String(requestById.show_role_id ?? "")) ?? "";
@@ -3017,7 +3293,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     }
     const { data: bioRequest } = await db
       .from("submission_requests")
-      .select("id, request_type, status, due_date")
+      .select("id, request_type, label, status, due_date, constraints")
       .eq("show_role_id", String(roleForPerson.id))
       .eq("request_type", "bio")
       .maybeSingle();
@@ -3026,6 +3302,10 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     }
     resolvedRequestId = String(bioRequest.id);
     resolvedRequestType = normalizeSubmissionType(String(bioRequest.request_type ?? "bio"));
+    resolvedSubmissionLabel = getSubmissionLabel(
+      resolvedRequestType,
+      String(bioRequest.label ?? "") || getConstraintString(bioRequest.constraints, "module_title")
+    );
     resolvedRequestStatus = normalizeSubmissionStatus(String(bioRequest.status ?? "pending"));
     resolvedDueDate = bioRequest.due_date ? String(bioRequest.due_date) : null;
   }
@@ -3091,6 +3371,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
       submission_type: resolvedRequestType,
+      submission_label: resolvedSubmissionLabel,
       bio: taskBody,
       no_bio: resolvedRequestType === "bio" ? (rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false) : false,
       headshot_url: String(person.headshot_url ?? ""),
@@ -3130,7 +3411,7 @@ export async function getContributorTaskLoginSummary(showId: string, taskId: str
   const db = supabase.schema(APP_SCHEMA);
   const { data: requestRow } = await db
     .from("submission_requests")
-    .select("due_date, status")
+    .select("due_date, status, label, constraints")
     .eq("id", resolvedTask.task_id)
     .maybeSingle();
   const { data: person } = await db
@@ -3154,6 +3435,10 @@ export async function getContributorTaskLoginSummary(showId: string, taskId: str
     person_name: String(person.full_name ?? ""),
     role_title: String(person.role_title ?? ""),
     submission_type: resolvedTask.request_type,
+    submission_label: getSubmissionLabel(
+      resolvedTask.request_type,
+      String(requestRow?.label ?? "") || getConstraintString(requestRow?.constraints, "module_title")
+    ),
     due_date: requestRow?.due_date ? String(requestRow.due_date) : null,
     submission_status: normalizeSubmissionStatus(String(requestRow?.status ?? resolvedTask.status ?? "pending")),
     email: String(person.email ?? "")
@@ -3458,7 +3743,7 @@ export async function contributorSaveTask(showId: string, taskId: string, formDa
         email: current.user.email,
         name: task.person.full_name,
         showTitle: task.show_title,
-        submissionLabel: getSubmissionTypeLabel(task.person.submission_type),
+        submissionLabel: task.person.submission_label,
         showId,
         taskId
       });
@@ -3496,6 +3781,11 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
 
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
+  const { data: requestMeta } = await db
+    .from("submission_requests")
+    .select("label, constraints")
+    .eq("id", resolvedTask.task_id)
+    .maybeSingle();
   const { data: person } = await db
     .from("people")
     .select("*")
@@ -3554,6 +3844,10 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
       team_type: person.team_type === "cast" ? "cast" : "production",
       email: String(person.email ?? ""),
       submission_type: resolvedTask.request_type,
+      submission_label: getSubmissionLabel(
+        resolvedTask.request_type,
+        String(requestMeta?.label ?? "") || getConstraintString(requestMeta?.constraints, "module_title")
+      ),
       bio: taskBody,
       no_bio: resolvedTask.request_type === "bio" ? (rowHasColumn(row, "no_bio") ? Boolean(person.no_bio) : false) : false,
       headshot_url: String(person.headshot_url ?? ""),

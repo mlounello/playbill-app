@@ -74,6 +74,7 @@ const createShowSchema = z.object({
 });
 
 const modulePayloadSchema = z.object({
+  id: z.string().optional().or(z.literal("")),
   module_type: z.string().min(1),
   display_title: z.string().optional().or(z.literal("")),
   visible: z.boolean(),
@@ -92,6 +93,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   director_note: ["director_note"],
   dramaturgical_note: ["dramaturgical_note"],
   music_director_note: ["music_director_note"],
+  contributor_note: [],
   acts_scenes: ["acts_songs"],
   songs: ["acts_songs"],
   department_info: ["department_info"],
@@ -108,12 +110,17 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   custom_image: []
 };
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function normalizeModuleType(value: string) {
   const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (normalized === "cast" || normalized === "cast_team" || normalized === "cast_team_list") return "cast_list";
   if (normalized === "creative_team_list") return "creative_team";
   if (normalized === "production_team_list") return "production_team";
   if (normalized === "director_notes") return "director_note";
+  if (normalized === "program_note" || normalized === "contributor_notes") return "contributor_note";
   if (normalized === "acknowledgments") return "acknowledgements";
   if (normalized === "specialthanks") return "special_thanks";
   if (normalized === "actfsponsorship") return "actf_sponsorship";
@@ -664,7 +671,8 @@ export async function updateShowModules(showId: string, formData: FormData) {
         module_order: index,
         visible: module.visible,
         filler_eligible: module.filler_eligible,
-        settings: normalizeModuleSettings(module.settings, module.module_type)
+        settings: normalizeModuleSettings(module.settings, module.module_type),
+        ...(module.id && isUuid(module.id) ? { id: module.id } : {})
       }))
     );
     if (insertError) {
@@ -673,6 +681,42 @@ export async function updateShowModules(showId: string, formData: FormData) {
   }
 
   const layoutTokens = buildProgramLayoutTokens(modules);
+  const contributorNoteModules = modules.filter((module) => normalizeModuleType(module.module_type) === "contributor_note");
+  if (contributorNoteModules.length > 0) {
+    const existingIds = contributorNoteModules
+      .map((module) => String(module.id ?? ""))
+      .filter((id) => isUuid(id));
+    if (existingIds.length > 0) {
+      const { data: roles } = await db.from("show_roles").select("id").eq("show_id", showId);
+      const roleIds = (roles ?? []).map((role) => String(role.id ?? "")).filter(Boolean);
+      if (roleIds.length > 0) {
+        const { data: requests } = await db
+          .from("submission_requests")
+          .select("id, constraints")
+          .in("show_role_id", roleIds)
+          .eq("request_type", "note");
+        const titleByModuleId = new Map(
+          contributorNoteModules
+            .filter((module) => module.id && isUuid(module.id))
+            .map((module) => [String(module.id), String(module.display_title || "Contributor Note").trim() || "Contributor Note"])
+        );
+        for (const request of requests ?? []) {
+          const constraints = (request.constraints as Record<string, unknown> | null) ?? {};
+          const moduleId = typeof constraints.module_id === "string" ? constraints.module_id : "";
+          const nextTitle = titleByModuleId.get(moduleId);
+          if (!nextTitle) continue;
+          await db
+            .from("submission_requests")
+            .update({
+              label: `${nextTitle} Submission`,
+              constraints: { ...constraints, module_title: nextTitle },
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", String(request.id));
+        }
+      }
+    }
+  }
   if (show.program_id) {
     await db.from("programs").update({ layout_order: layoutTokens }).eq("id", show.program_id);
   }

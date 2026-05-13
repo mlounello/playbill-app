@@ -41,7 +41,7 @@ export default async function ContributorFreshLinkPage({
           <div className="contributor-task-eyebrow">Submission Access</div>
           <h2 style={{ margin: 0 }}>{summary.person_name}</h2>
           <div className="meta-text">
-            {summary.role_title} • {getSubmissionTypeLabel(summary.submission_type)}
+            {summary.role_title} • {summary.submission_label || getSubmissionTypeLabel(summary.submission_type)}
           </div>
           <div className="meta-text">
             Show: <strong>{summary.show_title}</strong>

@@ -68,7 +68,7 @@ export default async function ContributorTaskPage({
 
   const saveAction = contributorSaveTask.bind(null, showId, taskId);
   const isReadOnly = task.person.submission_status === "approved" || task.person.submission_status === "locked";
-  const submissionLabel = getSubmissionTypeLabel(task.person.submission_type);
+  const submissionLabel = task.person.submission_label || getSubmissionTypeLabel(task.person.submission_type);
   const isBioTask = task.person.submission_type === "bio";
   const noteWordCount = countWordsFromRichText(task.person.bio);
   const currentCountLabel = isBioTask

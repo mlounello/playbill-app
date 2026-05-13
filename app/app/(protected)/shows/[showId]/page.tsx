@@ -46,6 +46,7 @@ import {
   bulkApproveBios,
   importBiosFromCsv,
   getShowRoleAssignments,
+  getShowContributorNoteAssignments,
   getShowSpecialNoteAssignments,
   getShowSpecialNoteTemplates,
   getShowSubmissionQueue,
@@ -58,6 +59,7 @@ import {
   updateRoleAssignment,
   createSpecialNoteTemplate,
   updatePersonProfile,
+  updateContributorNoteAssignments,
   updateSpecialNoteAssignments
 } from "@/lib/submissions";
 import {
@@ -140,6 +142,7 @@ export default async function ShowWorkspacePage({
           dramaturgTemplateId: "",
           musicDirectorTemplateId: ""
         };
+  const contributorNoteAssignments = activeTab === "people-roles" ? await getShowContributorNoteAssignments(show.id) : [];
   const specialNoteTemplates = activeTab === "people-roles" ? await getShowSpecialNoteTemplates(show.id) : [];
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
@@ -147,6 +150,7 @@ export default async function ShowWorkspacePage({
   const updatePersonProfileAction = updatePersonProfile.bind(null, show.id);
   const removePersonFromShowAction = removePersonFromShow.bind(null, show.id);
   const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
+  const updateContributorNotesAction = updateContributorNoteAssignments.bind(null, show.id);
   const reorderRoleListOrderAction = reorderRoleListOrder.bind(null, show.id);
   const createSpecialNoteTemplateAction = createSpecialNoteTemplate.bind(null, show.id);
   const archiveSpecialNoteTemplateAction = archiveSpecialNoteTemplate.bind(null, show.id);
@@ -691,6 +695,61 @@ export default async function ShowWorkspacePage({
           {activeTab === "people-roles" ? (
             <section className="panel-grid">
               <article className="card stack-sm">
+                <strong>Program Note Assignments</strong>
+                <p className="section-note">
+                  Contributor Note sections from Sections & Order appear here automatically. Title the section however you want, then assign the person who should submit it.
+                </p>
+                {contributorNoteAssignments.length === 0 ? (
+                  <div className="module-settings-empty">
+                    No flexible contributor notes yet. Open Sections & Order, add a Contributor Note section, and name it something like Director&apos;s Note or Choreographer&apos;s Note.
+                  </div>
+                ) : (
+                  <form action={updateContributorNotesAction} className="stack-sm" data-pending-label="Saving program note assignments..." data-preserve-scroll="true">
+                    <div className="table-frame">
+                      <table className="simple-table">
+                        <thead>
+                          <tr>
+                            <th>Program Section</th>
+                            <th>Assigned Contributor</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contributorNoteAssignments.map((assignment) => (
+                            <tr key={`contributor-note-${assignment.module_id}`}>
+                              <td>
+                                <strong>{assignment.module_title}</strong>
+                                <input type="hidden" name="noteModuleIds" value={assignment.module_id} />
+                                <div className="meta-text">This request will appear to the contributor as {assignment.module_title}.</div>
+                              </td>
+                              <td>
+                                <select name={`notePersonId:${assignment.module_id}`} defaultValue={assignment.assigned_person_id}>
+                                  <option value="">Unassigned</option>
+                                  {people.map((person) => (
+                                    <option key={`program-note-person-${assignment.module_id}-${person.id}`} value={person.id}>
+                                      {person.full_name} - {person.role_title}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td>
+                                {assignment.request_id ? (
+                                  <span className="status-pill">{assignment.request_status || "pending"}</span>
+                                ) : (
+                                  <span className="meta-text">No request yet</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button type="submit">Save Program Note Assignments</button>
+                  </form>
+                )}
+              </article>
+
+              <article className="card stack-sm">
                 <strong>Special Note Assignments</strong>
                 <p className="section-note">
                   Assign who should submit Director, Dramaturgical, and Music Director notes. This updates submission requirements automatically.
@@ -1144,7 +1203,7 @@ export default async function ShowWorkspacePage({
                                 </td>
                                 <td>{task.role_title}</td>
                                 <td style={{ textTransform: "capitalize" }}>{task.role_category_display ?? task.team_type}</td>
-                                <td>{getSubmissionTypeLabel(task.submission_type)}</td>
+                                <td>{task.submission_label || getSubmissionTypeLabel(task.submission_type)}</td>
                                 <td><span className="status-pill">{task.submission_status}</span></td>
                                 <td>
                                   {task.submission_type === "bio"
@@ -1194,7 +1253,7 @@ export default async function ShowWorkspacePage({
                                 </div>
                               </div>
                               <div className="submission-meta">
-                                Requirement: {getSubmissionTypeLabel(task.submission_type)} • Status: <span className="status-pill">{task.submission_status}</span> • {task.submission_type === "bio"
+                                Requirement: {task.submission_label || getSubmissionTypeLabel(task.submission_type)} • Status: <span className="status-pill">{task.submission_status}</span> • {task.submission_type === "bio"
                                   ? `${task.bio_char_count}/${task.bio_char_limit} chars`
                                   : `${countWordsFromRichText(task.bio)} words`}
                               </div>
