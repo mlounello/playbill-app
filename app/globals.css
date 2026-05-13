@@ -968,25 +968,46 @@ button.tab-chip {
   border-radius: 0.95rem;
   background: #fffef9;
   padding: 0.75rem;
-  cursor: grab;
   box-shadow: 0 10px 24px rgba(30, 47, 39, 0.035);
+  position: relative;
 }
 
-.program-order-item:active {
-  cursor: grabbing;
+.program-order-item.is-dragging {
+  border-color: #8fc3b1;
+  background: #fbfffc;
   box-shadow: 0 0 0 2px rgba(0, 107, 84, 0.18);
 }
 
 .program-order-grip {
   display: grid;
   gap: 0.16rem;
-  width: 1.1rem;
+  width: 2.1rem;
+  height: 2.1rem;
+  align-content: center;
+  justify-content: center;
+  border: 1px solid #cce0d7;
+  border-radius: 0.7rem;
+  background: #f3faf6;
+  cursor: grab;
+  touch-action: none;
+  padding: 0;
 }
 
 .program-order-grip span {
+  display: block;
+  width: 0.9rem;
   height: 0.16rem;
   border-radius: 999px;
   background: #9eb6ab;
+}
+
+.program-order-grip:active {
+  cursor: grabbing;
+}
+
+.program-order-grip:focus-visible {
+  outline: 3px solid rgba(0, 107, 84, 0.24);
+  outline-offset: 2px;
 }
 
 .program-order-number {

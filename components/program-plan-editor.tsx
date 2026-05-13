@@ -1,6 +1,23 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  type DragEndEvent,
+  useSensor,
+  useSensors
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { ModuleHtmlEditor } from "@/components/module-html-editor";
 import { ProgramImageUpload } from "@/components/program-image-upload";
 import { RichTextEditor } from "@/components/rich-text-editor";
@@ -122,18 +139,81 @@ function normalizeModules(modules: ShowModule[]): ModuleItem[] {
   }));
 }
 
-function moveItem<T>(array: T[], from: number, to: number) {
-  const next = [...array];
-  const [item] = next.splice(from, 1);
-  next.splice(to, 0, item);
-  return next;
-}
-
 function getPlacementLabel(item: ModuleItem) {
   const isolated =
     String(item.settings.placement_mode ?? "").toLowerCase() === "isolated" ||
     Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type));
   return isolated ? "Own page" : "Can flow with nearby sections";
+}
+
+function SortableOrderItem({
+  item,
+  visibleIndex,
+  visibleCount,
+  onMove
+}: {
+  item: ModuleItem;
+  visibleIndex: number;
+  visibleCount: number;
+  onMove: (fromVisibleIndex: number, toVisibleIndex: number) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: item.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.56 : 1,
+    zIndex: isDragging ? 4 : undefined
+  };
+
+  return (
+    <article
+      ref={setNodeRef}
+      className={`program-order-item ${isDragging ? "is-dragging" : ""}`}
+      style={style}
+    >
+      <button
+        type="button"
+        className="program-order-grip"
+        aria-label={`Reorder ${item.display_title || moduleTypeLabels[item.module_type] || item.module_type}`}
+        {...attributes}
+        {...listeners}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+      <div className="program-order-number">{visibleIndex + 1}</div>
+      <div className="program-order-copy">
+        <strong>{item.display_title || moduleTypeLabels[item.module_type] || item.module_type}</strong>
+        <span>{moduleTypeLabels[item.module_type] || item.module_type} - {getPlacementLabel(item)}</span>
+      </div>
+      <div className="program-order-actions">
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={() => onMove(visibleIndex, Math.max(0, visibleIndex - 1))}
+          disabled={visibleIndex === 0}
+        >
+          Up
+        </button>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={() => onMove(visibleIndex, Math.min(visibleCount - 1, visibleIndex + 1))}
+          disabled={visibleIndex === visibleCount - 1}
+        >
+          Down
+        </button>
+      </div>
+    </article>
+  );
 }
 
 function ModuleSettings({
@@ -420,12 +500,15 @@ export function ProgramPlanEditor({
   programSlug?: string | null;
 }) {
   const [items, setItems] = useState<ModuleItem[]>(() => normalizeModules(modules));
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [newModuleType, setNewModuleType] = useState("custom_text");
   const [mode, setMode] = useState<PlanMode>("sections");
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const visibleItems = useMemo(() => items.filter((item) => item.visible), [items]);
+  const visibleItemIds = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
   const hiddenItems = useMemo(() => items.filter((item) => !item.visible), [items]);
   const flexibleCount = useMemo(
     () => items.filter((item) => item.module_type === "custom_text" || item.module_type === "custom_image").length,
@@ -465,7 +548,7 @@ export function ProgramPlanEditor({
   const moveVisibleItem = (fromVisibleIndex: number, toVisibleIndex: number) => {
     setItems((current) => {
       const visible = current.filter((item) => item.visible);
-      const reorderedVisible = moveItem(visible, fromVisibleIndex, toVisibleIndex);
+      const reorderedVisible = arrayMove(visible, fromVisibleIndex, toVisibleIndex);
       let visiblePointer = 0;
       return current.map((item) => {
         if (!item.visible) return item;
@@ -474,6 +557,19 @@ export function ProgramPlanEditor({
         return nextItem;
       });
     });
+  };
+
+  const handleOrderDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+    const oldIndex = visibleItems.findIndex((item) => item.id === active.id);
+    const newIndex = visibleItems.findIndex((item) => item.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) {
+      return;
+    }
+    moveVisibleItem(oldIndex, newIndex);
   };
 
   const payload = useMemo(
@@ -742,7 +838,7 @@ export function ProgramPlanEditor({
             <div>
               <span className="eyebrow">Program Order</span>
               <h3>Arrange the sections your audience will actually see.</h3>
-              <p>Hidden sections stay out of this list so the order is easier to understand. Use Section Setup to include or hide sections.</p>
+              <p>Grab the handle to reorder sections. Items slide into place as you move them, and hidden sections stay out of the way.</p>
             </div>
             {hiddenItems.length > 0 ? (
               <div className="hidden-summary">{hiddenItems.length} hidden section{hiddenItems.length === 1 ? "" : "s"}</div>
@@ -754,64 +850,21 @@ export function ProgramPlanEditor({
               No sections are currently included. Switch to Section Setup and include at least one section.
             </div>
           ) : (
-            <div className="program-order-list">
-              {visibleItems.map((item, visibleIndex) => (
-                <article
-                  key={`order-${item.id}`}
-                  className="program-order-item"
-                  style={{ opacity: draggingId === item.id ? 0.55 : 1 }}
-                  draggable
-                  onDragStart={(event) => {
-                    setDragIndex(visibleIndex);
-                    setDraggingId(item.id);
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    if (dragIndex === null || dragIndex === visibleIndex) {
-                      return;
-                    }
-                    moveVisibleItem(dragIndex, visibleIndex);
-                    setDragIndex(null);
-                    setDraggingId(null);
-                  }}
-                  onDragEnd={() => {
-                    setDragIndex(null);
-                    setDraggingId(null);
-                  }}
-                >
-                  <div className="program-order-grip" aria-hidden>
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                  <div className="program-order-number">{visibleIndex + 1}</div>
-                  <div className="program-order-copy">
-                    <strong>{item.display_title || moduleTypeLabels[item.module_type] || item.module_type}</strong>
-                    <span>{moduleTypeLabels[item.module_type] || item.module_type} • {getPlacementLabel(item)}</span>
-                  </div>
-                  <div className="program-order-actions">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() => moveVisibleItem(visibleIndex, Math.max(0, visibleIndex - 1))}
-                      disabled={visibleIndex === 0}
-                    >
-                      Up
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() => moveVisibleItem(visibleIndex, Math.min(visibleItems.length - 1, visibleIndex + 1))}
-                      disabled={visibleIndex === visibleItems.length - 1}
-                    >
-                      Down
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleOrderDragEnd}>
+              <SortableContext items={visibleItemIds} strategy={verticalListSortingStrategy}>
+                <div className="program-order-list">
+                  {visibleItems.map((item, visibleIndex) => (
+                    <SortableOrderItem
+                      key={`order-${item.id}`}
+                      item={item}
+                      visibleIndex={visibleIndex}
+                      visibleCount={visibleItems.length}
+                      onMove={moveVisibleItem}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           )}
 
           {hiddenItems.length > 0 ? (
