@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ContributorTaskForm } from "@/components/contributor-task-form";
 import {
-  BIO_CHAR_LIMIT_DEFAULT,
   NO_BIO_PLACEHOLDER,
   SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
   contributorSaveTask,
@@ -35,11 +34,11 @@ function getContributorStatusHint(status: string) {
   return "";
 }
 
-function getContributorInstructions(submissionType: string) {
+function getContributorInstructions(submissionType: string, bioCharLimit: number) {
   if (submissionType === "bio") {
     return [
       "Write in third person if possible.",
-      `Keep your bio concise. The print program target is ${BIO_CHAR_LIMIT_DEFAULT} characters.`,
+      `Keep your bio concise. This playbill's limit is ${bioCharLimit} characters.`,
       "You can save a draft first and come back later.",
       "If you do not want a bio included, check the no-bio option below."
     ];
@@ -69,17 +68,17 @@ export default async function ContributorTaskPage({
 
   const saveAction = contributorSaveTask.bind(null, showId, taskId);
   const isReadOnly = task.person.submission_status === "approved" || task.person.submission_status === "locked";
-  const submissionLabel = getSubmissionTypeLabel(task.person.submission_type);
+  const submissionLabel = task.person.submission_label || getSubmissionTypeLabel(task.person.submission_type);
   const isBioTask = task.person.submission_type === "bio";
   const noteWordCount = countWordsFromRichText(task.person.bio);
   const currentCountLabel = isBioTask
-    ? `${task.person.bio_char_count} / ${BIO_CHAR_LIMIT_DEFAULT} characters`
+    ? `${task.person.bio_char_count} / ${task.person.bio_char_limit} characters`
     : `${noteWordCount} / ${SPECIAL_NOTE_WORD_LIMIT_DEFAULT} words`;
   const hasNoBio =
     isBioTask &&
     (task.person.bio.trim() === NO_BIO_PLACEHOLDER ||
       (!richTextHasContent(task.person.bio) && ["submitted", "approved", "locked"].includes(task.person.submission_status)));
-  const instructions = getContributorInstructions(task.person.submission_type);
+  const instructions = getContributorInstructions(task.person.submission_type, task.person.bio_char_limit);
 
   return (
     <main>
@@ -167,7 +166,7 @@ export default async function ContributorTaskPage({
           showId={showId}
           personId={task.person.id}
           submissionLabel={submissionLabel}
-          bioCharLimit={BIO_CHAR_LIMIT_DEFAULT}
+          bioCharLimit={task.person.bio_char_limit}
           isBioTask={isBioTask}
           hasNoBio={hasNoBio}
           initialBio={hasNoBio ? "" : task.person.bio}

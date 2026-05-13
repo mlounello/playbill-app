@@ -4,7 +4,7 @@ import { buildDepartmentInfoHtml } from "@/lib/departments";
 import { sendAdminSubmissionNotification, sendContributorSubmissionConfirmation } from "@/lib/reminders";
 import { buildSeasonCalendarHtml } from "@/lib/seasons";
 import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
-import { BIO_CHAR_LIMIT_DEFAULT } from "@/lib/submissions";
+import { BIO_CHAR_LIMIT_DEFAULT, normalizeBioCharLimit } from "@/lib/submissions";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
@@ -82,6 +82,8 @@ type ProgramModuleRecord = {
   filler_eligible: boolean;
   settings: Record<string, unknown>;
 };
+
+type ContributorNoteMap = Record<string, string>;
 
 type ShowRoleRecord = {
   id: string;
@@ -852,6 +854,7 @@ function normalizeModuleType(value: string) {
   if (normalized === "creative_team_list") return "creative_team";
   if (normalized === "production_team_list") return "production_team";
   if (normalized === "director_notes") return "director_note";
+  if (normalized === "program_note" || normalized === "contributor_notes") return "contributor_note";
   if (normalized === "acknowledgments") return "acknowledgements";
   if (normalized === "specialthanks") return "special_thanks";
   if (normalized === "actfsponsorship") return "actf_sponsorship";
@@ -1082,6 +1085,20 @@ function getSettingString(settings: Record<string, unknown>, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function getHtmlFromSubmissionRow(row: Record<string, unknown> | null | undefined) {
+  if (!row) {
+    return "";
+  }
+  const rich = row.rich_text_json;
+  if (rich && typeof rich === "object" && !Array.isArray(rich)) {
+    const html = (rich as { html?: unknown }).html;
+    if (typeof html === "string") {
+      return html;
+    }
+  }
+  return String(row.plain_text ?? "");
+}
+
 function normalizeDensityMode(value: unknown): DensityMode {
   if (value === "compact" || value === "loose") {
     return value;
@@ -1281,6 +1298,7 @@ async function renderModulePages(
     season_calendar: string;
     production_photo_urls: string[];
     custom_pages: CustomPageRecord[];
+    contributor_notes_by_module_id: ContributorNoteMap;
   },
   rosterPeople: PersonRecord[],
   cast: PersonRecord[],
@@ -1457,6 +1475,20 @@ async function renderModulePages(
       idBase,
       title,
       body: program.music_director_note,
+      densityMode,
+      allowMultiplePages
+    });
+  }
+
+  if (normalizedType === "contributor_note") {
+    const body = sanitizeRichText(program.contributor_notes_by_module_id[module.id] ?? "");
+    if (!richTextHasContent(body)) {
+      return emptyPlaceholder(title, `${moduleTitle} is enabled, but no note has been submitted yet.`);
+    }
+    return paginateTextModulePages({
+      idBase,
+      title,
+      body,
       densityMode,
       allowMultiplePages
     });
@@ -1671,6 +1703,7 @@ async function buildRenderablePagesFromModules(
     season_calendar: string;
     production_photo_urls: string[];
     custom_pages: CustomPageRecord[];
+    contributor_notes_by_module_id: ContributorNoteMap;
   },
   rosterPeople: PersonRecord[],
   cast: PersonRecord[],
@@ -2284,6 +2317,7 @@ export async function getProgramBySlug(
         ? (program.production_photo_urls as string[]).map((url) => normalizeAssetUrl(url))
         : [],
       custom_pages: Array.isArray(program.custom_pages) ? (program.custom_pages as CustomPageRecord[]) : [],
+      contributor_notes_by_module_id: {} as ContributorNoteMap,
       layout_order: Array.isArray(program.layout_order) ? (program.layout_order as LayoutToken[]) : [...layoutTokenValues]
     };
 
@@ -2411,6 +2445,40 @@ export async function getProgramBySlug(
         filler_eligible: Boolean(module.filler_eligible),
         settings: (module.settings as Record<string, unknown>) ?? {}
       })) as ProgramModuleRecord[];
+
+      const contributorNoteModuleIds = normalizedModules
+        .filter((module) => normalizeModuleType(module.module_type) === "contributor_note")
+        .map((module) => module.id)
+        .filter(Boolean);
+      if (contributorNoteModuleIds.length > 0 && showRoleAssignments.length > 0) {
+        const roleIds = showRoleAssignments.map((role) => role.id).filter(Boolean);
+        const { data: noteRequests } = await db
+          .from("submission_requests")
+          .select("id, constraints")
+          .in("show_role_id", roleIds)
+          .eq("request_type", "note");
+        const requestIdsByModuleId = new Map<string, string>();
+        for (const request of noteRequests ?? []) {
+          const constraints = (request.constraints as Record<string, unknown> | null) ?? {};
+          const moduleId = typeof constraints.module_id === "string" ? constraints.module_id : "";
+          if (moduleId && contributorNoteModuleIds.includes(moduleId) && !requestIdsByModuleId.has(moduleId)) {
+            requestIdsByModuleId.set(moduleId, String(request.id ?? ""));
+          }
+        }
+        const requestIds = [...requestIdsByModuleId.values()].filter(Boolean);
+        const { data: noteSubmissions } = requestIds.length
+          ? await db
+              .from("submissions")
+              .select("request_id, rich_text_json, plain_text")
+              .in("request_id", requestIds)
+          : { data: [] as Array<Record<string, unknown>> };
+        const bodyByRequestId = new Map(
+          (noteSubmissions ?? []).map((row) => [String(row.request_id ?? ""), getHtmlFromSubmissionRow(row as Record<string, unknown>)])
+        );
+        for (const [moduleId, requestId] of requestIdsByModuleId) {
+          safeProgram.contributor_notes_by_module_id[moduleId] = bodyByRequestId.get(requestId) ?? "";
+        }
+      }
       const forcedVisible = new Set((options?.forceVisibleModuleIds ?? []).map((id) => String(id)));
       if (forcedVisible.size > 0) {
         normalizedModules = normalizedModules.map((module) =>
@@ -2859,6 +2927,23 @@ export async function getProgramWorkspaceById(showId: string) {
   return workspace.find((item) => item.id === showId) ?? null;
 }
 
+export async function getBioCharLimitForProgramSlug(slug: string) {
+  const missingEnv = getMissingSupabaseEnvVars();
+  if (missingEnv.length > 0) {
+    return BIO_CHAR_LIMIT_DEFAULT;
+  }
+
+  const supabase = getSupabaseWriteClient();
+  const db = supabase.schema(APP_SCHEMA);
+  const { data: program } = await db.from("programs").select("id").eq("slug", slug).maybeSingle();
+  if (!program?.id) {
+    return BIO_CHAR_LIMIT_DEFAULT;
+  }
+
+  const { data: show } = await db.from("shows").select("*").eq("program_id", String(program.id)).maybeSingle();
+  return normalizeBioCharLimit((show as Record<string, unknown> | null)?.bio_char_limit);
+}
+
 export async function submitBioForProgram(slug: string, formData: FormData) {
   "use server";
 
@@ -2878,9 +2963,6 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   if (!richTextHasContent(cleanBio)) {
     redirectWithError(`/programs/${slug}/submit`, "Bio cannot be empty.");
   }
-  if (stripRichTextToPlain(cleanBio).length > BIO_CHAR_LIMIT_DEFAULT) {
-    redirectWithError(`/programs/${slug}/submit`, `Bio exceeds ${BIO_CHAR_LIMIT_DEFAULT} character limit.`);
-  }
 
   const missingEnv = getMissingSupabaseEnvVars();
   if (missingEnv.length > 0) {
@@ -2893,6 +2975,19 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
 
   if (programError || !program) {
     redirectWithError(`/programs/${slug}/submit`, "Program not found.");
+  }
+
+  const { data: show } = await db
+    .from("shows")
+    .select("*")
+    .eq("program_id", String(program.id))
+    .maybeSingle();
+  if (!show?.id) {
+    redirectWithError(`/programs/${slug}/submit`, "This legacy form is no longer available for this program.");
+  }
+  const bioCharLimit = normalizeBioCharLimit((show as Record<string, unknown>).bio_char_limit);
+  if (stripRichTextToPlain(cleanBio).length > bioCharLimit) {
+    redirectWithError(`/programs/${slug}/submit`, `Bio exceeds ${bioCharLimit} character limit.`);
   }
 
   const { data: targetPerson, error: personError } = await db
@@ -2933,15 +3028,6 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   const { error: updateError } = await db.from("people").update(updatePayload).eq("id", targetPerson.id);
   if (updateError) {
     redirectWithError(`/programs/${slug}/submit`, updateError.message);
-  }
-
-  const { data: show } = await db
-    .from("shows")
-    .select("id, title")
-    .eq("program_id", String(program.id))
-    .maybeSingle();
-  if (!show?.id) {
-    redirectWithError(`/programs/${slug}/submit`, "This legacy form is no longer available for this program.");
   }
 
   const { data: roleRows } = await db
@@ -2985,6 +3071,7 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
     const { error: submissionUpdateError } = await db
       .from("submissions")
       .update({
+        rich_text_json: { html: cleanBio },
         plain_text: stripRichTextToPlain(cleanBio),
         status: "submitted",
         updated_at: nowIso
@@ -2996,6 +3083,7 @@ export async function submitBioForProgram(slug: string, formData: FormData) {
   } else {
     const { error: submissionInsertError } = await db.from("submissions").insert({
       request_id: String(bioRequest.id),
+      rich_text_json: { html: cleanBio },
       plain_text: stripRichTextToPlain(cleanBio),
       status: "submitted"
     });

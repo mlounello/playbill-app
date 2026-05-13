@@ -88,7 +88,7 @@ export default async function LoginPage({
               <div className="contributor-task-eyebrow">Welcome</div>
               <h2 style={{ margin: 0 }}>{contributorTask.person_name}</h2>
               <div className="meta-text">
-                {contributorTask.role_title} • {getSubmissionTypeLabel(contributorTask.submission_type)}
+                {contributorTask.role_title} • {contributorTask.submission_label || getSubmissionTypeLabel(contributorTask.submission_type)}
               </div>
               <div className="meta-text">
                 Show: <strong>{contributorTask.show_title}</strong>

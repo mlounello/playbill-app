@@ -29,7 +29,7 @@ export default async function ContributorHomePage() {
                   <div>
                     <strong>{task.show_title}</strong>
                     <div>{task.person_name} - {task.role_title}</div>
-                    <div className="meta-text">{getSubmissionTypeLabel(task.submission_type)} task</div>
+                    <div className="meta-text">{task.submission_label || getSubmissionTypeLabel(task.submission_type)} task</div>
                     <div className="meta-text">
                       Status: <span className="status-pill">{task.submission_status}</span>
                       {task.due_date ? ` • Due ${new Date(task.due_date).toLocaleDateString("en-US")}` : ""}

@@ -5,7 +5,6 @@ import { BulkReminderRunner } from "@/components/bulk-reminder-runner";
 import { PeopleBulkEditor } from "@/components/people-bulk-editor";
 import { PerformanceInputs } from "@/components/performance-inputs";
 import { ProgramPagePreviewCard } from "@/components/program-page-preview-card";
-import { PreviewModuleReorder } from "@/components/preview-module-reorder";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import { ProgramImageUpload } from "@/components/program-image-upload";
 import { RichTextField } from "@/components/rich-text-field";
@@ -26,16 +25,15 @@ import {
   requestShowExport,
   restoreArchivedShow,
   setShowPublished,
-  reorderShowModules,
   updateShowActsAndSongs,
   updateShowAcknowledgements,
   updateShowReminderSettings,
+  updateShowSubmissionSettings,
   updateShowSponsorships,
   updateShowPresentation,
   updateShowModules
 } from "@/lib/shows";
 import {
-  BIO_CHAR_LIMIT_DEFAULT,
   SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
   addRoleAssignmentToPerson,
   archiveSpecialNoteTemplate,
@@ -48,9 +46,11 @@ import {
   bulkApproveBios,
   importBiosFromCsv,
   getShowRoleAssignments,
+  getShowContributorNoteAssignments,
   getShowSpecialNoteAssignments,
   getShowSpecialNoteTemplates,
   getShowSubmissionQueue,
+  getSubmissionTypeLabel,
   removePersonFromShow,
   removeRoleAssignment,
   reorderRoleListOrder,
@@ -59,6 +59,7 @@ import {
   updateRoleAssignment,
   createSpecialNoteTemplate,
   updatePersonProfile,
+  updateContributorNoteAssignments,
   updateSpecialNoteAssignments
 } from "@/lib/submissions";
 import {
@@ -74,7 +75,7 @@ import {
 
 const tabs = [
   { id: "overview", label: "Overview" },
-  { id: "program-plan", label: "Program Plan" },
+  { id: "program-plan", label: "Sections & Order" },
   { id: "people-roles", label: "People and Roles" },
   { id: "submissions", label: "Submissions" },
   { id: "preview", label: "Preview" },
@@ -141,6 +142,7 @@ export default async function ShowWorkspacePage({
           dramaturgTemplateId: "",
           musicDirectorTemplateId: ""
         };
+  const contributorNoteAssignments = activeTab === "people-roles" ? await getShowContributorNoteAssignments(show.id) : [];
   const specialNoteTemplates = activeTab === "people-roles" ? await getShowSpecialNoteTemplates(show.id) : [];
   const addPeopleAction = addPeopleToShow.bind(null, show.id);
   const bulkEditPeopleAction = bulkEditPeopleField.bind(null, show.id);
@@ -148,6 +150,7 @@ export default async function ShowWorkspacePage({
   const updatePersonProfileAction = updatePersonProfile.bind(null, show.id);
   const removePersonFromShowAction = removePersonFromShow.bind(null, show.id);
   const updateSpecialNotesAction = updateSpecialNoteAssignments.bind(null, show.id);
+  const updateContributorNotesAction = updateContributorNoteAssignments.bind(null, show.id);
   const reorderRoleListOrderAction = reorderRoleListOrder.bind(null, show.id);
   const createSpecialNoteTemplateAction = createSpecialNoteTemplate.bind(null, show.id);
   const archiveSpecialNoteTemplateAction = archiveSpecialNoteTemplate.bind(null, show.id);
@@ -169,12 +172,12 @@ export default async function ShowWorkspacePage({
   const assignSeasonToShowAction = assignSeasonToShow.bind(null, show.id);
   const updateShowDepartmentsAction = updateShowDepartments.bind(null, show.id);
   const updateShowReminderSettingsAction = updateShowReminderSettings.bind(null, show.id);
+  const updateShowSubmissionSettingsAction = updateShowSubmissionSettings.bind(null, show.id);
   const setReminderPausedAction = setShowRemindersPaused.bind(null, show.id);
   const setDueDateAction = setShowDueDate.bind(null, show.id);
   const sendReminderPreviewEmailAction = sendReminderPreviewEmail.bind(null, show.id);
   const sendReminderTestEmailAction = sendReminderTestEmail.bind(null, show.id);
   const sendInvitesAction = sendShowInvites.bind(null, show.id);
-  const reorderShowModulesAction = reorderShowModules.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
   const hasDepartmentModuleVisible = show.modules.some((module) => module.module_type === "department_info" && module.visible);
   const departmentRepository = activeTab === "settings" ? await getDepartmentRepository() : [];
@@ -207,6 +210,7 @@ export default async function ShowWorkspacePage({
     task.submission_status === "approved" ||
     task.submission_status === "locked" ||
     (task.submission_type === "bio" && task.no_bio);
+  const completedSubmissionCount = submissionQueue.filter((task) => isTaskComplete(task)).length;
   const getTaskNextStep = (task: (typeof submissionQueue)[number]) => {
     if (task.submission_type === "bio" && task.no_bio) return "No bio requested";
     if (task.submission_status === "pending") return "Submit initial draft";
@@ -222,7 +226,7 @@ export default async function ShowWorkspacePage({
       ? submissionQueue
           .filter((task) => {
             const isOverLimit = task.submission_type === "bio"
-              ? task.bio_char_count > BIO_CHAR_LIMIT_DEFAULT
+              ? task.bio_char_count > task.bio_char_limit
               : countWordsFromRichText(task.bio) > SPECIAL_NOTE_WORD_LIMIT_DEFAULT;
             if (activeSubmissionFilter === "all") return true;
             if (activeSubmissionFilter === "needs_review") return task.submission_status === "submitted";
@@ -269,7 +273,7 @@ export default async function ShowWorkspacePage({
           returnedForEdits: submissionQueue.filter((task) => task.submission_status === "returned").length,
           overLimit: submissionQueue.filter((task) =>
             task.submission_type === "bio"
-              ? task.bio_char_count > BIO_CHAR_LIMIT_DEFAULT
+              ? task.bio_char_count > task.bio_char_limit
               : countWordsFromRichText(task.bio) > SPECIAL_NOTE_WORD_LIMIT_DEFAULT
           ).length,
           needsReview: submissionQueue.filter((task) => task.submission_status === "submitted").length
@@ -370,6 +374,11 @@ export default async function ShowWorkspacePage({
   const currentDirectorTemplateId = specialNoteAssignments.directorTemplateId || "default:director_note";
   const currentDramaturgTemplateId = specialNoteAssignments.dramaturgTemplateId || "default:dramaturgical_note";
   const currentMusicDirectorTemplateId = specialNoteAssignments.musicDirectorTemplateId || "default:music_director_note";
+  const hasLegacyNoteSetup =
+    show.modules.some((module) =>
+      ["director_note", "dramaturgical_note", "music_director_note"].includes(module.module_type)
+    ) ||
+    Boolean(currentDirectorNotePersonId || currentDramaturgNotePersonId || currentMusicDirectorNotePersonId);
   const roleAssignments = activeTab === "people-roles" ? await getShowRoleAssignments(show.id) : [];
   const roleLibrary =
     activeTab === "people-roles"
@@ -409,7 +418,7 @@ export default async function ShowWorkspacePage({
               <div className="pane-header">
                 <strong>Overview</strong>
                 <div className="kpi-inline">
-                  <span className="kpi-badge">{show.submission_submitted}/{show.submission_total} submitted</span>
+                  <span className="kpi-badge">{completedSubmissionCount}/{submissionQueue.length} complete</span>
                   <span className="kpi-badge">{reminderSummary.missing} outstanding</span>
                   <span className="kpi-badge">{show.reminders_paused ? "Reminders Paused" : "Reminders Active"}</span>
                   {deliveryMode ? <span className="kpi-badge">{deliveryMode.label}</span> : null}
@@ -423,7 +432,7 @@ export default async function ShowWorkspacePage({
                   </div>
                   <div className="stat-item">
                     <div className="stat-label">Submissions Complete</div>
-                    <div className="stat-value">{show.submission_submitted}/{show.submission_total}</div>
+                    <div className="stat-value">{completedSubmissionCount}/{submissionQueue.length}</div>
                   </div>
                   <div className="stat-item">
                     <div className="stat-label">Outstanding</div>
@@ -444,7 +453,7 @@ export default async function ShowWorkspacePage({
                 </div>
                 <div className="link-row">
                   <Link href={`/app/shows/${show.id}?tab=settings`}>Show Settings</Link>
-                  <Link href={`/app/shows/${show.id}?tab=program-plan`}>Program Plan</Link>
+                  <Link href={`/app/shows/${show.id}?tab=program-plan`}>Sections & Order</Link>
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Preview</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition View</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
@@ -530,11 +539,15 @@ export default async function ShowWorkspacePage({
 
           {activeTab === "program-plan" ? (
             <section className="panel-grid">
-              <div className="card">
-                Configure module order, visibility, and behavior. This saves to `program_modules`.
+              <div className="card admin-guidance-card">
+                <span className="eyebrow">Phase 2 Cleanup</span>
+                <strong>Sections decide what exists. Program Order decides what prints first.</strong>
+                <p className="section-note">
+                  This page still saves to the existing program module data, but the controls are organized around the way production staff think about building a playbill.
+                </p>
               </div>
               <article className="card stack-sm">
-                <strong>Padding Plan</strong>
+                <strong>Booklet Readiness</strong>
                 {paddingPlanProgram ? (
                   <>
                     <div>
@@ -610,7 +623,7 @@ export default async function ShowWorkspacePage({
                       </div>
                     ) : (
                       <div className="meta-text">
-                        No hidden filler-eligible modules available. Mark optional modules as hidden + filler eligible to give the optimizer options.
+                        No hidden optional filler sections are available. Advanced layout controls can mark hidden sections as filler when needed.
                       </div>
                     )}
                     <div className="meta-text">
@@ -625,7 +638,7 @@ export default async function ShowWorkspacePage({
                 )}
               </article>
               <article className="card stack-sm">
-                <strong>Live Module First-Page Preview</strong>
+                <strong>Section Preview</strong>
                 <div className="chip-row">
                   {show.modules.map((module) => (
                     <Link
@@ -655,13 +668,13 @@ export default async function ShowWorkspacePage({
           {activeTab === "preview" ? (
             <section className="panel-grid">
               <article className="card stack-sm">
-                <strong>Program Plan to Preview Mapping</strong>
+                <strong>Preview Readiness</strong>
                 <div>
-                  Active preview token order:{" "}
+                  Current print sequence:{" "}
                   {mappedTokens.length > 0 ? (
                     <code>{mappedTokens.join(" -> ")}</code>
                   ) : (
-                    "No mapped tokens. Enable visible modules in Program Plan."
+                    "No sections are ready for preview yet. Include sections from Sections & Order."
                   )}
                 </div>
                 <div className="link-row">
@@ -673,19 +686,13 @@ export default async function ShowWorkspacePage({
               </article>
 
               <article className="card stack-sm">
-                <strong>Module Sequence (Quick Reorder)</strong>
+                <strong>Need to change the order?</strong>
                 <div className="meta-text">
-                  Drag modules to reorder, then save. This updates Program Plan order directly.
+                  Program order now lives with section setup, so preview can stay focused on proofing the finished playbill.
                 </div>
-                <PreviewModuleReorder
-                  modules={show.modules.map((module) => ({
-                    id: module.id,
-                    label: module.display_title || module.module_type,
-                    visible: module.visible,
-                    fillerEligible: module.filler_eligible
-                  }))}
-                  onSubmitAction={reorderShowModulesAction}
-                />
+                <Link href={`/app/shows/${show.id}?tab=program-plan`} className="button-link">
+                  Open Sections & Order
+                </Link>
               </article>
             </section>
           ) : null}
@@ -693,11 +700,69 @@ export default async function ShowWorkspacePage({
           {activeTab === "people-roles" ? (
             <section className="panel-grid">
               <article className="card stack-sm">
-                <strong>Special Note Assignments</strong>
+                <strong>Program Note Assignments</strong>
                 <p className="section-note">
-                  Assign who should submit Director, Dramaturgical, and Music Director notes. This updates submission requirements automatically.
+                  Contributor Note sections from Sections & Order appear here automatically. Title the section however you want, then assign the person who should submit it.
                 </p>
-                <form action={updateSpecialNotesAction} className="grid" style={{ gap: "0.75rem" }} data-pending-label="Saving special note assignments..." data-preserve-scroll="true">
+                {contributorNoteAssignments.length === 0 ? (
+                  <div className="module-settings-empty">
+                    No flexible contributor notes yet. Open Sections & Order, add a Contributor Note section, and name it something like Director&apos;s Note or Choreographer&apos;s Note.
+                  </div>
+                ) : (
+                  <form action={updateContributorNotesAction} className="stack-sm" data-pending-label="Saving program note assignments..." data-preserve-scroll="true">
+                    <div className="table-frame">
+                      <table className="simple-table">
+                        <thead>
+                          <tr>
+                            <th>Program Section</th>
+                            <th>Assigned Contributor</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contributorNoteAssignments.map((assignment) => (
+                            <tr key={`contributor-note-${assignment.module_id}`}>
+                              <td>
+                                <strong>{assignment.module_title}</strong>
+                                <input type="hidden" name="noteModuleIds" value={assignment.module_id} />
+                                <div className="meta-text">This request will appear to the contributor as {assignment.module_title}.</div>
+                              </td>
+                              <td>
+                                <select name={`notePersonId:${assignment.module_id}`} defaultValue={assignment.assigned_person_id}>
+                                  <option value="">Unassigned</option>
+                                  {people.map((person) => (
+                                    <option key={`program-note-person-${assignment.module_id}-${person.id}`} value={person.id}>
+                                      {person.full_name} - {person.role_title}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td>
+                                {assignment.request_id ? (
+                                  <span className="status-pill">{assignment.request_status || "pending"}</span>
+                                ) : (
+                                  <span className="meta-text">No request yet</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button type="submit">Save Program Note Assignments</button>
+                  </form>
+                )}
+              </article>
+
+              {hasLegacyNoteSetup ? (
+              <article className="card stack-sm">
+                <strong>Legacy Note Assignments</strong>
+                <p className="section-note">
+                  This show still has older fixed note slots. New playbills should use Program Note Assignments above, where each Contributor Note section can be titled and assigned freely.
+                </p>
+                <details>
+                  <summary><strong>Show legacy Director / Dramaturgical / Music Director controls</strong></summary>
+                <form action={updateSpecialNotesAction} className="grid" style={{ gap: "0.75rem", marginTop: "0.75rem" }} data-pending-label="Saving legacy note assignments..." data-preserve-scroll="true">
                   <div className="form-row-2">
                     <label>
                       Director Note Template
@@ -773,10 +838,11 @@ export default async function ShowWorkspacePage({
                       </select>
                     </label>
                   </div>
-                  <button type="submit">Save Special Note Assignments</button>
+                  <button type="submit">Save Legacy Note Assignments</button>
                 </form>
+                </details>
                 <details>
-                  <summary><strong>Manage Special Note Templates</strong></summary>
+                  <summary><strong>Manage Legacy Note Templates</strong></summary>
                   <div className="stack-sm" style={{ marginTop: "0.5rem" }}>
                     <form action={createSpecialNoteTemplateAction} className="form-row-3" data-pending-label="Creating note template..." data-preserve-scroll="true">
                       <label>
@@ -833,6 +899,10 @@ export default async function ShowWorkspacePage({
                     </div>
                   </div>
                 </details>
+              </article>
+              ) : null}
+              <article className="card stack-sm">
+                <strong>Submission Request Repair</strong>
                 <form action={resyncSubmissionRequestsAction} className="top-actions" data-pending-label="Resyncing submission requests..." data-preserve-scroll="true">
                   <button type="submit">Resync Submission Requests</button>
                   <span className="section-note">
@@ -869,16 +939,21 @@ export default async function ShowWorkspacePage({
                       Email
                       <input name="email" type="email" required placeholder="name@example.com" />
                     </label>
-                    <label>
-                      Submission requirement
-                      <select name="submissionType" defaultValue="bio">
-                        <option value="bio">Bio</option>
-                        <option value="director_note">Director's Note</option>
-                        <option value="dramaturgical_note">Dramaturgical Note</option>
-                        <option value="music_director_note">Music Director's Note</option>
-                      </select>
+                    <div className="stack-sm">
+                      What should this person submit?
+                      <span className="section-note">
+                        Choose exactly what you need from them. Notes can be requested without a bio.
+                      </span>
+                    </div>
+                    <label className="checkbox-inline">
+                      <input type="checkbox" name="requestBio" defaultChecked />
+                      <span>Request a program bio</span>
                     </label>
-                    <button type="submit">Add Person</button>
+                    <label className="checkbox-inline">
+                      <input type="checkbox" name="requestNotes" />
+                      <span>Request notes or production information</span>
+                    </label>
+                    <button type="submit">Add Person and Create Requests</button>
                   </form>
                 </article>
 
@@ -974,6 +1049,9 @@ export default async function ShowWorkspacePage({
                   role_count: roleAssignmentSummaryByPersonId.get(person.id)?.count ?? 1,
                   role_summary: roleAssignmentSummaryByPersonId.get(person.id)?.summary ?? person.role_title,
                   submission_type: person.submission_type,
+                  request_bio: person.request_bio,
+                  request_notes: person.request_notes,
+                  request_summary: person.request_summary,
                   submission_status: person.submission_status,
                   submitted_at: person.submitted_at
                 }))}
@@ -1020,7 +1098,7 @@ export default async function ShowWorkspacePage({
                 <strong>Submissions</strong>
                 <div className="kpi-inline">
                   <span className="kpi-badge">
-                    {submissionQueue.filter((task) => isTaskComplete(task)).length}
+                    {completedSubmissionCount}
                     /{submissionQueue.length} complete
                   </span>
                 </div>
@@ -1138,11 +1216,11 @@ export default async function ShowWorkspacePage({
                                 </td>
                                 <td>{task.role_title}</td>
                                 <td style={{ textTransform: "capitalize" }}>{task.role_category_display ?? task.team_type}</td>
-                                <td>{task.submission_type.replace(/_/g, " ")}</td>
+                                <td>{task.submission_label || getSubmissionTypeLabel(task.submission_type)}</td>
                                 <td><span className="status-pill">{task.submission_status}</span></td>
                                 <td>
                                   {task.submission_type === "bio"
-                                    ? `${task.bio_char_count} chars`
+                                    ? `${task.bio_char_count}/${task.bio_char_limit} chars`
                                     : `${countWordsFromRichText(task.bio)} words`}
                                 </td>
                                 <td>{getTaskNextStep(task)}</td>
@@ -1188,8 +1266,8 @@ export default async function ShowWorkspacePage({
                                 </div>
                               </div>
                               <div className="submission-meta">
-                                Requirement: {task.submission_type.replace(/_/g, " ")} • Status: <span className="status-pill">{task.submission_status}</span> • {task.submission_type === "bio"
-                                  ? `${task.bio_char_count} chars`
+                                Requirement: {task.submission_label || getSubmissionTypeLabel(task.submission_type)} • Status: <span className="status-pill">{task.submission_status}</span> • {task.submission_type === "bio"
+                                  ? `${task.bio_char_count}/${task.bio_char_limit} chars`
                                   : `${countWordsFromRichText(task.bio)} words`}
                               </div>
                               <div className="submission-meta">Next step: {getTaskNextStep(task)}</div>
@@ -1363,6 +1441,30 @@ export default async function ShowWorkspacePage({
               </article>
 
               <article className="card stack-sm">
+                <strong>Submission Settings</strong>
+                <div className="meta-text">
+                  Set the bio length for this playbill. Contributors and reviewers will see and enforce this exact limit.
+                </div>
+                <form action={updateShowSubmissionSettingsAction} className="stack-sm" data-pending-label="Saving submission settings..." data-preserve-scroll="true">
+                  <label>
+                    Bio character limit
+                    <input
+                      type="number"
+                      name="bioCharLimit"
+                      min={100}
+                      max={2000}
+                      defaultValue={show.bio_char_limit}
+                      required
+                    />
+                  </label>
+                  <div className="meta-text">
+                    Current playbill limit: {show.bio_char_limit} characters. Existing playbills use 375 until changed.
+                  </div>
+                  <button type="submit">Save Submission Settings</button>
+                </form>
+              </article>
+
+              <article className="card stack-sm">
                 <strong>Reminder Automation</strong>
                 <div className="meta-text">
                   Control automatic reminder cadence for this specific show. Manual invites and manual reminder sends remain available even if automation is turned off.
@@ -1512,7 +1614,7 @@ export default async function ShowWorkspacePage({
               <article className="card stack-sm">
                 <strong>Show Setup: Acknowledgements + Special Thanks</strong>
                 <div className="meta-text">
-                  These feed separate modules in Program Plan.
+                  These feed separate sections in Sections & Order.
                 </div>
                 <form action={updateAcknowledgementsAction} className="stack-sm" data-pending-label="Saving acknowledgements and thanks..." data-preserve-scroll="true">
                   <RichTextField
@@ -1562,12 +1664,12 @@ export default async function ShowWorkspacePage({
                 </div>
                 {!hasDepartmentModuleVisible ? (
                   <div className="meta-text" style={{ color: "#8f1f1f" }}>
-                    Department module is currently hidden in Program Plan. Enable <code>department_info</code> to render this section.
+                    The producing organization section is currently hidden. Open Sections & Order and include it to render this content.
                   </div>
                 ) : null}
                 <div className="top-actions">
                   <Link href="/app/producing-profiles">Open Producing Profiles</Link>
-                  {!hasDepartmentModuleVisible ? <Link href={`/app/shows/${show.id}?tab=program-plan`}>Open Program Plan</Link> : null}
+                  {!hasDepartmentModuleVisible ? <Link href={`/app/shows/${show.id}?tab=program-plan`}>Open Sections & Order</Link> : null}
                 </div>
                 {departmentRepository.length === 0 ? (
                   <div className="meta-text">No profiles yet. Use Producing Profiles to create one.</div>
