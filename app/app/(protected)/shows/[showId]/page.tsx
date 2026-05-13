@@ -5,7 +5,6 @@ import { BulkReminderRunner } from "@/components/bulk-reminder-runner";
 import { PeopleBulkEditor } from "@/components/people-bulk-editor";
 import { PerformanceInputs } from "@/components/performance-inputs";
 import { ProgramPagePreviewCard } from "@/components/program-page-preview-card";
-import { PreviewModuleReorder } from "@/components/preview-module-reorder";
 import { ProgramPlanEditor } from "@/components/program-plan-editor";
 import { ProgramImageUpload } from "@/components/program-image-upload";
 import { RichTextField } from "@/components/rich-text-field";
@@ -26,7 +25,6 @@ import {
   requestShowExport,
   restoreArchivedShow,
   setShowPublished,
-  reorderShowModules,
   updateShowActsAndSongs,
   updateShowAcknowledgements,
   updateShowReminderSettings,
@@ -75,7 +73,7 @@ import {
 
 const tabs = [
   { id: "overview", label: "Overview" },
-  { id: "program-plan", label: "Program Plan" },
+  { id: "program-plan", label: "Sections & Order" },
   { id: "people-roles", label: "People and Roles" },
   { id: "submissions", label: "Submissions" },
   { id: "preview", label: "Preview" },
@@ -176,7 +174,6 @@ export default async function ShowWorkspacePage({
   const sendReminderPreviewEmailAction = sendReminderPreviewEmail.bind(null, show.id);
   const sendReminderTestEmailAction = sendReminderTestEmail.bind(null, show.id);
   const sendInvitesAction = sendShowInvites.bind(null, show.id);
-  const reorderShowModulesAction = reorderShowModules.bind(null, show.id);
   const deletePhrase = `DELETE ${show.slug}`;
   const hasDepartmentModuleVisible = show.modules.some((module) => module.module_type === "department_info" && module.visible);
   const departmentRepository = activeTab === "settings" ? await getDepartmentRepository() : [];
@@ -447,7 +444,7 @@ export default async function ShowWorkspacePage({
                 </div>
                 <div className="link-row">
                   <Link href={`/app/shows/${show.id}?tab=settings`}>Show Settings</Link>
-                  <Link href={`/app/shows/${show.id}?tab=program-plan`}>Program Plan</Link>
+                  <Link href={`/app/shows/${show.id}?tab=program-plan`}>Sections & Order</Link>
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}`}>Open Preview</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}?view=booklet`}>Open Print Imposition View</Link> : null}
                   {show.program_slug ? <Link href={`/programs/${show.program_slug}/submit`}>Contributor Form</Link> : null}
@@ -533,11 +530,15 @@ export default async function ShowWorkspacePage({
 
           {activeTab === "program-plan" ? (
             <section className="panel-grid">
-              <div className="card">
-                Configure module order, visibility, and behavior. This saves to `program_modules`.
+              <div className="card admin-guidance-card">
+                <span className="eyebrow">Phase 2 Cleanup</span>
+                <strong>Sections decide what exists. Program Order decides what prints first.</strong>
+                <p className="section-note">
+                  This page still saves to the existing program module data, but the controls are organized around the way production staff think about building a playbill.
+                </p>
               </div>
               <article className="card stack-sm">
-                <strong>Padding Plan</strong>
+                <strong>Booklet Readiness</strong>
                 {paddingPlanProgram ? (
                   <>
                     <div>
@@ -613,7 +614,7 @@ export default async function ShowWorkspacePage({
                       </div>
                     ) : (
                       <div className="meta-text">
-                        No hidden filler-eligible modules available. Mark optional modules as hidden + filler eligible to give the optimizer options.
+                        No hidden optional filler sections are available. Advanced layout controls can mark hidden sections as filler when needed.
                       </div>
                     )}
                     <div className="meta-text">
@@ -628,7 +629,7 @@ export default async function ShowWorkspacePage({
                 )}
               </article>
               <article className="card stack-sm">
-                <strong>Live Module First-Page Preview</strong>
+                <strong>Section Preview</strong>
                 <div className="chip-row">
                   {show.modules.map((module) => (
                     <Link
@@ -658,13 +659,13 @@ export default async function ShowWorkspacePage({
           {activeTab === "preview" ? (
             <section className="panel-grid">
               <article className="card stack-sm">
-                <strong>Program Plan to Preview Mapping</strong>
+                <strong>Preview Readiness</strong>
                 <div>
-                  Active preview token order:{" "}
+                  Current print sequence:{" "}
                   {mappedTokens.length > 0 ? (
                     <code>{mappedTokens.join(" -> ")}</code>
                   ) : (
-                    "No mapped tokens. Enable visible modules in Program Plan."
+                    "No sections are ready for preview yet. Include sections from Sections & Order."
                   )}
                 </div>
                 <div className="link-row">
@@ -676,19 +677,13 @@ export default async function ShowWorkspacePage({
               </article>
 
               <article className="card stack-sm">
-                <strong>Module Sequence (Quick Reorder)</strong>
+                <strong>Need to change the order?</strong>
                 <div className="meta-text">
-                  Drag modules to reorder, then save. This updates Program Plan order directly.
+                  Program order now lives with section setup, so preview can stay focused on proofing the finished playbill.
                 </div>
-                <PreviewModuleReorder
-                  modules={show.modules.map((module) => ({
-                    id: module.id,
-                    label: module.display_title || module.module_type,
-                    visible: module.visible,
-                    fillerEligible: module.filler_eligible
-                  }))}
-                  onSubmitAction={reorderShowModulesAction}
-                />
+                <Link href={`/app/shows/${show.id}?tab=program-plan`} className="button-link">
+                  Open Sections & Order
+                </Link>
               </article>
             </section>
           ) : null}
@@ -1547,7 +1542,7 @@ export default async function ShowWorkspacePage({
               <article className="card stack-sm">
                 <strong>Show Setup: Acknowledgements + Special Thanks</strong>
                 <div className="meta-text">
-                  These feed separate modules in Program Plan.
+                  These feed separate sections in Sections & Order.
                 </div>
                 <form action={updateAcknowledgementsAction} className="stack-sm" data-pending-label="Saving acknowledgements and thanks..." data-preserve-scroll="true">
                   <RichTextField
@@ -1597,12 +1592,12 @@ export default async function ShowWorkspacePage({
                 </div>
                 {!hasDepartmentModuleVisible ? (
                   <div className="meta-text" style={{ color: "#8f1f1f" }}>
-                    Department module is currently hidden in Program Plan. Enable <code>department_info</code> to render this section.
+                    The producing organization section is currently hidden. Open Sections & Order and include it to render this content.
                   </div>
                 ) : null}
                 <div className="top-actions">
                   <Link href="/app/producing-profiles">Open Producing Profiles</Link>
-                  {!hasDepartmentModuleVisible ? <Link href={`/app/shows/${show.id}?tab=program-plan`}>Open Program Plan</Link> : null}
+                  {!hasDepartmentModuleVisible ? <Link href={`/app/shows/${show.id}?tab=program-plan`}>Open Sections & Order</Link> : null}
                 </div>
                 {departmentRepository.length === 0 ? (
                   <div className="meta-text">No profiles yet. Use Producing Profiles to create one.</div>

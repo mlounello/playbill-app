@@ -15,64 +15,67 @@ type ModuleItem = {
   settings: Record<string, unknown>;
 };
 
+type PlanMode = "sections" | "order";
+
 const moduleTypeLabels: Record<string, string> = {
   cover: "Cover",
   production_info: "Production Info",
   cast_list: "Cast List",
   creative_team: "Creative Team",
   production_team: "Production Team",
-  bios: "Bios",
-  director_note: "Director Note",
-  dramaturgical_note: "Dramaturgical Note",
-  music_director_note: "Music Director Note",
-  acts_scenes: "Acts/Scenes",
+  bios: "Bio Collection",
+  director_note: "Contributor Note",
+  dramaturgical_note: "Contributor Note",
+  music_director_note: "Contributor Note",
+  acts_scenes: "Acts / Scenes",
   songs: "Songs",
-  department_info: "Producing Department / Company",
-  headshots_grid: "Headshots Grid",
-  production_photos: "Production Photos",
+  department_info: "Producing Organization",
+  headshots_grid: "Headshot Grid",
+  production_photos: "Photo Grid",
   sponsors: "Sponsors",
   actf_sponsorship: "ACTF Sponsorship",
   acknowledgements: "Acknowledgements",
   special_thanks: "Special Thanks",
   season_calendar: "Season Calendar",
   back_cover: "Back Cover",
-  custom_text: "Custom Text Section",
-  custom_image: "Custom Image Section",
-  custom_pages: "Custom Pages Collection"
+  custom_text: "Formatted Text",
+  custom_image: "Image / Ad Page",
+  custom_pages: "Custom Page Collection"
 };
 
-const moduleTokenMap: Record<string, string[]> = {
-  cover: ["poster"],
-  production_info: [],
-  cast_list: ["cast_bios"],
-  creative_team: ["team_bios"],
-  production_team: ["team_bios"],
-  bios: ["cast_bios", "team_bios"],
-  director_note: ["director_note"],
-  dramaturgical_note: ["dramaturgical_note"],
-  music_director_note: ["music_director_note"],
-  acts_scenes: ["acts_songs"],
-  songs: ["acts_songs"],
-  department_info: ["department_info"],
-  headshots_grid: ["production_photos"],
-  sponsors: ["sponsorships"],
-  actf_sponsorship: [],
-  acknowledgements: ["acknowledgements"],
-  special_thanks: ["special_thanks"],
-  season_calendar: ["season_calendar"],
-  back_cover: ["season_calendar"],
-  custom_text: [],
-  custom_image: [],
-  custom_pages: ["custom_pages"]
+const moduleTypeDescriptions: Record<string, string> = {
+  cover: "Uses the show poster and core production details.",
+  production_info: "Production details and show metadata.",
+  cast_list: "Printed cast list from people and roles.",
+  creative_team: "Creative team list from people and roles.",
+  production_team: "Production team list from people and roles.",
+  bios: "Collected bios from requested submissions.",
+  director_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
+  dramaturgical_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
+  music_director_note: "Legacy note slot. Phase 5 will turn this into flexible contributor notes.",
+  acts_scenes: "Uses the Acts & Songs content source.",
+  songs: "Uses the Acts & Songs content source.",
+  department_info: "Selected producing profiles and department information.",
+  headshots_grid: "A grid of submitted headshots.",
+  production_photos: "Production photo pages.",
+  sponsors: "Uses the sponsorship content source.",
+  actf_sponsorship: "A dedicated full-page formatted sponsor insert.",
+  acknowledgements: "Uses the acknowledgements content source.",
+  special_thanks: "Uses the special thanks content source.",
+  season_calendar: "Season calendar selected in settings.",
+  back_cover: "Back cover content, usually season schedule or image.",
+  custom_text: "Flexible WYSIWYG page for special thanks, sponsors, notes, dedications, and one-off content.",
+  custom_image: "Flexible image page for ads, sponsor art, back-cover art, and inserts.",
+  custom_pages: "Existing custom page collection from the legacy editor."
 };
 
 const addableModuleTypes = [
-  "cover",
-  "production_info",
+  "custom_text",
+  "custom_image",
+  "bios",
   "cast_list",
   "creative_team",
   "production_team",
-  "bios",
   "director_note",
   "dramaturgical_note",
   "music_director_note",
@@ -86,9 +89,9 @@ const addableModuleTypes = [
   "acknowledgements",
   "special_thanks",
   "season_calendar",
+  "cover",
+  "production_info",
   "back_cover",
-  "custom_text",
-  "custom_image",
   "custom_pages"
 ];
 
@@ -126,6 +129,13 @@ function moveItem<T>(array: T[], from: number, to: number) {
   return next;
 }
 
+function getPlacementLabel(item: ModuleItem) {
+  const isolated =
+    String(item.settings.placement_mode ?? "").toLowerCase() === "isolated" ||
+    Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type));
+  return isolated ? "Own page" : "Can flow with nearby sections";
+}
+
 function ModuleSettings({
   item,
   onUpdate,
@@ -145,23 +155,23 @@ function ModuleSettings({
     return (
       <div className="module-settings-grid">
         <label>
-          Sort mode
+          Bio order
           <select
             value={String(item.settings.sort_mode ?? "alpha")}
             onChange={(e) => setSetting("sort_mode", e.target.value)}
           >
             <option value="alpha">Alphabetical</option>
-            <option value="custom">Custom</option>
+            <option value="custom">Custom order</option>
           </select>
         </label>
 
-        <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+        <label className="checkbox-inline">
           <input
             type="checkbox"
             checked={Boolean(item.settings.include_headshots ?? true)}
             onChange={(e) => setSetting("include_headshots", e.target.checked)}
           />
-          Include headshots
+          <span>Include headshots with bios</span>
         </label>
       </div>
     );
@@ -171,7 +181,7 @@ function ModuleSettings({
     return (
       <div className="module-settings-grid">
         <label>
-          Grouping
+          Cast grouping
           <select
             value={String(item.settings.group_by ?? "none")}
             onChange={(e) => setSetting("group_by", e.target.value)}
@@ -180,7 +190,7 @@ function ModuleSettings({
             <option value="act">Group by act</option>
           </select>
         </label>
-        <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+        <label className="checkbox-inline">
           <input
             type="checkbox"
             checked={Boolean(item.settings.role_list_grouping_enabled ?? true)}
@@ -195,7 +205,7 @@ function ModuleSettings({
               });
             }}
           />
-          Allow grouping with other modules
+          <span>Let this list share a page when there is room</span>
         </label>
       </div>
     );
@@ -204,7 +214,7 @@ function ModuleSettings({
   if (item.module_type === "creative_team" || item.module_type === "production_team") {
     return (
       <div className="module-settings-grid">
-        <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+        <label className="checkbox-inline">
           <input
             type="checkbox"
             checked={Boolean(item.settings.role_list_grouping_enabled ?? true)}
@@ -219,7 +229,7 @@ function ModuleSettings({
               });
             }}
           />
-          Allow grouping with other modules
+          <span>Let this list share a page when there is room</span>
         </label>
       </div>
     );
@@ -229,7 +239,7 @@ function ModuleSettings({
     return (
       <div className="module-settings-grid">
         <label>
-          Max per page
+          Headshots per page
           <input
             type="number"
             min={2}
@@ -239,13 +249,13 @@ function ModuleSettings({
           />
         </label>
 
-        <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+        <label className="checkbox-inline">
           <input
             type="checkbox"
             checked={Boolean(item.settings.show_names ?? true)}
             onChange={(e) => setSetting("show_names", e.target.checked)}
           />
-          Show names
+          <span>Show names under headshots</span>
         </label>
       </div>
     );
@@ -255,14 +265,14 @@ function ModuleSettings({
     return (
       <div className="module-settings-grid">
         <label>
-          Back cover mode
+          Back cover content
           <select
             value={String(item.settings.mode ?? "schedule")}
             onChange={(e) => setSetting("mode", e.target.value)}
           >
             <option value="schedule">Season schedule</option>
             <option value="image">Image</option>
-            <option value="auto">Auto</option>
+            <option value="auto">Choose automatically</option>
           </select>
         </label>
       </div>
@@ -271,17 +281,14 @@ function ModuleSettings({
 
   if (item.module_type === "custom_text") {
     return (
-      <div className="module-settings-grid">
-        <label>
-          Section body
-          <RichTextEditor
-            label={`${item.display_title || "Custom Text"} body`}
-            value={String(item.settings.body ?? "")}
-            onChange={(next) => setSetting("body", next)}
-            placeholder="Add rich text content for this custom section."
-            minHeightPx={220}
-          />
-        </label>
+      <div className="module-settings-grid module-settings-wide">
+        <RichTextEditor
+          label={`${item.display_title || "Formatted Text"} content`}
+          value={String(item.settings.body ?? "")}
+          onChange={(next) => setSetting("body", next)}
+          placeholder="Add formatted text for this section."
+          minHeightPx={220}
+        />
       </div>
     );
   }
@@ -321,7 +328,7 @@ function ModuleSettings({
   if (item.module_type === "actf_sponsorship") {
     const imageInputId = `actf-sponsorship-image-${item.id}`;
     return (
-      <div className="module-settings-grid">
+      <div className="module-settings-grid module-settings-wide">
         <div className="stack-sm">
           <label>
             Header image URL
@@ -344,7 +351,7 @@ function ModuleSettings({
           ) : null}
           <div className="row-wrap">
             <label>
-              Page background color
+              Page background
               <input
                 type="color"
                 value={String(item.settings.background_color ?? "#fffef9")}
@@ -375,24 +382,24 @@ function ModuleSettings({
               </select>
             </label>
           </div>
-          <div className="meta-text">This module always renders as its own full page.</div>
         </div>
 
-        <div className="stack-sm">
-          <div style={{ fontWeight: 600 }}>Formatted body content</div>
-          <ModuleHtmlEditor
-            label={`${item.display_title || "ACTF Sponsorship"} body`}
-            value={String(item.settings.body ?? "")}
-            onChange={(next) => setSetting("body", next)}
-            placeholder="Add ACTF sponsorship copy here."
-            minHeightPx={320}
-          />
-        </div>
+        <ModuleHtmlEditor
+          label={`${item.display_title || "ACTF Sponsorship"} body`}
+          value={String(item.settings.body ?? "")}
+          onChange={(next) => setSetting("body", next)}
+          placeholder="Add ACTF sponsorship copy here."
+          minHeightPx={320}
+        />
       </div>
     );
   }
 
-  return null;
+  return (
+    <div className="module-settings-empty">
+      This section uses content from the show setup or people pages. There are no extra settings here yet.
+    </div>
+  );
 }
 
 export function ProgramPlanEditor({
@@ -416,32 +423,57 @@ export function ProgramPlanEditor({
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [newModuleType, setNewModuleType] = useState("custom_text");
+  const [mode, setMode] = useState<PlanMode>("sections");
+
+  const visibleItems = useMemo(() => items.filter((item) => item.visible), [items]);
+  const hiddenItems = useMemo(() => items.filter((item) => !item.visible), [items]);
+  const flexibleCount = useMemo(
+    () => items.filter((item) => item.module_type === "custom_text" || item.module_type === "custom_image").length,
+    [items]
+  );
 
   const update = <K extends keyof ModuleItem>(index: number, key: K, value: ModuleItem[K]) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
   };
 
-  const updateSettings = (index: number, nextSettings: Record<string, unknown>) => {
-    update(index, "settings", nextSettings);
+  const updateById = <K extends keyof ModuleItem>(id: string, key: K, value: ModuleItem[K]) => {
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, [key]: value } : item)));
   };
 
-  const setPageBehavior = (index: number, mode: "share" | "standalone") => {
+  const updateSettingsById = (id: string, nextSettings: Record<string, unknown>) => {
+    updateById(id, "settings", nextSettings);
+  };
+
+  const setPageBehavior = (id: string, modeValue: "share" | "standalone") => {
     setItems((current) =>
-      current.map((item, i) => {
-        if (i !== index) return item;
-        const separate = mode === "standalone";
+      current.map((item) => {
+        if (item.id !== id) return item;
+        const separate = modeValue === "standalone";
         return {
           ...item,
           settings: {
             ...item.settings,
             placement_mode: separate ? "isolated" : "flow",
             separate_page: separate,
-            // Keep legacy flag aligned to avoid contradictory older records.
             keep_together: separate
           }
         };
       })
     );
+  };
+
+  const moveVisibleItem = (fromVisibleIndex: number, toVisibleIndex: number) => {
+    setItems((current) => {
+      const visible = current.filter((item) => item.visible);
+      const reorderedVisible = moveItem(visible, fromVisibleIndex, toVisibleIndex);
+      let visiblePointer = 0;
+      return current.map((item) => {
+        if (!item.visible) return item;
+        const nextItem = reorderedVisible[visiblePointer];
+        visiblePointer += 1;
+        return nextItem;
+      });
+    });
   };
 
   const payload = useMemo(
@@ -482,9 +514,10 @@ export function ProgramPlanEditor({
         }
       }
     ]);
+    setMode("sections");
   };
 
-  const isCustomModule = (moduleType: string) =>
+  const isRemovableModule = (moduleType: string) =>
     moduleType === "custom_text" || moduleType === "custom_image" || moduleType === "custom_pages";
 
   const buildPreviewHref = (moduleId: string) => {
@@ -501,21 +534,53 @@ export function ProgramPlanEditor({
   };
 
   return (
-    <form action={onSubmitAction} className="card-list" data-pending-label="Saving program plan..." data-preserve-scroll="true">
-      <article className="card stack-sm">
-        <strong>Program Plan Builder</strong>
-        <p className="section-note">
-          Reorder by drag-and-drop, or use Move Up/Move Down. Turn sections on or off with the Visible toggle.
-        </p>
-        <p className="section-note">
-          Page behavior controls whether a module can share a page with other modules or must stay on its own page.
-        </p>
-        <p className="section-note">
-          “Allow multiple pages” controls whether long sections can continue to another page.
-        </p>
-        <div className="top-actions">
+    <form action={onSubmitAction} className="program-plan-workbench" data-pending-label="Saving sections and order..." data-preserve-scroll="true">
+      <input type="hidden" name="modulesPayload" value={payload} readOnly />
+
+      <article className="card program-plan-hero">
+        <div className="program-plan-hero-copy">
+          <span className="eyebrow">Program Builder</span>
+          <h2>Build the playbill in production-friendly steps.</h2>
+          <p>
+            Set up the sections you want, then switch to Program Order to arrange only the sections that will appear in the final playbill.
+          </p>
+        </div>
+        <div className="program-plan-stats" aria-label="Program section summary">
+          <div>
+            <strong>{visibleItems.length}</strong>
+            <span>included</span>
+          </div>
+          <div>
+            <strong>{hiddenItems.length}</strong>
+            <span>hidden</span>
+          </div>
+          <div>
+            <strong>{flexibleCount}</strong>
+            <span>flexible</span>
+          </div>
+        </div>
+      </article>
+
+      <article className="card program-plan-toolbar">
+        <div className="segmented-control" aria-label="Program plan mode">
+          <button
+            type="button"
+            className={mode === "sections" ? "is-active" : ""}
+            onClick={() => setMode("sections")}
+          >
+            Section Setup
+          </button>
+          <button
+            type="button"
+            className={mode === "order" ? "is-active" : ""}
+            onClick={() => setMode("order")}
+          >
+            Program Order
+          </button>
+        </div>
+        <div className="program-add-section">
           <label>
-            Add section type
+            Add a section
             <select value={newModuleType} onChange={(event) => setNewModuleType(event.target.value)}>
               {addableModuleTypes.map((type) => (
                 <option key={type} value={type}>
@@ -530,173 +595,252 @@ export function ProgramPlanEditor({
         </div>
       </article>
 
-      <input type="hidden" name="modulesPayload" value={payload} readOnly />
-      {items.map((item, index) => (
-        <article
-          key={item.id}
-          className="card grid draggable-module"
-          style={{ gap: "0.55rem", opacity: draggingId === item.id ? 0.6 : 1 }}
-          draggable
-          onDragStart={(event) => {
-            setDragIndex(index);
-            setDraggingId(item.id);
-            event.dataTransfer.effectAllowed = "move";
-            const ghost = event.currentTarget.cloneNode(true) as HTMLElement;
-            ghost.style.position = "absolute";
-            ghost.style.top = "-9999px";
-            ghost.style.left = "-9999px";
-            ghost.style.width = `${event.currentTarget.clientWidth}px`;
-            document.body.appendChild(ghost);
-            event.dataTransfer.setDragImage(ghost, 20, 20);
-            requestAnimationFrame(() => document.body.removeChild(ghost));
-          }}
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault();
-            if (dragIndex === null || dragIndex === index) {
-              return;
-            }
-            setItems((current) => moveItem(current, dragIndex, index));
-            setDragIndex(null);
-            setDraggingId(null);
-          }}
-          onDragEnd={() => {
-            setDragIndex(null);
-            setDraggingId(null);
-          }}
-        >
-          <div className="row-between">
-            <strong>
-              <span className="drag-handle" aria-hidden>
-                ::
-              </span>{" "}
-              {moduleTypeLabels[item.module_type] || item.module_type}
-            </strong>
-            <div className="top-actions">
-              <button type="button" className="ghost-button" onClick={() => setItems((current) => moveItem(current, index, Math.max(0, index - 1)))} disabled={index === 0}>
-                Move Up
-              </button>
-              <button type="button" className="ghost-button" onClick={() => setItems((current) => moveItem(current, index, Math.min(current.length - 1, index + 1)))} disabled={index === items.length - 1}>
-                Move Down
-              </button>
-              {isCustomModule(item.module_type) ? (
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => setItems((current) => current.filter((_, i) => i !== index))}
-                >
-                  Remove Section
-                </button>
-              ) : null}
-              {previewBasePath ? (
-                <a
-                  className="ghost-button"
-                  href={buildPreviewHref(item.id)}
-                  style={previewModuleId === item.id ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
-                >
-                  {previewModuleId === item.id ? "Previewing" : "Preview this module"}
-                </a>
-              ) : null}
-              <span className="meta-text">Drag to reorder</span>
-            </div>
-          </div>
+      {mode === "sections" ? (
+        <section className="program-section-list" aria-label="Section setup">
+          {items.map((item, index) => {
+            const includedLabel = item.visible ? "Included in playbill" : "Hidden for now";
+            return (
+              <article
+                key={item.id}
+                className={`program-section-card ${item.visible ? "is-visible" : "is-hidden"}`}
+              >
+                <div className="program-section-card-header">
+                  <div>
+                    <div className="program-section-kicker">
+                      <span className={`status-dot ${item.visible ? "is-live" : ""}`} aria-hidden />
+                      {moduleTypeLabels[item.module_type] || item.module_type}
+                    </div>
+                    <h3>{item.display_title || moduleTypeLabels[item.module_type] || "Untitled section"}</h3>
+                    <p>{moduleTypeDescriptions[item.module_type] || "Program section content and layout settings."}</p>
+                  </div>
+                  <div className="program-section-actions">
+                    {previewBasePath ? (
+                      <a
+                        className="ghost-button"
+                        href={buildPreviewHref(item.id)}
+                        style={previewModuleId === item.id ? { borderColor: "#006b54", color: "#006b54", fontWeight: 700 } : undefined}
+                      >
+                        {previewModuleId === item.id ? "Previewing" : "Preview"}
+                      </a>
+                    ) : null}
+                    {isRemovableModule(item.module_type) ? (
+                      <button
+                        type="button"
+                        className="ghost-button ghost-button-danger"
+                        onClick={() => setItems((current) => current.filter((_, i) => i !== index))}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
 
-          {item.module_type === "actf_sponsorship" ? (
+                <div className="program-section-fields">
+                  {item.module_type === "actf_sponsorship" ? (
+                    <div className="readonly-field">
+                      <span>Section title</span>
+                      <strong>ACTF Sponsorship</strong>
+                    </div>
+                  ) : (
+                    <label>
+                      Section title shown in the playbill
+                      <input value={item.display_title} onChange={(event) => update(index, "display_title", event.target.value)} />
+                    </label>
+                  )}
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={item.visible}
+                      onChange={(event) => update(index, "visible", event.target.checked)}
+                    />
+                    <span>
+                      <strong>{includedLabel}</strong>
+                      <small>{item.visible ? "This section appears in Program Order." : "Keep content saved without printing it yet."}</small>
+                    </span>
+                  </label>
+                </div>
+
+                <details className="program-section-details" open={item.module_type === "custom_text" || item.module_type === "custom_image"}>
+                  <summary>Content and section options</summary>
+                  <ModuleSettings item={item} onUpdate={(next) => update(index, "settings", next)} showId={showId} programSlug={programSlug} />
+                </details>
+
+                <details className="program-section-details">
+                  <summary>Advanced layout controls</summary>
+                  <div className="advanced-layout-grid">
+                    {item.module_type === "actf_sponsorship" ? (
+                      <div className="module-settings-empty">ACTF Sponsorship always renders as a dedicated full page.</div>
+                    ) : (
+                      <label className="checkbox-inline">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(item.settings.show_header ?? true)}
+                          onChange={(event) => updateSettingsById(item.id, { ...item.settings, show_header: event.target.checked })}
+                        />
+                        <span>Show this section title in the playbill</span>
+                      </label>
+                    )}
+
+                    <fieldset className="plain-fieldset">
+                      <legend>Page placement</legend>
+                      <label className="checkbox-inline">
+                        <input
+                          type="radio"
+                          name={`page-behavior-${item.id}`}
+                          disabled={item.module_type === "actf_sponsorship"}
+                          checked={
+                            String(item.settings.placement_mode ?? "").toLowerCase() === "flow" ||
+                            !Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type))
+                          }
+                          onChange={() => setPageBehavior(item.id, "share")}
+                        />
+                        <span>Flow with nearby sections when there is room</span>
+                      </label>
+                      <label className="checkbox-inline">
+                        <input
+                          type="radio"
+                          name={`page-behavior-${item.id}`}
+                          disabled={item.module_type === "actf_sponsorship"}
+                          checked={
+                            String(item.settings.placement_mode ?? "").toLowerCase() === "isolated" ||
+                            Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type))
+                          }
+                          onChange={() => setPageBehavior(item.id, "standalone")}
+                        />
+                        <span>Start this section on its own page</span>
+                      </label>
+                    </fieldset>
+
+                    <label className="checkbox-inline">
+                      <input
+                        type="checkbox"
+                        checked={item.filler_eligible}
+                        onChange={(event) => update(index, "filler_eligible", event.target.checked)}
+                      />
+                      <span>Use this hidden section as optional filler if the booklet needs pages</span>
+                    </label>
+
+                    <label className="checkbox-inline">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(item.settings.allow_multiple_pages ?? (item.module_type === "bios" || item.module_type === "custom_pages"))}
+                        onChange={(event) =>
+                          updateSettingsById(item.id, { ...item.settings, allow_multiple_pages: event.target.checked })
+                        }
+                      />
+                      <span>Let this section continue onto another page if it runs long</span>
+                    </label>
+                  </div>
+                </details>
+              </article>
+            );
+          })}
+        </section>
+      ) : (
+        <section className="program-order-board" aria-label="Program order">
+          <article className="program-order-intro">
             <div>
-              <div className="meta-text">Module title</div>
-              <strong>ACTF Sponsorship</strong>
+              <span className="eyebrow">Program Order</span>
+              <h3>Arrange the sections your audience will actually see.</h3>
+              <p>Hidden sections stay out of this list so the order is easier to understand. Use Section Setup to include or hide sections.</p>
+            </div>
+            {hiddenItems.length > 0 ? (
+              <div className="hidden-summary">{hiddenItems.length} hidden section{hiddenItems.length === 1 ? "" : "s"}</div>
+            ) : null}
+          </article>
+
+          {visibleItems.length === 0 ? (
+            <div className="empty-state-card">
+              No sections are currently included. Switch to Section Setup and include at least one section.
             </div>
           ) : (
-            <label>
-              Module title
-              <input value={item.display_title} onChange={(event) => update(index, "display_title", event.target.value)} />
-            </label>
+            <div className="program-order-list">
+              {visibleItems.map((item, visibleIndex) => (
+                <article
+                  key={`order-${item.id}`}
+                  className="program-order-item"
+                  style={{ opacity: draggingId === item.id ? 0.55 : 1 }}
+                  draggable
+                  onDragStart={(event) => {
+                    setDragIndex(visibleIndex);
+                    setDraggingId(item.id);
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    if (dragIndex === null || dragIndex === visibleIndex) {
+                      return;
+                    }
+                    moveVisibleItem(dragIndex, visibleIndex);
+                    setDragIndex(null);
+                    setDraggingId(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragIndex(null);
+                    setDraggingId(null);
+                  }}
+                >
+                  <div className="program-order-grip" aria-hidden>
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div className="program-order-number">{visibleIndex + 1}</div>
+                  <div className="program-order-copy">
+                    <strong>{item.display_title || moduleTypeLabels[item.module_type] || item.module_type}</strong>
+                    <span>{moduleTypeLabels[item.module_type] || item.module_type} • {getPlacementLabel(item)}</span>
+                  </div>
+                  <div className="program-order-actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => moveVisibleItem(visibleIndex, Math.max(0, visibleIndex - 1))}
+                      disabled={visibleIndex === 0}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => moveVisibleItem(visibleIndex, Math.min(visibleItems.length - 1, visibleIndex + 1))}
+                      disabled={visibleIndex === visibleItems.length - 1}
+                    >
+                      Down
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
           )}
 
-          <div className="row-wrap">
-            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={item.visible}
-                onChange={(event) => update(index, "visible", event.target.checked)}
-              />
-              Visible
-            </label>
+          {hiddenItems.length > 0 ? (
+            <details className="program-hidden-list">
+              <summary>Show hidden sections</summary>
+              <div className="chip-row">
+                {hiddenItems.map((item) => (
+                  <button
+                    key={`hidden-${item.id}`}
+                    type="button"
+                    className="tab-chip"
+                    onClick={() => updateById(item.id, "visible", true)}
+                  >
+                    Include {item.display_title || moduleTypeLabels[item.module_type] || item.module_type}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </section>
+      )}
 
-            {item.module_type === "actf_sponsorship" ? null : (
-              <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(item.settings.show_header ?? true)}
-                  onChange={(event) => updateSettings(index, { ...item.settings, show_header: event.target.checked })}
-                />
-                Show section header
-              </label>
-            )}
-
-            <fieldset style={{ border: "none", margin: 0, padding: 0, display: "flex", gap: "0.65rem", alignItems: "center", flexWrap: "wrap" }}>
-              <legend className="meta-text" style={{ marginRight: "0.25rem" }}>Page behavior</legend>
-              <label style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
-                <input
-                  type="radio"
-                  name={`page-behavior-${item.id}`}
-                  disabled={item.module_type === "actf_sponsorship"}
-                  checked={
-                    String(item.settings.placement_mode ?? "").toLowerCase() === "flow" ||
-                    !Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type))
-                  }
-                  onChange={() => setPageBehavior(index, "share")}
-                />
-                Can share page with other modules
-              </label>
-              <label style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
-                <input
-                  type="radio"
-                  name={`page-behavior-${item.id}`}
-                  disabled={item.module_type === "actf_sponsorship"}
-                  checked={
-                    String(item.settings.placement_mode ?? "").toLowerCase() === "isolated" ||
-                    Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type))
-                  }
-                  onChange={() => setPageBehavior(index, "standalone")}
-                />
-                Must remain by itself
-              </label>
-            </fieldset>
-
-            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={item.filler_eligible}
-                onChange={(event) => update(index, "filler_eligible", event.target.checked)}
-              />
-              Filler eligible (auto-use when hidden)
-            </label>
-
-            <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={Boolean(item.settings.allow_multiple_pages ?? (item.module_type === "bios" || item.module_type === "custom_pages"))}
-                onChange={(event) =>
-                  updateSettings(index, { ...item.settings, allow_multiple_pages: event.target.checked })
-                }
-              />
-              Allow multiple pages
-            </label>
-          </div>
-
-          <div className="meta-text">
-            Preview mapping:{" "}
-            {(moduleTokenMap[item.module_type] ?? []).length > 0
-              ? (moduleTokenMap[item.module_type] ?? []).join(", ")
-              : "No direct token mapping yet (module stored for future renderer)."}
-          </div>
-
-          <ModuleSettings item={item} onUpdate={(next) => update(index, "settings", next)} showId={showId} programSlug={programSlug} />
-        </article>
-      ))}
-
-      <button type="submit">Save Program Plan</button>
+      <div className="program-plan-savebar">
+        <div>
+          <strong>Ready to save?</strong>
+          <span>Changes are not applied until you save sections and order.</span>
+        </div>
+        <button type="submit">Save Sections and Order</button>
+      </div>
     </form>
   );
 }
