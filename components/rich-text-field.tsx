@@ -129,10 +129,12 @@ export function RichTextField({
         <div className="rich-live-preview-title">Live Preview (first page style)</div>
         {previewTitle ? <h3 className="playbill-title">{previewTitle}</h3> : null}
         {previewName || previewRole ? (
-          <div className="rich-live-preview-program-header">
-            {previewEyebrow ? <div className="rich-live-preview-eyebrow">{previewEyebrow}</div> : null}
-            {previewName ? <strong>{previewName}</strong> : null}
-            {previewRole ? <span>{previewRole}</span> : null}
+          <div className="rich-live-preview-program-context">
+            {previewEyebrow ? <div className="rich-live-preview-note">{previewEyebrow}</div> : null}
+            <div className="bio-name">
+              {previewName}
+              {previewRole ? <span className="bio-role-inline"> ({previewRole})</span> : null}
+            </div>
           </div>
         ) : null}
         <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(value) }} />

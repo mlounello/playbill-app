@@ -86,7 +86,7 @@ export function ContributorTaskForm({
         required={false}
         initialValue={initialBio}
         placeholder={placeholder}
-        previewEyebrow={isBioTask ? "Program bio will print with this header" : "Program note"}
+        previewEyebrow={isBioTask ? "Name and role are already included in the program." : "Note title is already included in the program."}
         previewName={isBioTask ? contributorName : submissionLabel.replace(/\s+Submission$/i, "")}
         previewRole={isBioTask ? contributorRole : contributorName}
         counter={
