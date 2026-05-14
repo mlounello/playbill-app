@@ -206,6 +206,12 @@ export default async function ShowWorkspacePage({
   const submissionQueue =
     activeTab === "submissions" || activeTab === "overview" ? await getShowSubmissionQueue(show.id) : [];
   const deliveryMode = activeTab === "overview" ? getReminderDeliveryMode() : null;
+  const visibleModules = show.modules.filter((module) => module.visible);
+  const hasVisibleHeadshotGrid = visibleModules.some((module) => module.module_type === "headshots_grid");
+  const biosPrintHeadshots = visibleModules.some(
+    (module) => module.module_type === "bios" && module.settings.include_headshots !== false
+  );
+  const headshotsRequired = biosPrintHeadshots || hasVisibleHeadshotGrid;
   const isTaskComplete = (task: (typeof submissionQueue)[number]) =>
     task.submission_status === "submitted" ||
     task.submission_status === "approved" ||
@@ -235,7 +241,7 @@ export default async function ShowWorkspacePage({
               return task.submission_type === "bio" && task.bio_char_count === 0 && !task.no_bio;
             if (activeSubmissionFilter === "no_bio") return task.submission_type === "bio" && task.no_bio;
             if (activeSubmissionFilter === "headshot_missing")
-              return task.submission_type === "bio" && !task.headshot_url.trim();
+              return headshotsRequired && task.submission_type === "bio" && !task.no_bio && !task.headshot_url.trim();
             if (activeSubmissionFilter === "over_limit") return isOverLimit;
             return task.submission_status === activeSubmissionFilter;
           })
@@ -268,7 +274,7 @@ export default async function ShowWorkspacePage({
             (task) => task.submission_type === "bio" && task.bio_char_count === 0 && !task.no_bio
           ).length,
           missingHeadshots: submissionQueue.filter(
-            (task) => task.submission_type === "bio" && !task.no_bio && !task.headshot_url.trim()
+            (task) => headshotsRequired && task.submission_type === "bio" && !task.no_bio && !task.headshot_url.trim()
           ).length,
           missingNotes: submissionQueue.filter(
             (task) => task.submission_type !== "bio" && !richTextHasContent(task.bio)
@@ -379,7 +385,6 @@ export default async function ShowWorkspacePage({
     }
   ];
   const activeBlockers = blockerItems.filter((item) => item.count > 0);
-  const visibleModules = show.modules.filter((module) => module.visible);
   const hasSubmittedBodyForNoteTitle = (title: string) => {
     const normalizedTitle = title.trim().toLowerCase();
     return submissionQueue.some(
@@ -431,10 +436,14 @@ export default async function ShowWorkspacePage({
             href: `/app/shows/${show.id}?tab=submissions&submissionFilter=needs_review`
           },
           {
-            label: "Bios and headshots fit print rules",
+            label: headshotsRequired ? "Bios and headshots fit print rules" : "Bios fit print rules",
             detail: blockers.overLimit === 0 && blockers.missingHeadshots === 0
-              ? "No over-limit text or missing requested headshots."
-              : `${blockers.overLimit} over limit, ${blockers.missingHeadshots} missing headshots.`,
+              ? headshotsRequired
+                ? "No over-limit text or missing requested headshots."
+                : "No over-limit bio text."
+              : headshotsRequired
+                ? `${blockers.overLimit} over limit, ${blockers.missingHeadshots} missing headshots.`
+                : `${blockers.overLimit} over limit.`,
             ok: blockers.overLimit === 0 && blockers.missingHeadshots === 0,
             href: `/app/shows/${show.id}?tab=submissions&submissionFilter=over_limit`
           },
