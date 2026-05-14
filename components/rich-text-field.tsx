@@ -25,6 +25,9 @@ type Props = {
   initialValue?: string;
   draftNamespace?: string;
   previewTitle?: string;
+  previewEyebrow?: string;
+  previewName?: string;
+  previewRole?: string;
   counter?: CounterConfig;
   onStatsChange?: (stats: RichTextStats) => void;
 };
@@ -50,6 +53,9 @@ export function RichTextField({
   initialValue = "",
   draftNamespace,
   previewTitle,
+  previewEyebrow,
+  previewName,
+  previewRole,
   counter,
   onStatsChange
 }: Props) {
@@ -122,6 +128,15 @@ export function RichTextField({
       <aside className="rich-live-preview">
         <div className="rich-live-preview-title">Live Preview (first page style)</div>
         {previewTitle ? <h3 className="playbill-title">{previewTitle}</h3> : null}
+        {previewName || previewRole ? (
+          <div className="rich-live-preview-program-context">
+            {previewEyebrow ? <div className="rich-live-preview-note">{previewEyebrow}</div> : null}
+            <div className="bio-name">
+              {previewName}
+              {previewRole ? <span className="bio-role-inline"> ({previewRole})</span> : null}
+            </div>
+          </div>
+        ) : null}
         <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(value) }} />
       </aside>
       <textarea name={name} value={value} onChange={() => {}} required={required} className="sr-only" />

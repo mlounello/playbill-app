@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
 
 type PersonRow = {
   id: string;
@@ -14,6 +14,8 @@ type PersonRow = {
   request_bio?: boolean;
   request_notes?: boolean;
   request_summary?: string;
+  bio_char_limit?: number;
+  bio_char_limit_override?: number | null;
   submission_status?: "pending" | "draft" | "submitted" | "returned" | "approved" | "locked";
   submitted_at?: string | null;
 };
@@ -25,6 +27,15 @@ type PersonRoleRow = {
   category: "cast" | "creative" | "production";
   role_template_id: string | null;
 };
+
+type RoleActionResult =
+  | {
+      ok?: boolean;
+      message?: string;
+      role?: Partial<PersonRoleRow> & { id: string };
+      roleId?: string;
+    }
+  | undefined;
 
 type RoleTemplateOption = {
   id: string;
@@ -48,11 +59,11 @@ export function PeopleBulkEditor({
 }: {
   people: PersonRow[];
   onSubmitAction: (formData: FormData) => void;
-  onEditAction: (formData: FormData) => void;
+  onEditAction: (formData: FormData) => void | Promise<unknown>;
   onRemovePersonAction: (formData: FormData) => void;
-  onAddRoleAction: (formData: FormData) => void;
-  onUpdateRoleAction: (formData: FormData) => void;
-  onRemoveRoleAction: (formData: FormData) => void;
+  onAddRoleAction: (formData: FormData) => void | Promise<unknown>;
+  onUpdateRoleAction: (formData: FormData) => void | Promise<unknown>;
+  onRemoveRoleAction: (formData: FormData) => void | Promise<unknown>;
   personRoles: PersonRoleRow[];
   roleTemplates: RoleTemplateOption[];
   roleError?: string;
@@ -60,6 +71,7 @@ export function PeopleBulkEditor({
   highlightedPersonId?: string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [localPeople, setLocalPeople] = useState(people);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [enableRoleTitle, setEnableRoleTitle] = useState(false);
@@ -73,10 +85,25 @@ export function PeopleBulkEditor({
   const [editEmail, setEditEmail] = useState("");
   const [editRequestBio, setEditRequestBio] = useState(true);
   const [editRequestNotes, setEditRequestNotes] = useState(false);
+  const [editBioCharLimitOverride, setEditBioCharLimitOverride] = useState("");
+  const [editMessage, setEditMessage] = useState("");
+  const [editError, setEditError] = useState("");
+  const [localPersonRoles, setLocalPersonRoles] = useState(personRoles);
+  const [roleMessages, setRoleMessages] = useState<Record<string, { tone: "success" | "error"; text: string }>>({});
+  const [isSavingEdit, startSavingEdit] = useTransition();
+  const [savingRoleIds, setSavingRoleIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setLocalPeople(people);
+  }, [people]);
+
+  useEffect(() => {
+    setLocalPersonRoles(personRoles);
+  }, [personRoles]);
 
   const sortedPeople = useMemo(
-    () => [...people].sort((a, b) => a.full_name.localeCompare(b.full_name) || a.role_title.localeCompare(b.role_title)),
-    [people]
+    () => [...localPeople].sort((a, b) => a.full_name.localeCompare(b.full_name) || a.role_title.localeCompare(b.role_title)),
+    [localPeople]
   );
   const visiblePeople = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -105,23 +132,193 @@ export function PeopleBulkEditor({
   };
   const clearAll = () => setSelectedIds(new Set());
   const openEdit = (person: PersonRow) => {
+    setEditMessage("");
+    setEditError("");
     setEditPersonId(person.id);
     setEditFullName(person.full_name);
     setEditEmail(person.email);
     setEditRequestBio(person.request_bio ?? (person.submission_type ?? "bio") === "bio");
     setEditRequestNotes(person.request_notes ?? (person.submission_type ?? "") === "note");
+    setEditBioCharLimitOverride(person.bio_char_limit_override ? String(person.bio_char_limit_override) : "");
     setEditOpen(true);
   };
+  const editPerson = localPeople.find((person) => person.id === editPersonId);
   const editPersonRoles = useMemo(
-    () => personRoles.filter((role) => role.person_id === editPersonId),
-    [personRoles, editPersonId]
+    () => localPersonRoles.filter((role) => role.person_id === editPersonId),
+    [localPersonRoles, editPersonId]
   );
+  const setRoleSaving = (id: string, saving: boolean) => {
+    setSavingRoleIds((current) => {
+      const next = new Set(current);
+      if (saving) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+  const getRoleTemplate = (id: string) => roleTemplates.find((template) => template.id === id);
+  const getVisibleRoleSummary = (roles: PersonRoleRow[]) => {
+    if (roles.length === 0) return "No roles yet";
+    const cast = roles.filter((role) => role.category === "cast").map((role) => role.role_name);
+    const nonCast = roles.filter((role) => role.category !== "cast").map((role) => role.role_name);
+    if (cast.length > 0) {
+      return `${cast.join(", ")}${nonCast.length > 0 ? ` (${nonCast.join(", ")})` : ""}`;
+    }
+    return nonCast.join(", ");
+  };
+  const handleRoleUpdate = (event: FormEvent<HTMLFormElement>, roleId: string) => {
+    event.preventDefault();
+    setRoleSaving(roleId, true);
+    setRoleMessages((current) => ({ ...current, [roleId]: { tone: "success", text: "Saving..." } }));
+    const formData = new FormData(event.currentTarget);
+    formData.set("drawerMode", "true");
+    startSavingEdit(async () => {
+      try {
+        const result = await onUpdateRoleAction(formData) as RoleActionResult;
+        if (result?.ok === false) {
+          setRoleMessages((current) => ({ ...current, [roleId]: { tone: "error", text: result.message || "Could not save role." } }));
+          return;
+        }
+        const template = getRoleTemplate(String(formData.get("roleTemplateId") ?? ""));
+        const nextRoleName = String(result?.role?.role_name ?? "").trim() || String(formData.get("roleName") ?? "").trim() || template?.name || "";
+        const nextCategory = (result?.role?.category ?? String(formData.get("roleCategory") ?? "production")) as PersonRoleRow["category"];
+        const nextTemplateId = result?.role?.role_template_id ?? (String(formData.get("roleTemplateId") ?? "") || null);
+        setLocalPersonRoles((current) =>
+          current.map((role) =>
+            role.id === roleId
+              ? {
+                  ...role,
+                  role_name: nextRoleName,
+                  category: nextCategory,
+                  role_template_id: nextTemplateId
+                }
+              : role
+          )
+        );
+        setRoleMessages((current) => ({ ...current, [roleId]: { tone: "success", text: result?.message || "Role saved." } }));
+      } catch (error) {
+        setRoleMessages((current) => ({
+          ...current,
+          [roleId]: { tone: "error", text: error instanceof Error ? error.message : "Could not save role." }
+        }));
+      } finally {
+        setRoleSaving(roleId, false);
+      }
+    });
+  };
+  const handleRoleRemove = (event: FormEvent<HTMLFormElement>, role: PersonRoleRow) => {
+    event.preventDefault();
+    if (!window.confirm(`Remove ${role.role_name} from this person?`)) {
+      return;
+    }
+    setRoleSaving(role.id, true);
+    setRoleMessages((current) => ({ ...current, [role.id]: { tone: "success", text: "Removing..." } }));
+    const formData = new FormData(event.currentTarget);
+    formData.set("drawerMode", "true");
+    startSavingEdit(async () => {
+      try {
+        const result = await onRemoveRoleAction(formData) as RoleActionResult;
+        if (result?.ok === false) {
+          setRoleMessages((current) => ({ ...current, [role.id]: { tone: "error", text: result.message || "Could not remove role." } }));
+          return;
+        }
+        setLocalPersonRoles((current) => current.filter((item) => item.id !== role.id));
+        setRoleMessages((current) => ({ ...current, [`removed-${role.id}`]: { tone: "success", text: result?.message || "Role removed." } }));
+      } catch (error) {
+        setRoleMessages((current) => ({
+          ...current,
+          [role.id]: { tone: "error", text: error instanceof Error ? error.message : "Could not remove role." }
+        }));
+      } finally {
+        setRoleSaving(role.id, false);
+      }
+    });
+  };
+  const handleRoleAdd = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const savingKey = "new-role";
+    setRoleSaving(savingKey, true);
+    setRoleMessages((current) => ({ ...current, [savingKey]: { tone: "success", text: "Adding..." } }));
+    const formData = new FormData(event.currentTarget);
+    formData.set("drawerMode", "true");
+    startSavingEdit(async () => {
+      try {
+        const result = await onAddRoleAction(formData) as RoleActionResult;
+        if (result?.ok === false || !result?.role?.id) {
+          setRoleMessages((current) => ({ ...current, [savingKey]: { tone: "error", text: result?.message || "Could not add role." } }));
+          return;
+        }
+        const template = getRoleTemplate(String(formData.get("roleTemplateId") ?? ""));
+        const nextRole: PersonRoleRow = {
+          id: result.role.id,
+          person_id: editPersonId,
+          role_name: String(result.role.role_name ?? (String(formData.get("roleName") ?? "").trim() || template?.name || "")),
+          category: (result.role.category ?? String(formData.get("roleCategory") ?? "production")) as PersonRoleRow["category"],
+          role_template_id: result.role.role_template_id === undefined ? String(formData.get("roleTemplateId") ?? "") || null : result.role.role_template_id ?? null
+        };
+        setLocalPersonRoles((current) => [...current, nextRole]);
+        setRoleMessages((current) => ({ ...current, [savingKey]: { tone: "success", text: result.message || "Role added." } }));
+        event.currentTarget.reset();
+      } catch (error) {
+        setRoleMessages((current) => ({
+          ...current,
+          [savingKey]: { tone: "error", text: error instanceof Error ? error.message : "Could not add role." }
+        }));
+      } finally {
+        setRoleSaving(savingKey, false);
+      }
+    });
+  };
+  const handleEditSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setEditMessage("");
+    setEditError("");
+    const formData = new FormData(event.currentTarget);
+    formData.set("drawerMode", "true");
+    startSavingEdit(async () => {
+      try {
+        const result = await onEditAction(formData) as
+          | { ok?: boolean; message?: string; person?: Partial<PersonRow> & { id: string } }
+          | undefined;
+        if (result?.ok === false) {
+          setEditError(result.message || "Could not save this person.");
+          return;
+        }
+        setLocalPeople((current) =>
+          current.map((person) =>
+            person.id === editPersonId
+              ? {
+                  ...person,
+                  full_name: editFullName,
+                  email: editEmail,
+                  request_bio: editRequestBio,
+                  request_notes: editRequestNotes,
+                  request_summary: result?.person?.request_summary ?? (
+                    editRequestBio && editRequestNotes
+                      ? "Bio + notes"
+                      : editRequestBio
+                        ? "Bio only"
+                        : editRequestNotes
+                          ? "Notes only"
+                          : "Nothing requested"
+                  ),
+                  bio_char_limit: result?.person?.bio_char_limit ?? person.bio_char_limit,
+                  bio_char_limit_override: result?.person?.bio_char_limit_override ?? (editBioCharLimitOverride ? Number(editBioCharLimitOverride) : null)
+                }
+              : person
+          )
+        );
+        setEditMessage(result?.message || "Saved. You can keep editing.");
+      } catch (error) {
+        setEditError(error instanceof Error ? error.message : "Could not save this person.");
+      }
+    });
+  };
 
   return (
     <section className="card people-editor">
       <header className="people-editor-header">
         <strong>Current People</strong>
-        <span className="people-editor-count">{people.length} total</span>
+        <span className="people-editor-count">{localPeople.length} total</span>
       </header>
 
       <div className="people-toolbar">
@@ -341,14 +538,21 @@ export function PeopleBulkEditor({
       ) : null}
 
       {editOpen ? (
-        <div role="dialog" aria-modal="true" className="people-modal-backdrop">
-          <div className="card people-modal">
+        <div role="dialog" aria-modal="true" className="people-modal-backdrop people-drawer-backdrop">
+          <div className="card people-modal people-drawer">
             <div className="people-modal-header">
-              <strong>Edit Person</strong>
+              <div>
+                <strong>Edit Person</strong>
+                {editPerson ? <div className="meta-text">{editPerson.role_summary || editPerson.role_title}</div> : null}
+              </div>
               <button type="button" onClick={() => setEditOpen(false)}>Close</button>
             </div>
-            <form action={onEditAction} className="people-modal-form">
+            <p className="people-modal-note">
+              Save keeps this drawer open so you can continue adjusting roles and submission requirements.
+            </p>
+            <form onSubmit={handleEditSubmit} className="people-modal-form">
               <input type="hidden" name="personId" value={editPersonId} />
+              <input type="hidden" name="drawerMode" value="true" />
               <div className="people-field-row">
                 <label className="people-field-toggle">Full Name</label>
                 <input name="fullName" value={editFullName} onChange={(event) => setEditFullName(event.target.value)} required />
@@ -388,8 +592,27 @@ export function PeopleBulkEditor({
                   <div className="meta-text">Leave both unchecked when this person does not need to submit anything.</div>
                 </div>
               </div>
+              <div className="people-field-row">
+                <label className="people-field-toggle">Bio character limit override</label>
+                <input
+                  name="bioCharLimitOverride"
+                  type="number"
+                  min={100}
+                  max={2000}
+                  value={editBioCharLimitOverride}
+                  onChange={(event) => setEditBioCharLimitOverride(event.target.value)}
+                  placeholder={`Use show default${editPerson?.bio_char_limit ? ` (${editPerson.bio_char_limit})` : ""}`}
+                />
+                <div className="meta-text">
+                  Leave blank to use the show default. Use this for guests or one-off limits.
+                </div>
+              </div>
+              {editMessage ? <div className="alert-success">{editMessage}</div> : null}
+              {editError ? <div className="alert">{editError}</div> : null}
               <div className="people-modal-actions">
-                <button type="submit">Save Person</button>
+                <button type="submit" disabled={isSavingEdit}>
+                  {isSavingEdit ? "Saving..." : "Save Person"}
+                </button>
                 <button type="button" className="ghost-button" onClick={() => setEditOpen(false)}>
                   Cancel
                 </button>
@@ -398,13 +621,20 @@ export function PeopleBulkEditor({
               <div className="people-field-row">
                 <label className="people-field-toggle">Roles for this person</label>
                 <div className="stack-sm">
+                <div className="module-settings-empty">
+                  <strong>Visible role summary:</strong> {getVisibleRoleSummary(editPersonRoles)}
+                  <div className="meta-text">
+                    Cast roles show first. Creative and production roles appear in parentheses when this person also has a cast role.
+                  </div>
+                </div>
                 {editPersonRoles.length === 0 ? (
                   <div className="meta-text">No roles assigned yet.</div>
                   ) : (
                     editPersonRoles.map((role) => (
                       <div key={role.id} className="stack-sm">
-                        <form action={onUpdateRoleAction} data-row-pending="true" data-preserve-scroll="true" className="person-role-add-form">
+                        <form onSubmit={(event) => handleRoleUpdate(event, role.id)} className="person-role-add-form">
                           <input type="hidden" name="roleId" value={role.id} />
+                          <input type="hidden" name="drawerMode" value="true" />
                           <label>
                             Template
                             <select name="roleTemplateId" defaultValue={role.role_template_id ?? ""}>
@@ -429,14 +659,20 @@ export function PeopleBulkEditor({
                             </select>
                           </label>
                           <div className="row-wrap">
-                            <button type="submit" className="ghost-button">Save Role</button>
-                            <span className="meta-text row-pending-indicator">Saving...</span>
+                            <button type="submit" className="ghost-button" disabled={savingRoleIds.has(role.id)}>
+                              {savingRoleIds.has(role.id) ? "Saving..." : "Save Role"}
+                            </button>
+                            {roleMessages[role.id] ? (
+                              <span className={`meta-text ${roleMessages[role.id].tone === "error" ? "danger-title" : ""}`}>
+                                {roleMessages[role.id].text}
+                              </span>
+                            ) : null}
                           </div>
                         </form>
-                        <form action={onRemoveRoleAction} data-row-pending="true" data-preserve-scroll="true" className="person-role-remove-form">
+                        <form onSubmit={(event) => handleRoleRemove(event, role)} className="person-role-remove-form">
                           <input type="hidden" name="roleId" value={role.id} />
-                          <button type="submit" className="ghost-button">Remove Role</button>
-                          <span className="meta-text row-pending-indicator">Removing...</span>
+                          <input type="hidden" name="drawerMode" value="true" />
+                          <button type="submit" className="ghost-button" disabled={savingRoleIds.has(role.id)}>Remove Role</button>
                         </form>
                       </div>
                     ))
@@ -445,8 +681,9 @@ export function PeopleBulkEditor({
               </div>
               <div className="people-field-row">
                 <label className="people-field-toggle">Add role</label>
-                <form action={onAddRoleAction} className="stack-sm person-role-add-form" data-row-pending="true" data-preserve-scroll="true">
+                <form onSubmit={handleRoleAdd} className="stack-sm person-role-add-form">
                 <input type="hidden" name="personId" value={editPersonId} />
+                <input type="hidden" name="drawerMode" value="true" />
                 <label>
                   Role template (optional)
                   <select name="roleTemplateId" defaultValue="">
@@ -470,8 +707,14 @@ export function PeopleBulkEditor({
                     <option value="production">production</option>
                   </select>
                 </label>
-                <button type="submit" className="ghost-button">Add Role</button>
-                <span className="meta-text row-pending-indicator">Adding...</span>
+                <button type="submit" className="ghost-button" disabled={savingRoleIds.has("new-role")}>
+                  {savingRoleIds.has("new-role") ? "Adding..." : "Add Role"}
+                </button>
+                {roleMessages["new-role"] ? (
+                  <span className={`meta-text ${roleMessages["new-role"].tone === "error" ? "danger-title" : ""}`}>
+                    {roleMessages["new-role"].text}
+                  </span>
+                ) : null}
               </form>
               {roleError === "duplicate" && highlightedPersonId && highlightedPersonId === editPersonId ? (
                 <div className="meta-text danger-title">

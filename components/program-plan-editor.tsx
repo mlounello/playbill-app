@@ -625,8 +625,21 @@ export function ProgramPlanEditor({
     setMode("sections");
   };
 
-  const isRemovableModule = (moduleType: string) =>
-    moduleType === "custom_text" || moduleType === "custom_image" || moduleType === "custom_pages";
+  const isRemovableModule = () => items.length > 1;
+
+  const removeModule = (index: number) => {
+    const item = items[index];
+    if (!item) return;
+    const title = item.display_title || moduleTypeLabels[item.module_type] || "this section";
+    const noteWarning = item.module_type === "contributor_note"
+      ? " If this note already has submitted content, saving will be blocked and you should hide it instead."
+      : "";
+    const confirmed = window.confirm(
+      `Remove "${title}" from this playbill setup? Hide keeps it available later; remove takes it out of Sections & Order.${noteWarning}`
+    );
+    if (!confirmed) return;
+    setItems((current) => current.filter((_, i) => i !== index));
+  };
 
   const buildPreviewHref = (moduleId: string) => {
     const params = new URLSearchParams();
@@ -731,13 +744,13 @@ export function ProgramPlanEditor({
                         {previewModuleId === item.id ? "Previewing" : "Preview"}
                       </a>
                     ) : null}
-                    {isRemovableModule(item.module_type) ? (
+                    {isRemovableModule() ? (
                       <button
                         type="button"
                         className="ghost-button ghost-button-danger"
-                        onClick={() => setItems((current) => current.filter((_, i) => i !== index))}
+                        onClick={() => removeModule(index)}
                       >
-                        Remove
+                        Remove Section
                       </button>
                     ) : null}
                   </div>

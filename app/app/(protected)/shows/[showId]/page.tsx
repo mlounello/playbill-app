@@ -72,6 +72,7 @@ import {
   sendShowInvites,
   setShowDueDate
 } from "@/lib/reminders";
+import { richTextHasContent } from "@/lib/rich-text";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -186,9 +187,9 @@ export default async function ShowWorkspacePage({
   const seasonModuleData = activeTab === "settings"
     ? await getSeasonModuleData(show.id)
     : { seasons: [], selectedSeasonId: "", selectedSeasonName: "", events: [] };
-  const exportRows = activeTab === "export" ? await getShowExports(show.id) : [];
+  const exportRows = activeTab === "export" || activeTab === "overview" ? await getShowExports(show.id) : [];
   const exportProgramDiagnostics =
-    activeTab === "export" && show.program_slug ? await getProgramBySlug(show.program_slug) : null;
+    (activeTab === "export" || activeTab === "overview") && show.program_slug ? await getProgramBySlug(show.program_slug) : null;
   const publicUrl = show.slug ? `/p/${show.slug}` : "";
   const siteUrl = String(process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
   const genericSubmissionPath = show.program_slug ? `/programs/${show.program_slug}/submit` : "";
@@ -205,6 +206,12 @@ export default async function ShowWorkspacePage({
   const submissionQueue =
     activeTab === "submissions" || activeTab === "overview" ? await getShowSubmissionQueue(show.id) : [];
   const deliveryMode = activeTab === "overview" ? getReminderDeliveryMode() : null;
+  const visibleModules = show.modules.filter((module) => module.visible);
+  const hasVisibleHeadshotGrid = visibleModules.some((module) => module.module_type === "headshots_grid");
+  const biosPrintHeadshots = visibleModules.some(
+    (module) => module.module_type === "bios" && module.settings.include_headshots !== false
+  );
+  const headshotsRequired = biosPrintHeadshots || hasVisibleHeadshotGrid;
   const isTaskComplete = (task: (typeof submissionQueue)[number]) =>
     task.submission_status === "submitted" ||
     task.submission_status === "approved" ||
@@ -234,7 +241,7 @@ export default async function ShowWorkspacePage({
               return task.submission_type === "bio" && task.bio_char_count === 0 && !task.no_bio;
             if (activeSubmissionFilter === "no_bio") return task.submission_type === "bio" && task.no_bio;
             if (activeSubmissionFilter === "headshot_missing")
-              return task.submission_type === "bio" && !task.headshot_url.trim();
+              return headshotsRequired && task.submission_type === "bio" && !task.no_bio && !task.headshot_url.trim();
             if (activeSubmissionFilter === "over_limit") return isOverLimit;
             return task.submission_status === activeSubmissionFilter;
           })
@@ -267,10 +274,15 @@ export default async function ShowWorkspacePage({
             (task) => task.submission_type === "bio" && task.bio_char_count === 0 && !task.no_bio
           ).length,
           missingHeadshots: submissionQueue.filter(
-            (task) => task.submission_type === "bio" && !task.no_bio && !task.headshot_url.trim()
+            (task) => headshotsRequired && task.submission_type === "bio" && !task.no_bio && !task.headshot_url.trim()
+          ).length,
+          missingNotes: submissionQueue.filter(
+            (task) => task.submission_type !== "bio" && !richTextHasContent(task.bio)
           ).length,
           skippedBios: submissionQueue.filter((task) => task.submission_type === "bio" && task.no_bio).length,
           returnedForEdits: submissionQueue.filter((task) => task.submission_status === "returned").length,
+          openDrafts: submissionQueue.filter((task) => task.submission_status === "pending" || task.submission_status === "draft").length,
+          unlockedApproved: submissionQueue.filter((task) => task.submission_status === "approved").length,
           overLimit: submissionQueue.filter((task) =>
             task.submission_type === "bio"
               ? task.bio_char_count > task.bio_char_limit
@@ -281,8 +293,11 @@ export default async function ShowWorkspacePage({
       : {
           missingBios: 0,
           missingHeadshots: 0,
+          missingNotes: 0,
           skippedBios: 0,
           returnedForEdits: 0,
+          openDrafts: 0,
+          unlockedApproved: 0,
           overLimit: 0,
           needsReview: 0
         };
@@ -349,6 +364,11 @@ export default async function ShowWorkspacePage({
       count: blockers.missingHeadshots
     },
     {
+      key: "all",
+      label: `${blockers.missingNotes} notes missing`,
+      count: blockers.missingNotes
+    },
+    {
       key: "returned",
       label: `${blockers.returnedForEdits} returned for edits`,
       count: blockers.returnedForEdits
@@ -365,6 +385,96 @@ export default async function ShowWorkspacePage({
     }
   ];
   const activeBlockers = blockerItems.filter((item) => item.count > 0);
+  const hasSubmittedBodyForNoteTitle = (title: string) => {
+    const normalizedTitle = title.trim().toLowerCase();
+    return submissionQueue.some(
+      (task) =>
+        task.submission_type !== "bio" &&
+        task.submission_label.toLowerCase().includes(normalizedTitle) &&
+        richTextHasContent(task.bio)
+    );
+  };
+  const sectionHasKnownContent = (module: (typeof show.modules)[number]) => {
+    const moduleType = module.module_type;
+    if (moduleType === "cover") return Boolean(show.poster_image_url.trim() || show.title.trim());
+    if (moduleType === "production_info") return Boolean(show.venue.trim() || show.show_dates.trim() || show.performance_schedule.length > 0);
+    if (moduleType === "bios") return submissionQueue.some((task) => task.submission_type === "bio" && (richTextHasContent(task.bio) || task.no_bio));
+    if (moduleType === "contributor_note") return hasSubmittedBodyForNoteTitle(module.display_title || "Contributor Note");
+    if (moduleType === "acts_scenes" || moduleType === "songs") return richTextHasContent(show.acts_and_songs);
+    if (moduleType === "sponsors") return richTextHasContent(show.sponsorships) || Boolean(show.sponsorship_image_url.trim());
+    if (moduleType === "actf_sponsorship") return richTextHasContent(String(module.settings.body ?? "")) || Boolean(String(module.settings.image_url ?? "").trim() || show.sponsorship_image_url.trim());
+    if (moduleType === "acknowledgements") return richTextHasContent(show.acknowledgements);
+    if (moduleType === "special_thanks") return richTextHasContent(show.special_thanks);
+    if (moduleType === "season_calendar" || moduleType === "back_cover") return richTextHasContent(show.season_calendar);
+    if (moduleType === "custom_text") return richTextHasContent(String(module.settings.body ?? ""));
+    if (moduleType === "custom_image") return Boolean(String(module.settings.image_url ?? "").trim());
+    return true;
+  };
+  const emptyVisibleSections =
+    activeTab === "overview"
+      ? visibleModules.filter((module) => !sectionHasKnownContent(module))
+      : [];
+  const latestExport = exportRows[0] ?? null;
+  const hasCompletedExport = exportRows.some((row) => row.status === "done" && Boolean(row.file_path));
+  const readinessItems =
+    activeTab === "overview"
+      ? [
+          {
+            label: "Required submissions are complete",
+            detail: blockers.openDrafts === 0 && blockers.returnedForEdits === 0 && blockers.missingBios === 0 && blockers.missingNotes === 0
+              ? "No missing, draft, pending, or returned requested submissions."
+              : `${blockers.openDrafts} pending/draft, ${blockers.returnedForEdits} returned, ${blockers.missingBios + blockers.missingNotes} missing.`,
+            ok: blockers.openDrafts === 0 && blockers.returnedForEdits === 0 && blockers.missingBios === 0 && blockers.missingNotes === 0,
+            href: `/app/shows/${show.id}?tab=submissions`
+          },
+          {
+            label: "Submissions are reviewed and locked",
+            detail: blockers.needsReview === 0 && blockers.unlockedApproved === 0
+              ? "No submitted items waiting for review and no approved items left unlocked."
+              : `${blockers.needsReview} need review, ${blockers.unlockedApproved} approved but not locked.`,
+            ok: blockers.needsReview === 0 && blockers.unlockedApproved === 0,
+            href: `/app/shows/${show.id}?tab=submissions&submissionFilter=needs_review`
+          },
+          {
+            label: headshotsRequired ? "Bios and headshots fit print rules" : "Bios fit print rules",
+            detail: blockers.overLimit === 0 && blockers.missingHeadshots === 0
+              ? headshotsRequired
+                ? "No over-limit text or missing requested headshots."
+                : "No over-limit bio text."
+              : headshotsRequired
+                ? `${blockers.overLimit} over limit, ${blockers.missingHeadshots} missing headshots.`
+                : `${blockers.overLimit} over limit.`,
+            ok: blockers.overLimit === 0 && blockers.missingHeadshots === 0,
+            href: `/app/shows/${show.id}?tab=submissions&submissionFilter=over_limit`
+          },
+          {
+            label: "Visible sections have content",
+            detail: emptyVisibleSections.length === 0
+              ? `${visibleModules.length} visible section(s) have known content or are data-driven.`
+              : `${emptyVisibleSections.length} visible section(s) look empty: ${emptyVisibleSections.slice(0, 3).map((module) => module.display_title || module.module_type).join(", ")}${emptyVisibleSections.length > 3 ? "..." : ""}`,
+            ok: emptyVisibleSections.length === 0,
+            href: `/app/shows/${show.id}?tab=program-plan`
+          },
+          {
+            label: "Preview/export check is clean",
+            detail: exportProgramDiagnostics
+              ? `${exportProgramDiagnostics.pageSequence.length} designed pages, ${exportProgramDiagnostics.paddingNeeded} blank padding, parity ${exportProgramDiagnostics.previewExportParityOk ? "OK" : "needs review"}.`
+              : "Open preview once a program slug exists.",
+            ok: Boolean(exportProgramDiagnostics?.previewExportParityOk),
+            href: `/app/shows/${show.id}?tab=preview`
+          },
+          {
+            label: "Export is available",
+            detail: hasCompletedExport
+              ? `Latest export: ${latestExport?.export_type ?? "export"} ${latestExport?.status ?? ""}.`
+              : "No completed export yet.",
+            ok: hasCompletedExport,
+            href: `/app/shows/${show.id}?tab=export`
+          }
+        ]
+      : [];
+  const readinessBlockers = readinessItems.filter((item) => !item.ok);
+  const readyToPublish = activeTab === "overview" && readinessBlockers.length === 0;
   const specialNotePeople = activeTab === "people-roles"
     ? people.filter((person) => person.role_category_display !== "cast")
     : [];
@@ -423,6 +533,69 @@ export default async function ShowWorkspacePage({
                   <span className="kpi-badge">{show.reminders_paused ? "Reminders Paused" : "Reminders Active"}</span>
                   {deliveryMode ? <span className="kpi-badge">{deliveryMode.label}</span> : null}
                 </div>
+              </div>
+              <article className={`card readiness-hero ${readyToPublish ? "is-ready" : "needs-work"}`}>
+                <div className="stack-sm">
+                  <span className="eyebrow">Publishing Readiness</span>
+                  <h2>{readyToPublish ? "This playbill looks ready to publish." : `${readinessBlockers.length} item${readinessBlockers.length === 1 ? "" : "s"} need attention before publishing.`}</h2>
+                  <p className="section-note">
+                    Use this as the admin handoff board: it checks submissions, visible sections, preview/export health, and the final print package.
+                  </p>
+                </div>
+                <div className="readiness-score" aria-label={`${readinessItems.length - readinessBlockers.length} of ${readinessItems.length} readiness checks complete`}>
+                  <strong>{readinessItems.length - readinessBlockers.length}/{readinessItems.length}</strong>
+                  <span>checks clear</span>
+                </div>
+              </article>
+              <div className="readiness-grid">
+                <article className="card stack-sm">
+                  <div className="card-toolbar">
+                    <strong>Ready to Publish Checklist</strong>
+                    <span className={`status-pill ${readyToPublish ? "success" : "warning"}`}>
+                      {readyToPublish ? "Ready" : "Needs work"}
+                    </span>
+                  </div>
+                  <div className="readiness-checklist">
+                    {readinessItems.map((item) => (
+                      <Link
+                        key={item.label}
+                        href={item.href}
+                        className={`readiness-check ${item.ok ? "is-ok" : "needs-work"}`}
+                      >
+                        <span className="readiness-icon">{item.ok ? "OK" : "!"}</span>
+                        <span>
+                          <strong>{item.label}</strong>
+                          <span className="meta-text">{item.detail}</span>
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </article>
+                <article className="card stack-sm">
+                  <strong>Suggested Next Step</strong>
+                  {readinessBlockers[0] ? (
+                    <>
+                      <p className="section-note">{readinessBlockers[0].detail}</p>
+                      <Link className="button-link" href={readinessBlockers[0].href}>
+                        Fix {readinessBlockers[0].label.toLowerCase()}
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <p className="section-note">
+                        Everything on the checklist is clear. Do one final human proof in Preview, then export the print package.
+                      </p>
+                      <Link className="button-link" href={`/app/shows/${show.id}?tab=preview`}>
+                        Open final preview
+                      </Link>
+                    </>
+                  )}
+                  <div className="readiness-mini-list">
+                    <span><strong>{visibleModules.length}</strong> visible section{visibleModules.length === 1 ? "" : "s"}</span>
+                    <span><strong>{emptyVisibleSections.length}</strong> empty visible section{emptyVisibleSections.length === 1 ? "" : "s"}</span>
+                    <span><strong>{exportRows.length}</strong> export record{exportRows.length === 1 ? "" : "s"}</span>
+                  </div>
+                </article>
               </div>
               <article className="card stack-sm submissions-filter">
                 <div className="stat-grid">
@@ -1052,6 +1225,8 @@ export default async function ShowWorkspacePage({
                   request_bio: person.request_bio,
                   request_notes: person.request_notes,
                   request_summary: person.request_summary,
+                  bio_char_limit: person.bio_char_limit,
+                  bio_char_limit_override: person.bio_char_limit_override,
                   submission_status: person.submission_status,
                   submitted_at: person.submitted_at
                 }))}
