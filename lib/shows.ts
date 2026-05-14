@@ -657,6 +657,56 @@ export async function updateShowModules(showId: string, formData: FormData) {
     withError("/app/shows", "Show not found.");
   }
 
+  const incomingModuleIds = new Set(modules.map((module) => String(module.id ?? "")).filter((id) => isUuid(id)));
+  const { data: existingModules } = await db
+    .from("program_modules")
+    .select("id, module_type, display_title")
+    .eq("show_id", showId);
+  const removedContributorNoteIds = (existingModules ?? [])
+    .filter((module) => normalizeModuleType(String(module.module_type ?? "")) === "contributor_note")
+    .map((module) => ({
+      id: String(module.id ?? ""),
+      title: String(module.display_title ?? "Contributor Note").trim() || "Contributor Note"
+    }))
+    .filter((module) => isUuid(module.id) && !incomingModuleIds.has(module.id));
+
+  if (removedContributorNoteIds.length > 0) {
+    const { data: roles } = await db.from("show_roles").select("id").eq("show_id", showId);
+    const roleIds = (roles ?? []).map((role) => String(role.id ?? "")).filter(Boolean);
+    if (roleIds.length > 0) {
+      const removedIds = new Set(removedContributorNoteIds.map((module) => module.id));
+      const { data: noteRequests } = await db
+        .from("submission_requests")
+        .select("id, status, constraints")
+        .in("show_role_id", roleIds)
+        .eq("request_type", "note");
+      const requestsForRemovedModules = (noteRequests ?? []).filter((request) => {
+        const constraints = (request.constraints as Record<string, unknown> | null) ?? {};
+        const moduleId = typeof constraints.module_id === "string" ? constraints.module_id : "";
+        return removedIds.has(moduleId);
+      });
+      const requestIds = requestsForRemovedModules.map((request) => String(request.id ?? "")).filter(Boolean);
+      const { data: submissions } = requestIds.length
+        ? await db.from("submissions").select("request_id").in("request_id", requestIds)
+        : { data: [] as Array<Record<string, unknown>> };
+      const submittedRequestIds = new Set((submissions ?? []).map((row) => String(row.request_id ?? "")));
+      if (submittedRequestIds.size > 0) {
+        const removedTitles = removedContributorNoteIds.map((module) => module.title).join(", ");
+        withError(
+          `/app/shows/${showId}?tab=program-plan`,
+          `Cannot remove ${removedTitles} because submitted note content exists. Hide the section instead, or archive the submissions first.`
+        );
+      }
+      const safeRequestIds = requestIds.filter((id) => !submittedRequestIds.has(id));
+      if (safeRequestIds.length > 0) {
+        const { error: requestDeleteError } = await db.from("submission_requests").delete().in("id", safeRequestIds);
+        if (requestDeleteError) {
+          withError(`/app/shows/${showId}?tab=program-plan`, requestDeleteError.message);
+        }
+      }
+    }
+  }
+
   const { error: deleteError } = await db.from("program_modules").delete().eq("show_id", showId);
   if (deleteError) {
     withError(`/app/shows/${showId}?tab=program-plan`, deleteError.message);

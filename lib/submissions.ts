@@ -2432,17 +2432,20 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
 
   await requireRole(["owner", "admin", "editor"]);
 
+  const drawerMode = String(formData.get("drawerMode") ?? "") === "true";
   const personId = String(formData.get("personId") ?? "").trim();
   const roleTemplateId = String(formData.get("roleTemplateId") ?? "").trim();
   const typedRoleName = String(formData.get("roleName") ?? "").trim();
   const typedCategory = normalizeRoleCategoryValue(String(formData.get("roleCategory") ?? "production"));
 
   if (!personId) {
+    if (drawerMode) return { ok: false, message: "Person is required." };
     withError(`/app/shows/${showId}?tab=people-roles`, "Person is required.");
   }
 
   const context = await getShowProgramContext(showId);
   if (!context) {
+    if (drawerMode) return { ok: false, message: "Show was not found." };
     withError("/app/shows", "Show was not found.");
   }
 
@@ -2456,6 +2459,7 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
     .eq("program_id", context.program_id)
     .maybeSingle();
   if (!personRow?.id) {
+    if (drawerMode) return { ok: false, message: "Person not found." };
     withError(`/app/shows/${showId}?tab=people-roles`, "Person not found.");
   }
 
@@ -2476,6 +2480,7 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
   }
 
   if (!roleName) {
+    if (drawerMode) return { ok: false, message: "Role is required." };
     withError(`/app/shows/${showId}?tab=people-roles`, "Role is required.");
   }
 
@@ -2488,6 +2493,9 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
     .eq("category", category)
     .maybeSingle();
   if (existing?.id) {
+    if (drawerMode) {
+      return { ok: false, message: `Role already exists for this person: ${roleName}.` };
+    }
     const params = new URLSearchParams({
       tab: "people-roles",
       roleError: "duplicate",
@@ -2519,9 +2527,24 @@ export async function addRoleAssignmentToPerson(showId: string, formData: FormDa
     },
     showRolesColumns
   );
-  const { error: insertError } = await db.from("show_roles").insert(insertRow);
+  const { data: insertedRole, error: insertError } = await db.from("show_roles").insert(insertRow).select("id").maybeSingle();
   if (insertError) {
+    if (drawerMode) return { ok: false, message: insertError.message };
     withError(`/app/shows/${showId}?tab=people-roles`, insertError.message);
+  }
+
+  if (drawerMode) {
+    return {
+      ok: true,
+      message: "Role added.",
+      role: {
+        id: String(insertedRole?.id ?? ""),
+        person_id: personId,
+        role_name: roleName,
+        category,
+        role_template_id: resolvedTemplateId
+      }
+    };
   }
 
   redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role assignment added.")}`);
@@ -2532,11 +2555,13 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
 
   await requireRole(["owner", "admin", "editor"]);
 
+  const drawerMode = String(formData.get("drawerMode") ?? "") === "true";
   const roleId = String(formData.get("roleId") ?? "").trim();
   const roleTemplateId = String(formData.get("roleTemplateId") ?? "").trim();
   const typedRoleName = String(formData.get("roleName") ?? "").trim();
   const typedCategory = normalizeRoleCategoryValue(String(formData.get("roleCategory") ?? "production"));
   if (!roleId) {
+    if (drawerMode) return { ok: false, message: "Role assignment id is required." };
     withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment id is required.");
   }
 
@@ -2550,6 +2575,7 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
     .eq("show_id", showId)
     .maybeSingle();
   if (!existingRole?.id) {
+    if (drawerMode) return { ok: false, message: "Role assignment not found." };
     withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment not found.");
   }
 
@@ -2575,6 +2601,7 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
   }
 
   if (!roleName) {
+    if (drawerMode) return { ok: false, message: "Role is required." };
     withError(`/app/shows/${showId}?tab=people-roles`, "Role is required.");
   }
 
@@ -2589,7 +2616,21 @@ export async function updateRoleAssignment(showId: string, formData: FormData) {
 
   const { error: updateError } = await db.from("show_roles").update(updateRow).eq("id", roleId).eq("show_id", showId);
   if (updateError) {
+    if (drawerMode) return { ok: false, message: updateError.message };
     withError(`/app/shows/${showId}?tab=people-roles`, updateError.message);
+  }
+
+  if (drawerMode) {
+    return {
+      ok: true,
+      message: "Role saved.",
+      role: {
+        id: roleId,
+        role_name: roleName,
+        category,
+        role_template_id: resolvedTemplateId
+      }
+    };
   }
 
   redirect(
@@ -2602,8 +2643,10 @@ export async function removeRoleAssignment(showId: string, formData: FormData) {
 
   await requireRole(["owner", "admin", "editor"]);
 
+  const drawerMode = String(formData.get("drawerMode") ?? "") === "true";
   const roleId = String(formData.get("roleId") ?? "").trim();
   if (!roleId) {
+    if (drawerMode) return { ok: false, message: "Role assignment id is required." };
     withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment id is required.");
   }
 
@@ -2616,6 +2659,7 @@ export async function removeRoleAssignment(showId: string, formData: FormData) {
     .eq("show_id", showId)
     .maybeSingle();
   if (!existingRole?.id) {
+    if (drawerMode) return { ok: false, message: "Role assignment not found." };
     withError(`/app/shows/${showId}?tab=people-roles`, "Role assignment not found.");
   }
 
@@ -2641,6 +2685,12 @@ export async function removeRoleAssignment(showId: string, formData: FormData) {
 
     const replacementRoleId = otherRoles?.[0]?.id ? String(otherRoles[0].id) : "";
     if (!replacementRoleId) {
+      if (drawerMode) {
+        return {
+          ok: false,
+          message: "Cannot remove this role because it carries the bio request and no replacement role exists."
+        };
+      }
       withError(
         `/app/shows/${showId}?tab=people-roles`,
         "Cannot remove this role because it currently carries the bio request and no replacement role exists."
@@ -2660,7 +2710,12 @@ export async function removeRoleAssignment(showId: string, formData: FormData) {
 
   const { error } = await db.from("show_roles").delete().eq("id", roleId).eq("show_id", showId);
   if (error) {
+    if (drawerMode) return { ok: false, message: error.message };
     withError(`/app/shows/${showId}?tab=people-roles`, error.message);
+  }
+
+  if (drawerMode) {
+    return { ok: true, message: "Role removed.", roleId };
   }
 
   redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Role assignment removed.")}`);
