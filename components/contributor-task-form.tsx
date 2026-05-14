@@ -22,6 +22,8 @@ type Props = {
   showId: string;
   personId: string;
   submissionLabel: string;
+  contributorName: string;
+  contributorRole: string;
   bioCharLimit: number;
   isBioTask: boolean;
   hasNoBio: boolean;
@@ -36,6 +38,8 @@ export function ContributorTaskForm({
   showId,
   personId,
   submissionLabel,
+  contributorName,
+  contributorRole,
   bioCharLimit,
   isBioTask,
   hasNoBio,
@@ -82,6 +86,9 @@ export function ContributorTaskForm({
         required={false}
         initialValue={initialBio}
         placeholder={placeholder}
+        previewEyebrow={isBioTask ? "Program bio will print with this header" : "Program note"}
+        previewName={isBioTask ? contributorName : submissionLabel.replace(/\s+Submission$/i, "")}
+        previewRole={isBioTask ? contributorRole : contributorName}
         counter={
           isBioTask
             ? {

@@ -1052,6 +1052,8 @@ export default async function ShowWorkspacePage({
                   request_bio: person.request_bio,
                   request_notes: person.request_notes,
                   request_summary: person.request_summary,
+                  bio_char_limit: person.bio_char_limit,
+                  bio_char_limit_override: person.bio_char_limit_override,
                   submission_status: person.submission_status,
                   submitted_at: person.submitted_at
                 }))}

@@ -379,6 +379,35 @@ a:focus-visible,
   margin-bottom: 0.45rem;
 }
 
+.rich-live-preview-program-header {
+  border-radius: 0.7rem;
+  background: linear-gradient(135deg, #0f5c49, #1f765f);
+  color: #fffef8;
+  padding: 0.75rem 0.85rem;
+  display: grid;
+  gap: 0.15rem;
+  margin-bottom: 0.65rem;
+  box-shadow: 0 10px 22px rgba(15, 92, 73, 0.16);
+}
+
+.rich-live-preview-program-header strong {
+  font-family: var(--font-title);
+  font-size: 1.15rem;
+  line-height: 1.05;
+}
+
+.rich-live-preview-program-header span {
+  color: rgba(255, 254, 248, 0.84);
+}
+
+.rich-live-preview-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 254, 248, 0.76);
+}
+
 .rich-field-counter {
   display: flex;
   justify-content: space-between;
@@ -2312,6 +2341,31 @@ body.density-compact .admin-surface textarea {
   overflow: auto;
   display: grid;
   gap: 0.75rem;
+}
+
+.people-drawer-backdrop {
+  place-items: stretch end;
+  padding: 0;
+}
+
+.people-drawer {
+  width: min(720px, 96vw);
+  min-height: 100vh;
+  max-height: 100vh;
+  border-radius: 1rem 0 0 1rem;
+  border-right: 0;
+  animation: peopleDrawerIn 180ms ease-out;
+}
+
+@keyframes peopleDrawerIn {
+  from {
+    opacity: 0.4;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .people-modal-header {

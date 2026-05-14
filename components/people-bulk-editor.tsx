@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
 
 type PersonRow = {
   id: string;
@@ -14,6 +14,8 @@ type PersonRow = {
   request_bio?: boolean;
   request_notes?: boolean;
   request_summary?: string;
+  bio_char_limit?: number;
+  bio_char_limit_override?: number | null;
   submission_status?: "pending" | "draft" | "submitted" | "returned" | "approved" | "locked";
   submitted_at?: string | null;
 };
@@ -48,7 +50,7 @@ export function PeopleBulkEditor({
 }: {
   people: PersonRow[];
   onSubmitAction: (formData: FormData) => void;
-  onEditAction: (formData: FormData) => void;
+  onEditAction: (formData: FormData) => void | Promise<unknown>;
   onRemovePersonAction: (formData: FormData) => void;
   onAddRoleAction: (formData: FormData) => void;
   onUpdateRoleAction: (formData: FormData) => void;
@@ -60,6 +62,7 @@ export function PeopleBulkEditor({
   highlightedPersonId?: string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [localPeople, setLocalPeople] = useState(people);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [enableRoleTitle, setEnableRoleTitle] = useState(false);
@@ -73,10 +76,18 @@ export function PeopleBulkEditor({
   const [editEmail, setEditEmail] = useState("");
   const [editRequestBio, setEditRequestBio] = useState(true);
   const [editRequestNotes, setEditRequestNotes] = useState(false);
+  const [editBioCharLimitOverride, setEditBioCharLimitOverride] = useState("");
+  const [editMessage, setEditMessage] = useState("");
+  const [editError, setEditError] = useState("");
+  const [isSavingEdit, startSavingEdit] = useTransition();
+
+  useEffect(() => {
+    setLocalPeople(people);
+  }, [people]);
 
   const sortedPeople = useMemo(
-    () => [...people].sort((a, b) => a.full_name.localeCompare(b.full_name) || a.role_title.localeCompare(b.role_title)),
-    [people]
+    () => [...localPeople].sort((a, b) => a.full_name.localeCompare(b.full_name) || a.role_title.localeCompare(b.role_title)),
+    [localPeople]
   );
   const visiblePeople = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -105,23 +116,72 @@ export function PeopleBulkEditor({
   };
   const clearAll = () => setSelectedIds(new Set());
   const openEdit = (person: PersonRow) => {
+    setEditMessage("");
+    setEditError("");
     setEditPersonId(person.id);
     setEditFullName(person.full_name);
     setEditEmail(person.email);
     setEditRequestBio(person.request_bio ?? (person.submission_type ?? "bio") === "bio");
     setEditRequestNotes(person.request_notes ?? (person.submission_type ?? "") === "note");
+    setEditBioCharLimitOverride(person.bio_char_limit_override ? String(person.bio_char_limit_override) : "");
     setEditOpen(true);
   };
+  const editPerson = localPeople.find((person) => person.id === editPersonId);
   const editPersonRoles = useMemo(
     () => personRoles.filter((role) => role.person_id === editPersonId),
     [personRoles, editPersonId]
   );
+  const handleEditSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setEditMessage("");
+    setEditError("");
+    const formData = new FormData(event.currentTarget);
+    formData.set("drawerMode", "true");
+    startSavingEdit(async () => {
+      try {
+        const result = await onEditAction(formData) as
+          | { ok?: boolean; message?: string; person?: Partial<PersonRow> & { id: string } }
+          | undefined;
+        if (result?.ok === false) {
+          setEditError(result.message || "Could not save this person.");
+          return;
+        }
+        setLocalPeople((current) =>
+          current.map((person) =>
+            person.id === editPersonId
+              ? {
+                  ...person,
+                  full_name: editFullName,
+                  email: editEmail,
+                  request_bio: editRequestBio,
+                  request_notes: editRequestNotes,
+                  request_summary: result?.person?.request_summary ?? (
+                    editRequestBio && editRequestNotes
+                      ? "Bio + notes"
+                      : editRequestBio
+                        ? "Bio only"
+                        : editRequestNotes
+                          ? "Notes only"
+                          : "Nothing requested"
+                  ),
+                  bio_char_limit: result?.person?.bio_char_limit ?? person.bio_char_limit,
+                  bio_char_limit_override: result?.person?.bio_char_limit_override ?? (editBioCharLimitOverride ? Number(editBioCharLimitOverride) : null)
+                }
+              : person
+          )
+        );
+        setEditMessage(result?.message || "Saved. You can keep editing.");
+      } catch (error) {
+        setEditError(error instanceof Error ? error.message : "Could not save this person.");
+      }
+    });
+  };
 
   return (
     <section className="card people-editor">
       <header className="people-editor-header">
         <strong>Current People</strong>
-        <span className="people-editor-count">{people.length} total</span>
+        <span className="people-editor-count">{localPeople.length} total</span>
       </header>
 
       <div className="people-toolbar">
@@ -341,14 +401,21 @@ export function PeopleBulkEditor({
       ) : null}
 
       {editOpen ? (
-        <div role="dialog" aria-modal="true" className="people-modal-backdrop">
-          <div className="card people-modal">
+        <div role="dialog" aria-modal="true" className="people-modal-backdrop people-drawer-backdrop">
+          <div className="card people-modal people-drawer">
             <div className="people-modal-header">
-              <strong>Edit Person</strong>
+              <div>
+                <strong>Edit Person</strong>
+                {editPerson ? <div className="meta-text">{editPerson.role_summary || editPerson.role_title}</div> : null}
+              </div>
               <button type="button" onClick={() => setEditOpen(false)}>Close</button>
             </div>
-            <form action={onEditAction} className="people-modal-form">
+            <p className="people-modal-note">
+              Save keeps this drawer open so you can continue adjusting roles and submission requirements.
+            </p>
+            <form onSubmit={handleEditSubmit} className="people-modal-form">
               <input type="hidden" name="personId" value={editPersonId} />
+              <input type="hidden" name="drawerMode" value="true" />
               <div className="people-field-row">
                 <label className="people-field-toggle">Full Name</label>
                 <input name="fullName" value={editFullName} onChange={(event) => setEditFullName(event.target.value)} required />
@@ -388,8 +455,27 @@ export function PeopleBulkEditor({
                   <div className="meta-text">Leave both unchecked when this person does not need to submit anything.</div>
                 </div>
               </div>
+              <div className="people-field-row">
+                <label className="people-field-toggle">Bio character limit override</label>
+                <input
+                  name="bioCharLimitOverride"
+                  type="number"
+                  min={100}
+                  max={2000}
+                  value={editBioCharLimitOverride}
+                  onChange={(event) => setEditBioCharLimitOverride(event.target.value)}
+                  placeholder={`Use show default${editPerson?.bio_char_limit ? ` (${editPerson.bio_char_limit})` : ""}`}
+                />
+                <div className="meta-text">
+                  Leave blank to use the show default. Use this for guests or one-off limits.
+                </div>
+              </div>
+              {editMessage ? <div className="alert-success">{editMessage}</div> : null}
+              {editError ? <div className="alert">{editError}</div> : null}
               <div className="people-modal-actions">
-                <button type="submit">Save Person</button>
+                <button type="submit" disabled={isSavingEdit}>
+                  {isSavingEdit ? "Saving..." : "Save Person"}
+                </button>
                 <button type="button" className="ghost-button" onClick={() => setEditOpen(false)}>
                   Cancel
                 </button>

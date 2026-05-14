@@ -54,6 +54,26 @@ export function normalizeBioCharLimit(value: unknown) {
   return Math.min(2000, Math.max(100, Math.round(parsed)));
 }
 
+function normalizeOptionalBioCharLimit(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+  return normalizeBioCharLimit(raw);
+}
+
+function getConstraintNumber(constraints: unknown, key: string) {
+  if (constraints && typeof constraints === "object" && !Array.isArray(constraints)) {
+    const parsed = Number((constraints as Record<string, unknown>)[key]);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function getPersonBioCharLimit(person: Record<string, unknown>, showDefault: number) {
+  return normalizeOptionalBioCharLimit(person.bio_char_limit_override) ?? showDefault;
+}
+
 export function countWordsFromRichText(input: string | undefined) {
   const plain = stripRichTextToPlain(String(input ?? ""));
   if (!plain) {
@@ -173,6 +193,7 @@ export type ShowSubmissionPerson = {
   submitted_at: string | null;
   bio_char_count: number;
   bio_char_limit: number;
+  bio_char_limit_override: number | null;
   request_bio: boolean;
   request_notes: boolean;
   request_summary: string;
@@ -195,6 +216,7 @@ export type ShowSubmissionQueueItem = {
   submitted_at: string | null;
   bio_char_count: number;
   bio_char_limit: number;
+  bio_char_limit_override: number | null;
 };
 
 export type ContributorTaskSummary = {
@@ -771,17 +793,25 @@ export async function getShowSubmissionPeople(showId: string) {
   const { data: requestRows } = roleIds.length
     ? await db
         .from("submission_requests")
-        .select("show_role_id, request_type, status")
+        .select("show_role_id, request_type, status, constraints")
         .in("show_role_id", roleIds)
     : { data: [] as Array<Record<string, unknown>> };
   const requestedTypesByPersonId = new Map<string, Set<SubmissionType>>();
   const requestStatusesByPersonId = new Map<string, ShowSubmissionPerson["submission_status"][]>();
+  const bioLimitByPersonId = new Map<string, number>();
   for (const request of requestRows ?? []) {
     const personId = personIdByRoleId.get(String(request.show_role_id ?? ""));
     if (!personId) continue;
+    const requestType = normalizeSubmissionType(String(request.request_type ?? "bio"));
     const current = requestedTypesByPersonId.get(personId) ?? new Set<SubmissionType>();
-    current.add(normalizeSubmissionType(String(request.request_type ?? "bio")));
+    current.add(requestType);
     requestedTypesByPersonId.set(personId, current);
+    if (requestType === "bio") {
+      const requestLimit = getConstraintNumber((request as Record<string, unknown>).constraints, "maxChars");
+      if (requestLimit) {
+        bioLimitByPersonId.set(personId, normalizeBioCharLimit(requestLimit));
+      }
+    }
     const statuses = requestStatusesByPersonId.get(personId) ?? [];
     statuses.push(normalizeSubmissionStatus(String(request.status ?? "pending")));
     requestStatusesByPersonId.set(personId, statuses);
@@ -801,6 +831,8 @@ export async function getShowSubmissionPeople(showId: string) {
       .map((role) => role.role_name);
     const roleCategoryDisplay = getRoleCategoryDisplay(roles.map((role) => role.category));
     const requestedTypes = requestedTypesByPersonId.get(personId) ?? new Set<SubmissionType>();
+    const bioLimitOverride = normalizeOptionalBioCharLimit(row.bio_char_limit_override);
+    const bioCharLimit = bioLimitOverride ?? bioLimitByPersonId.get(personId) ?? context.bio_char_limit;
     const requestBio = requestedTypes.has("bio");
     const requestNotes = [...requestedTypes].some((type) => type !== "bio");
     const requestStatuses = requestStatusesByPersonId.get(personId) ?? [];
@@ -839,7 +871,8 @@ export async function getShowSubmissionPeople(showId: string) {
       submission_status: aggregateStatus,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(cleanBio).length,
-      bio_char_limit: context.bio_char_limit,
+      bio_char_limit: bioCharLimit,
+      bio_char_limit_override: bioLimitOverride,
       request_bio: requestBio,
       request_notes: requestNotes,
       request_summary: getRequestSummary(requestBio, requestNotes)
@@ -941,6 +974,11 @@ export async function getShowSubmissionQueue(showId: string) {
     const categories = categoriesByPersonId.get(personId) ?? [];
     const roleCategoryDisplay = getRoleCategoryDisplay(categories);
     const personRecord = person as Record<string, unknown>;
+    const requestLimit = requestType === "bio" ? getConstraintNumber(request.constraints, "maxChars") : null;
+    const bioLimitOverride = normalizeOptionalBioCharLimit(personRecord.bio_char_limit_override);
+    const bioCharLimit = requestType === "bio"
+      ? normalizeBioCharLimit(requestLimit ?? bioLimitOverride ?? context.bio_char_limit)
+      : context.bio_char_limit;
 
     items.push({
       task_id: String(request.id ?? ""),
@@ -958,7 +996,8 @@ export async function getShowSubmissionQueue(showId: string) {
       submission_status: normalizeSubmissionStatus(String(request.status ?? person.submission_status ?? "pending")),
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(taskBody).length,
-      bio_char_limit: context.bio_char_limit
+      bio_char_limit: bioCharLimit,
+      bio_char_limit_override: bioLimitOverride
     });
   }
 
@@ -1133,6 +1172,7 @@ async function syncPersonRequestRequirements(params: {
   requestBio: boolean;
   requestNotes: boolean;
   bioCharLimit: number;
+  bioCharLimitOverride?: number | null;
 }) {
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
@@ -1152,6 +1192,7 @@ async function syncPersonRequestRequirements(params: {
   if (!primaryRoleId) {
     return { created: 0, removed: 0 };
   }
+  const effectiveBioCharLimit = params.bioCharLimitOverride ?? params.bioCharLimit;
 
   const roleIds = sortedRoles.map((row) => String(row.id ?? "")).filter(Boolean);
   const { data: requestRows } = await db
@@ -1175,7 +1216,7 @@ async function syncPersonRequestRequirements(params: {
           show_role_id: primaryRoleId,
           request_type: type,
           label: `${getSubmissionTypeLabel(type)} Submission`,
-          constraints: getSubmissionConstraints(type, params.bioCharLimit),
+          constraints: getSubmissionConstraints(type, effectiveBioCharLimit),
           status: "pending"
         });
         created += 1;
@@ -1187,7 +1228,7 @@ async function syncPersonRequestRequirements(params: {
           .from("submission_requests")
           .update({
             show_role_id: primaryRoleId,
-            constraints: getSubmissionConstraints(type, params.bioCharLimit),
+            constraints: getSubmissionConstraints(type, effectiveBioCharLimit),
             updated_at: new Date().toISOString()
           })
           .eq("id", keep.id);
@@ -1195,7 +1236,7 @@ async function syncPersonRequestRequirements(params: {
         await db
           .from("submission_requests")
           .update({
-            constraints: getSubmissionConstraints(type, params.bioCharLimit),
+            constraints: getSubmissionConstraints(type, effectiveBioCharLimit),
             updated_at: new Date().toISOString()
           })
           .eq("id", keep.id);
@@ -2066,6 +2107,8 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
   const email = normalizeEmail(String(formData.get("email") ?? "").trim());
   const requestBio = String(formData.get("requestBio") ?? "") === "on";
   const requestNotes = String(formData.get("requestNotes") ?? "") === "on";
+  const bioCharLimitOverride = normalizeOptionalBioCharLimit(formData.get("bioCharLimitOverride"));
+  const drawerMode = String(formData.get("drawerMode") ?? "") === "true";
   const primaryRequirement = getPrimaryRequirementForPerson(requestBio, requestNotes);
 
   if (!personId) {
@@ -2087,7 +2130,7 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
   const db = supabase.schema(APP_SCHEMA);
   const { data: personRow } = await db
     .from("people")
-    .select("id, full_name, role_title, team_type, email, submission_type")
+    .select("id, full_name, role_title, team_type, email, submission_type, bio_char_limit_override")
     .eq("program_id", context.program_id)
     .eq("id", personId)
     .maybeSingle();
@@ -2099,11 +2142,12 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
     id: String(personRow.id),
     full_name: String(personRow.full_name ?? ""),
     email: normalizeEmail(String(personRow.email ?? "")),
-    submission_type: String(personRow.submission_type ?? "bio")
+    submission_type: String(personRow.submission_type ?? "bio"),
+    bio_char_limit_override: normalizeOptionalBioCharLimit((personRow as Record<string, unknown>).bio_char_limit_override)
   };
 
-  const peopleUpdate: Record<string, string> = {};
-  const audits: Array<{ field: string; beforeValue: string; afterValue: string }> = [];
+  const peopleUpdate: Record<string, unknown> = {};
+  const audits: Array<{ field: string; beforeValue: unknown; afterValue: unknown }> = [];
 
   if (current.full_name !== fullName) {
     peopleUpdate.full_name = fullName;
@@ -2117,10 +2161,18 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
     peopleUpdate.submission_type = primaryRequirement;
     audits.push({ field: "submission_type", beforeValue: current.submission_type, afterValue: primaryRequirement });
   }
+  if (current.bio_char_limit_override !== bioCharLimitOverride) {
+    peopleUpdate.bio_char_limit_override = bioCharLimitOverride;
+    audits.push({ field: "bio_char_limit_override", beforeValue: current.bio_char_limit_override, afterValue: bioCharLimitOverride });
+  }
 
   if (Object.keys(peopleUpdate).length > 0) {
-    const { error: updateError } = await db.from("people").update(peopleUpdate).eq("id", current.id);
+    const peopleColumns = await getTableColumns(db, "people");
+    const { error: updateError } = await db.from("people").update(filterToColumns(peopleUpdate, peopleColumns)).eq("id", current.id);
     if (updateError) {
+      if (drawerMode) {
+        return { ok: false, message: updateError.message || "Could not update person." };
+      }
       withError(`/app/shows/${showId}?tab=people-roles`, updateError.message || "Could not update person.");
     }
   }
@@ -2131,7 +2183,8 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
     personId: current.id,
     requestBio,
     requestNotes,
-    bioCharLimit: context.bio_char_limit
+    bioCharLimit: context.bio_char_limit,
+    bioCharLimitOverride
   });
 
   for (const audit of audits) {
@@ -2145,7 +2198,24 @@ export async function updatePersonProfile(showId: string, formData: FormData) {
     });
   }
 
-  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Person profile updated.")}`);
+  if (drawerMode) {
+    return {
+      ok: true,
+      message: "Person profile saved.",
+      person: {
+        id: current.id,
+        full_name: fullName,
+        email,
+        request_bio: requestBio,
+        request_notes: requestNotes,
+        request_summary: getRequestSummary(requestBio, requestNotes),
+        bio_char_limit: bioCharLimitOverride ?? context.bio_char_limit,
+        bio_char_limit_override: bioCharLimitOverride
+      }
+    };
+  }
+
+  redirect(`/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent("Person profile updated.")}&editPersonId=${current.id}`);
 }
 
 export async function removePersonFromShow(showId: string, formData: FormData) {
@@ -2908,6 +2978,20 @@ export async function updateContributorNoteAssignments(showId: string, formData:
         .eq("request_type", "note")
     : { data: [] as Array<Record<string, unknown>> };
 
+  const orphanOpenRequests = (existingRequests ?? []).filter((request) => {
+    const moduleId = getConstraintString(request.constraints, "module_id");
+    return moduleId && !moduleById.has(moduleId) && isOpenSubmissionStatus(String(request.status ?? "pending"));
+  });
+  if (orphanOpenRequests.length > 0) {
+    const orphanIds = orphanOpenRequests.map((request) => String(request.id ?? "")).filter(Boolean);
+    const { data: submittedOrphans } = await db.from("submissions").select("request_id").in("request_id", orphanIds);
+    const submittedIds = new Set((submittedOrphans ?? []).map((row) => String(row.request_id ?? "")));
+    const safeToDelete = orphanIds.filter((id) => !submittedIds.has(id));
+    if (safeToDelete.length > 0) {
+      await db.from("submission_requests").delete().in("id", safeToDelete);
+    }
+  }
+
   let assigned = 0;
   let unassigned = 0;
   for (const moduleId of moduleIds) {
@@ -2983,13 +3067,14 @@ export async function resyncShowSubmissionRequests(showId: string) {
 
   const { data: peopleRows } = await db
     .from("people")
-    .select("id, role_title, team_type, submission_type")
+    .select("id, role_title, team_type, submission_type, bio_char_limit_override")
     .eq("program_id", context.program_id);
   const people = (peopleRows ?? []).map((row) => ({
     id: String(row.id),
     role_title: String(row.role_title ?? ""),
     team_type: String(row.team_type ?? "") === "cast" ? "cast" : "production",
-    submission_type: String(row.submission_type ?? "bio")
+    submission_type: String(row.submission_type ?? "bio"),
+    bio_char_limit_override: normalizeOptionalBioCharLimit((row as Record<string, unknown>).bio_char_limit_override)
   }));
 
   const { data: roleRows } = await db
@@ -3046,19 +3131,21 @@ export async function resyncShowSubmissionRequests(showId: string) {
   const { data: requestRows } = roleIds.length
     ? await db
         .from("submission_requests")
-        .select("id, show_role_id, request_type")
+        .select("id, show_role_id, request_type, status, constraints")
         .in("show_role_id", roleIds)
     : { data: [] as Array<Record<string, unknown>> };
   const requests = (requestRows ?? []).map((row) => ({
     id: String(row.id ?? ""),
     show_role_id: String(row.show_role_id ?? ""),
-    request_type: normalizeSubmissionType(String(row.request_type ?? "bio"))
+    request_type: normalizeSubmissionType(String(row.request_type ?? "bio")),
+    status: normalizeSubmissionStatus(String(row.status ?? "pending")),
+    constraints: (row as Record<string, unknown>).constraints
   }));
 
-  const requestsByRoleId = new Map<string, Array<{ id: string; request_type: SubmissionType }>>();
+  const requestsByRoleId = new Map<string, Array<{ id: string; request_type: SubmissionType; status: ShowSubmissionPerson["submission_status"]; constraints: unknown }>>();
   for (const request of requests) {
     const list = requestsByRoleId.get(request.show_role_id) ?? [];
-    list.push({ id: request.id, request_type: request.request_type });
+    list.push(request);
     requestsByRoleId.set(request.show_role_id, list);
   }
 
@@ -3082,7 +3169,7 @@ export async function resyncShowSubmissionRequests(showId: string) {
         show_role_id: primaryRoleId,
         request_type: "bio",
         label: `${getSubmissionTypeLabel("bio")} Submission`,
-        constraints: getSubmissionConstraints("bio", context.bio_char_limit),
+        constraints: getSubmissionConstraints("bio", person.bio_char_limit_override ?? context.bio_char_limit),
         status: "pending"
       });
       createdBioRequests += 1;
@@ -3099,9 +3186,37 @@ export async function resyncShowSubmissionRequests(showId: string) {
     }
   }
 
+  const { data: activeNoteModules } = await db
+    .from("program_modules")
+    .select("id")
+    .eq("show_id", showId)
+    .eq("module_type", "contributor_note");
+  const activeNoteModuleIds = new Set((activeNoteModules ?? []).map((module) => String(module.id ?? "")));
+  const orphanOpenNoteRequestIds = requests
+    .filter((request) => request.request_type === "note")
+    .filter((request) => {
+      const moduleId = getConstraintString(request.constraints, "module_id");
+      return moduleId && !activeNoteModuleIds.has(moduleId) && isOpenSubmissionStatus(request.status);
+    })
+    .map((request) => request.id)
+    .filter(Boolean);
+  let removedOrphanNoteRequests = 0;
+  if (orphanOpenNoteRequestIds.length > 0) {
+    const { data: submittedOrphanRows } = await db
+      .from("submissions")
+      .select("request_id")
+      .in("request_id", orphanOpenNoteRequestIds);
+    const submittedOrphanIds = new Set((submittedOrphanRows ?? []).map((row) => String(row.request_id ?? "")));
+    const safeToDelete = orphanOpenNoteRequestIds.filter((id) => !submittedOrphanIds.has(id));
+    if (safeToDelete.length > 0) {
+      await db.from("submission_requests").delete().in("id", safeToDelete);
+      removedOrphanNoteRequests = safeToDelete.length;
+    }
+  }
+
   redirect(
     `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
-      `Submission requests resynced. Added ${createdRoles} roles, created ${createdBioRequests} bio requests, removed ${removedDuplicateBioRequests} duplicate bios.`
+      `Submission requests resynced. Added ${createdRoles} roles, created ${createdBioRequests} bio requests, removed ${removedDuplicateBioRequests} duplicate bios, removed ${removedOrphanNoteRequests} stale note requests.`
     )}`
   );
 }
@@ -3273,6 +3388,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
   let resolvedDueDate: string | null = null;
   let resolvedPersonId = "";
   let resolvedSubmissionLabel = getSubmissionTypeLabel(resolvedRequestType);
+  let resolvedRequestConstraints: unknown = {};
 
   if (requestById && roleById.has(String(requestById.show_role_id ?? ""))) {
     resolvedRequestId = String(requestById.id);
@@ -3284,6 +3400,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     resolvedRequestStatus = normalizeSubmissionStatus(String(requestById.status ?? "pending"));
     resolvedDueDate = requestById.due_date ? String(requestById.due_date) : null;
     resolvedPersonId = roleById.get(String(requestById.show_role_id ?? "")) ?? "";
+    resolvedRequestConstraints = requestById.constraints;
   } else {
     // Legacy fallback: taskId may be a person id; map to that person's bio request.
     resolvedPersonId = taskId;
@@ -3308,6 +3425,7 @@ export async function getContributorTaskById(showId: string, taskId: string) {
     );
     resolvedRequestStatus = normalizeSubmissionStatus(String(bioRequest.status ?? "pending"));
     resolvedDueDate = bioRequest.due_date ? String(bioRequest.due_date) : null;
+    resolvedRequestConstraints = bioRequest.constraints;
   }
 
   const { data: person } = await db
@@ -3355,6 +3473,12 @@ export async function getContributorTaskById(showId: string, taskId: string) {
   }
 
   const row = person as Record<string, unknown>;
+  const resolvedBioCharLimit = resolvedRequestType === "bio"
+    ? normalizeBioCharLimit(
+        getConstraintNumber(resolvedRequestConstraints, "maxChars") ?? getPersonBioCharLimit(row, context.bio_char_limit)
+      )
+    : context.bio_char_limit;
+  const resolvedBioCharLimitOverride = normalizeOptionalBioCharLimit(row.bio_char_limit_override);
   return {
     task_id: resolvedRequestId,
     request_type: resolvedRequestType,
@@ -3378,7 +3502,8 @@ export async function getContributorTaskById(showId: string, taskId: string) {
       submission_status: resolvedRequestStatus,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(taskBody).length,
-      bio_char_limit: context.bio_char_limit,
+      bio_char_limit: resolvedBioCharLimit,
+      bio_char_limit_override: resolvedBioCharLimitOverride,
       request_bio: resolvedRequestType === "bio",
       request_notes: resolvedRequestType !== "bio",
       request_summary: getRequestSummary(resolvedRequestType === "bio", resolvedRequestType !== "bio")
@@ -3465,7 +3590,7 @@ async function updateSubmissionCore(args: {
   const db = supabase.schema(APP_SCHEMA);
   const { data: requestRow } = await db
     .from("submission_requests")
-    .select("status")
+    .select("status, constraints")
     .eq("id", args.requestId)
     .maybeSingle();
   const currentRequestStatus = normalizeSubmissionStatus(String(requestRow?.status ?? "pending"));
@@ -3488,6 +3613,9 @@ async function updateSubmissionCore(args: {
   }
 
   const row = person as Record<string, unknown>;
+  const effectiveBioCharLimit = normalizeBioCharLimit(
+    getConstraintNumber(requestRow?.constraints, "maxChars") ?? getPersonBioCharLimit(row, context.bio_char_limit)
+  );
   const hasNoBio = rowHasColumn(row, "no_bio");
   const submissionType = args.submissionType;
   const submissionLabel = getSubmissionTypeLabel(submissionType);
@@ -3504,8 +3632,8 @@ async function updateSubmissionCore(args: {
     return { ok: false as const, message: `${submissionLabel} is required before submitting.` };
   }
 
-  if (isBioType && !args.skipBio && plainLength > context.bio_char_limit) {
-    return { ok: false as const, message: `${submissionLabel} exceeds ${context.bio_char_limit} character limit.` };
+  if (isBioType && !args.skipBio && plainLength > effectiveBioCharLimit) {
+    return { ok: false as const, message: `${submissionLabel} exceeds ${effectiveBioCharLimit} character limit.` };
   }
   if (!isBioType && wordCount > SPECIAL_NOTE_WORD_LIMIT_DEFAULT) {
     return { ok: false as const, message: `${submissionLabel} exceeds ${SPECIAL_NOTE_WORD_LIMIT_DEFAULT} word limit.` };
@@ -3835,6 +3963,12 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
   }
 
   const row = person as Record<string, unknown>;
+  const reviewBioCharLimit = resolvedTask.request_type === "bio"
+    ? normalizeBioCharLimit(
+        getConstraintNumber(requestMeta?.constraints, "maxChars") ?? getPersonBioCharLimit(row, context.bio_char_limit)
+      )
+    : context.bio_char_limit;
+  const reviewBioCharLimitOverride = normalizeOptionalBioCharLimit(row.bio_char_limit_override);
   return {
     show: context,
     person: {
@@ -3854,7 +3988,8 @@ export async function getShowSubmissionByPerson(showId: string, personIdOrTaskId
       submission_status: resolvedTask.status,
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(taskBody).length,
-      bio_char_limit: context.bio_char_limit,
+      bio_char_limit: reviewBioCharLimit,
+      bio_char_limit_override: reviewBioCharLimitOverride,
       request_bio: resolvedTask.request_type === "bio",
       request_notes: resolvedTask.request_type !== "bio",
       request_summary: getRequestSummary(resolvedTask.request_type === "bio", resolvedTask.request_type !== "bio")

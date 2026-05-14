@@ -166,6 +166,8 @@ export default async function ContributorTaskPage({
           showId={showId}
           personId={task.person.id}
           submissionLabel={submissionLabel}
+          contributorName={task.person.full_name}
+          contributorRole={task.person.role_title}
           bioCharLimit={task.person.bio_char_limit}
           isBioTask={isBioTask}
           hasNoBio={hasNoBio}
