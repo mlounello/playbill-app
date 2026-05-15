@@ -662,6 +662,12 @@ export async function updateShowModules(showId: string, formData: FormData) {
     .from("program_modules")
     .select("id, module_type, display_title")
     .eq("show_id", showId);
+  if (modules.length === 0) {
+    withError(
+      `/app/shows/${showId}?tab=program-plan`,
+      "No sections were received, so nothing was saved. Refresh the page and try again."
+    );
+  }
   const removedContributorNoteIds = (existingModules ?? [])
     .filter((module) => normalizeModuleType(String(module.module_type ?? "")) === "contributor_note")
     .map((module) => ({
@@ -670,6 +676,7 @@ export async function updateShowModules(showId: string, formData: FormData) {
     }))
     .filter((module) => isUuid(module.id) && !incomingModuleIds.has(module.id));
 
+  let safeRequestIdsForRemovedModules: string[] = [];
   if (removedContributorNoteIds.length > 0) {
     const { data: roles } = await db.from("show_roles").select("id").eq("show_id", showId);
     const roleIds = (roles ?? []).map((role) => String(role.id ?? "")).filter(Boolean);
@@ -697,36 +704,61 @@ export async function updateShowModules(showId: string, formData: FormData) {
           `Cannot remove ${removedTitles} because submitted note content exists. Hide the section instead, or archive the submissions first.`
         );
       }
-      const safeRequestIds = requestIds.filter((id) => !submittedRequestIds.has(id));
-      if (safeRequestIds.length > 0) {
-        const { error: requestDeleteError } = await db.from("submission_requests").delete().in("id", safeRequestIds);
-        if (requestDeleteError) {
-          withError(`/app/shows/${showId}?tab=program-plan`, requestDeleteError.message);
-        }
+      safeRequestIdsForRemovedModules = requestIds.filter((id) => !submittedRequestIds.has(id));
+    }
+  }
+
+  const retainedModuleIds = new Set<string>();
+  for (const [index, module] of modules.entries()) {
+    const row = {
+      show_id: showId,
+      module_type: module.module_type,
+      display_title: module.display_title || module.module_type.replace(/_/g, " "),
+      module_order: index,
+      visible: module.visible,
+      filler_eligible: module.filler_eligible,
+      settings: normalizeModuleSettings(module.settings, module.module_type),
+      updated_at: new Date().toISOString()
+    };
+
+    if (module.id && isUuid(module.id)) {
+      const { error: upsertError } = await db
+        .from("program_modules")
+        .upsert({ id: module.id, ...row }, { onConflict: "id" });
+      if (upsertError) {
+        withError(`/app/shows/${showId}?tab=program-plan`, upsertError.message);
+      }
+      retainedModuleIds.add(module.id);
+    } else {
+      const { data: insertedModule, error: insertError } = await db
+        .from("program_modules")
+        .insert(row)
+        .select("id")
+        .single();
+      if (insertError) {
+        withError(`/app/shows/${showId}?tab=program-plan`, insertError.message);
+      }
+      const insertedId = String(insertedModule?.id ?? "");
+      if (isUuid(insertedId)) {
+        retainedModuleIds.add(insertedId);
       }
     }
   }
 
-  const { error: deleteError } = await db.from("program_modules").delete().eq("show_id", showId);
-  if (deleteError) {
-    withError(`/app/shows/${showId}?tab=program-plan`, deleteError.message);
+  const moduleIdsToDelete = (existingModules ?? [])
+    .map((module) => String(module.id ?? ""))
+    .filter((id) => isUuid(id) && !retainedModuleIds.has(id));
+  if (moduleIdsToDelete.length > 0) {
+    const { error: deleteError } = await db.from("program_modules").delete().in("id", moduleIdsToDelete);
+    if (deleteError) {
+      withError(`/app/shows/${showId}?tab=program-plan`, deleteError.message);
+    }
   }
 
-  if (modules.length > 0) {
-    const { error: insertError } = await db.from("program_modules").insert(
-      modules.map((module, index) => ({
-        show_id: showId,
-        module_type: module.module_type,
-        display_title: module.display_title || module.module_type.replace(/_/g, " "),
-        module_order: index,
-        visible: module.visible,
-        filler_eligible: module.filler_eligible,
-        settings: normalizeModuleSettings(module.settings, module.module_type),
-        ...(module.id && isUuid(module.id) ? { id: module.id } : {})
-      }))
-    );
-    if (insertError) {
-      withError(`/app/shows/${showId}?tab=program-plan`, insertError.message);
+  if (safeRequestIdsForRemovedModules.length > 0) {
+    const { error: requestDeleteError } = await db.from("submission_requests").delete().in("id", safeRequestIdsForRemovedModules);
+    if (requestDeleteError) {
+      withError(`/app/shows/${showId}?tab=program-plan`, requestDeleteError.message);
     }
   }
 
