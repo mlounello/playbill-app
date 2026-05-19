@@ -92,6 +92,47 @@ function plainTextLineBreaksToHtml(value: string) {
     .join("");
 }
 
+function shouldPreserveStructuredHtml(value: string) {
+  return /class\s*=\s*(["'])[^"']*(billing-|stacked-|season-|bio-|photo-|actf-)[^"']*\1/i.test(value);
+}
+
+function stripInlineEditorSpans(value: string) {
+  return value.replace(/<span\b[^>]*>/gi, "").replace(/<\/span>/gi, "");
+}
+
+function fragmentHasContent(value: string) {
+  return value
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim().length > 0;
+}
+
+function editorHtmlToParagraphs(value: string) {
+  if (shouldPreserveStructuredHtml(value) || !/(<div\b|<p\b|<br\s*\/?>)/i.test(value)) {
+    return value;
+  }
+
+  const normalized = stripInlineEditorSpans(value)
+    .replace(/\r\n?/g, "\n")
+    .replace(/<div\b[^>]*>\s*(?:<br\s*\/?>|&nbsp;|\s)*<\/div>/gi, "\n\n")
+    .replace(/<p\b[^>]*>/gi, "\n\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<div\b[^>]*>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n\n")
+    .replace(/(?:<br\s*\/?>\s*){2,}/gi, "\n\n")
+    .replace(/<br\s*\/?>/gi, "\n");
+
+  const paragraphs = normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(fragmentHasContent)
+    .map((paragraph) => `<p>${paragraph.replace(/\n+/g, "<br>")}</p>`);
+
+  return paragraphs.length > 1 ? paragraphs.join("") : value;
+}
+
 export function sanitizeRichText(input: string | undefined) {
   if (!input) {
     return "";
@@ -109,7 +150,7 @@ export function sanitizeRichText(input: string | undefined) {
   const normalizedInput =
     !/<\/?[a-z][\s\S]*>/i.test(withoutDangerousBlocks) && /[\r\n]/.test(withoutDangerousBlocks)
       ? plainTextLineBreaksToHtml(withoutDangerousBlocks)
-      : withoutDangerousBlocks;
+      : editorHtmlToParagraphs(withoutDangerousBlocks);
 
   const sanitized = normalizedInput.replace(/<\/?([a-z0-9-]+)([^>]*)>/gi, (full, tag, attrs) => {
     const tagName = String(tag).toLowerCase();
