@@ -158,6 +158,29 @@ function normalizeModuleSettings(settings: Record<string, unknown> | undefined, 
     next.allow_multiple_pages = normalizedType === "bios" || normalizedType === "custom_pages";
   }
 
+  if (normalizedType === "songs") {
+    next.songs = Array.isArray(next.songs)
+      ? next.songs
+          .map((entry, index) => {
+            const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+            const singerIds = Array.isArray(row.singerIds)
+              ? row.singerIds.map((id) => String(id)).filter(Boolean)
+              : Array.isArray(row.singer_ids)
+                ? row.singer_ids.map((id) => String(id)).filter(Boolean)
+                : [];
+            return {
+              id: String(row.id ?? `song-${index}`),
+              act: String(row.act ?? ""),
+              title: String(row.title ?? ""),
+              singerIds,
+              includeCompany: Boolean(row.includeCompany ?? row.include_company),
+              includeEnsemble: Boolean(row.includeEnsemble ?? row.include_ensemble)
+            };
+          })
+          .filter((row) => row.act.trim() || row.title.trim() || row.singerIds.length > 0 || row.includeCompany || row.includeEnsemble)
+      : [];
+  }
+
   if (normalizedType === "actf_sponsorship") {
     next.placement_mode = "isolated";
     next.separate_page = true;

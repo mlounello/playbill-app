@@ -32,6 +32,21 @@ type ModuleItem = {
   settings: Record<string, unknown>;
 };
 
+type SongSingerOption = {
+  id: string;
+  full_name: string;
+  role_title: string;
+};
+
+type SongRow = {
+  id: string;
+  act: string;
+  title: string;
+  singerIds: string[];
+  includeCompany: boolean;
+  includeEnsemble: boolean;
+};
+
 type PlanMode = "sections" | "order";
 
 const legacyNoteModuleTitles: Record<string, string> = {
@@ -77,7 +92,7 @@ const moduleTypeDescriptions: Record<string, string> = {
   bios: "Collected bios from requested submissions.",
   contributor_note: "A flexible note request. Title it Director's Note, Choreographer's Note, Playwright's Note, or anything else.",
   acts_scenes: "Uses the Acts & Songs content source.",
-  songs: "Uses the Acts & Songs content source.",
+  songs: "Structured song list grouped by act, with singers selected from People and Roles.",
   department_info: "Selected producing profiles and department information.",
   headshots_grid: "A grid of submitted headshots.",
   production_photos: "Production photo pages.",
@@ -151,6 +166,30 @@ function getPlacementLabel(item: ModuleItem) {
     String(item.settings.placement_mode ?? "").toLowerCase() === "isolated" ||
     Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type));
   return isolated ? "Own page" : "Can flow with nearby sections";
+}
+
+function normalizeSongRows(value: unknown): SongRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry, index) => {
+      const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+      const singerIds = Array.isArray(row.singerIds)
+        ? row.singerIds.map((id) => String(id)).filter(Boolean)
+        : Array.isArray(row.singer_ids)
+          ? row.singer_ids.map((id) => String(id)).filter(Boolean)
+          : [];
+      return {
+        id: String(row.id ?? `song-${index}`),
+        act: String(row.act ?? ""),
+        title: String(row.title ?? ""),
+        singerIds,
+        includeCompany: Boolean(row.includeCompany ?? row.include_company),
+        includeEnsemble: Boolean(row.includeEnsemble ?? row.include_ensemble)
+      };
+    })
+    .filter((row) => row.title.trim() || row.act.trim() || row.singerIds.length > 0 || row.includeCompany || row.includeEnsemble);
 }
 
 function SortableOrderItem({
@@ -227,12 +266,14 @@ function ModuleSettings({
   item,
   onUpdate,
   showId,
-  programSlug
+  programSlug,
+  singerOptions
 }: {
   item: ModuleItem;
   onUpdate: (next: Record<string, unknown>) => void;
   showId?: string;
   programSlug?: string | null;
+  singerOptions: SongSingerOption[];
 }) {
   const setSetting = (key: string, value: unknown) => {
     onUpdate({ ...item.settings, [key]: value });
@@ -294,6 +335,113 @@ function ModuleSettings({
           />
           <span>Let this list share a page when there is room</span>
         </label>
+      </div>
+    );
+  }
+
+  if (item.module_type === "songs") {
+    const songs = normalizeSongRows(item.settings.songs);
+    const updateSongs = (nextSongs: SongRow[]) => setSetting("songs", nextSongs);
+    const updateSong = (rowId: string, patch: Partial<SongRow>) => {
+      updateSongs(songs.map((song) => (song.id === rowId ? { ...song, ...patch } : song)));
+    };
+    const addSong = () => {
+      updateSongs([
+        ...songs,
+        {
+          id: `song-${Date.now()}`,
+          act: songs[songs.length - 1]?.act || "Act I",
+          title: "",
+          singerIds: [],
+          includeCompany: false,
+          includeEnsemble: false
+        }
+      ]);
+    };
+
+    return (
+      <div className="module-settings-grid module-settings-wide">
+        <div className="module-settings-empty">
+          Add songs here instead of typing a free-form songs page. Acts become section headers, and each song prints as
+          <strong> Song Title </strong> with dotted leaders to the singers.
+        </div>
+        <div className="song-module-editor">
+          {songs.length === 0 ? (
+            <div className="empty-state-card">No songs added yet.</div>
+          ) : (
+            songs.map((song, index) => (
+              <article key={song.id} className="song-module-row">
+                <div className="song-module-row-header">
+                  <strong>Song {index + 1}</strong>
+                  <button
+                    type="button"
+                    className="ghost-button ghost-button-danger"
+                    onClick={() => updateSongs(songs.filter((item) => item.id !== song.id))}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <div className="module-settings-grid">
+                  <label>
+                    Act / section header
+                    <input
+                      value={song.act}
+                      onChange={(event) => updateSong(song.id, { act: event.target.value })}
+                      placeholder="Act I"
+                    />
+                  </label>
+                  <label>
+                    Song title
+                    <input
+                      value={song.title}
+                      onChange={(event) => updateSong(song.id, { title: event.target.value })}
+                      placeholder="Opening Number"
+                    />
+                  </label>
+                </div>
+                <label>
+                  Characters / people who sing it
+                  <select
+                    multiple
+                    value={song.singerIds}
+                    onChange={(event) =>
+                      updateSong(song.id, {
+                        singerIds: Array.from(event.currentTarget.selectedOptions).map((option) => option.value)
+                      })
+                    }
+                  >
+                    {singerOptions.map((person) => (
+                      <option key={`song-singer-${song.id}-${person.id}`} value={person.id}>
+                        {person.role_title ? `${person.role_title} - ${person.full_name}` : person.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="row-wrap">
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={song.includeCompany}
+                      onChange={(event) => updateSong(song.id, { includeCompany: event.target.checked })}
+                    />
+                    <span>Company</span>
+                  </label>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={song.includeEnsemble}
+                      onChange={(event) => updateSong(song.id, { includeEnsemble: event.target.checked })}
+                    />
+                    <span>Ensemble</span>
+                  </label>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+        <button type="button" className="ghost-button" onClick={addSong}>
+          Add Song
+        </button>
       </div>
     );
   }
@@ -496,7 +644,8 @@ export function ProgramPlanEditor({
   previewBasePath,
   paddingSimIds,
   showId,
-  programSlug
+  programSlug,
+  singerOptions = []
 }: {
   modules: ShowModule[];
   onSubmitAction: (formData: FormData) => void;
@@ -505,6 +654,7 @@ export function ProgramPlanEditor({
   paddingSimIds?: string[];
   showId?: string;
   programSlug?: string | null;
+  singerOptions?: SongSingerOption[];
 }) {
   const [items, setItems] = useState<ModuleItem[]>(() => normalizeModules(modules));
   const [newModuleType, setNewModuleType] = useState("custom_text");
@@ -781,9 +931,18 @@ export function ProgramPlanEditor({
                   </label>
                 </div>
 
-                <details className="program-section-details" open={item.module_type === "custom_text" || item.module_type === "custom_image"}>
+                <details
+                  className="program-section-details"
+                  open={item.module_type === "custom_text" || item.module_type === "custom_image" || item.module_type === "songs"}
+                >
                   <summary>Content and section options</summary>
-                  <ModuleSettings item={item} onUpdate={(next) => update(index, "settings", next)} showId={showId} programSlug={programSlug} />
+                  <ModuleSettings
+                    item={item}
+                    onUpdate={(next) => update(index, "settings", next)}
+                    showId={showId}
+                    programSlug={programSlug}
+                    singerOptions={singerOptions}
+                  />
                 </details>
 
                 <details className="program-section-details">

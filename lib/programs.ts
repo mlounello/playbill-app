@@ -94,6 +94,14 @@ type ShowRoleRecord = {
   bio_order: number | null;
 };
 
+type SongRow = {
+  act: string;
+  title: string;
+  singerIds: string[];
+  includeCompany: boolean;
+  includeEnsemble: boolean;
+};
+
 type DensityMode = "normal" | "compact" | "loose";
 type TextFitMode = "normal" | "compact" | "tight" | "small";
 
@@ -921,6 +929,64 @@ function buildCategoryRoleListHtml(title: string, rows: Array<{ role: string; na
   return `<section class="billing-section">${heading}<ul class="billing-list">${listItems}</ul></section>`;
 }
 
+function normalizeSongRows(value: unknown): SongRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => {
+      const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+      const singerIds = Array.isArray(row.singerIds)
+        ? row.singerIds.map((id) => String(id)).filter(Boolean)
+        : Array.isArray(row.singer_ids)
+          ? row.singer_ids.map((id) => String(id)).filter(Boolean)
+          : [];
+      return {
+        act: String(row.act ?? "").trim(),
+        title: String(row.title ?? "").trim(),
+        singerIds,
+        includeCompany: Boolean(row.includeCompany ?? row.include_company),
+        includeEnsemble: Boolean(row.includeEnsemble ?? row.include_ensemble)
+      };
+    })
+    .filter((row) => row.title || row.singerIds.length > 0 || row.includeCompany || row.includeEnsemble);
+}
+
+function buildSongsListHtml(moduleTitle: string, songs: SongRow[], people: PersonRecord[]) {
+  if (songs.length === 0) {
+    return "";
+  }
+
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  const grouped = new Map<string, Array<{ role: string; name: string }>>();
+  const actOrder: string[] = [];
+
+  for (const song of songs) {
+    const actTitle = song.act || moduleTitle || "Songs";
+    if (!grouped.has(actTitle)) {
+      grouped.set(actTitle, []);
+      actOrder.push(actTitle);
+    }
+    const singers = [
+      ...song.singerIds
+        .map((id) => peopleById.get(id))
+        .filter((person): person is PersonRecord => Boolean(person))
+        .map((person) => person.role_title.trim() || person.full_name.trim())
+        .filter(Boolean),
+      ...(song.includeCompany ? ["Company"] : []),
+      ...(song.includeEnsemble ? ["Ensemble"] : [])
+    ];
+    grouped.get(actTitle)?.push({
+      role: song.title || "Untitled Song",
+      name: uniqueRoleNames(singers).join(", ")
+    });
+  }
+
+  return actOrder
+    .map((actTitle) => buildCategoryRoleListHtml(actTitle, grouped.get(actTitle) ?? [], true))
+    .join("");
+}
+
 function derivePeopleForBiosFromRoles(
   people: PersonRecord[],
   roles: ShowRoleRecord[]
@@ -1532,11 +1598,26 @@ async function renderModulePages(
     });
   }
 
-  if (normalizedType === "acts_scenes" || normalizedType === "songs") {
+  if (normalizedType === "acts_scenes") {
     if (!hasActsSongs) {
       return [] as ProgramPage[];
     }
     return paginateTextModulePages({ idBase, title, body: program.acts_songs, densityMode, allowMultiplePages });
+  }
+
+  if (normalizedType === "songs") {
+    const songs = normalizeSongRows(module.settings.songs);
+    const body = buildSongsListHtml(moduleTitle, songs, rosterPeople);
+    if (richTextHasContent(body)) {
+      return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
+    }
+    if (hasActsSongs) {
+      return paginateTextModulePages({ idBase, title, body: program.acts_songs, densityMode, allowMultiplePages });
+    }
+    return emptyPlaceholder(
+      title,
+      "Songs module is enabled, but no structured songs were added yet. Open Sections & Order, expand Songs, and add song rows."
+    );
   }
 
   if (normalizedType === "headshots_grid") {

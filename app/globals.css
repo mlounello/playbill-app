@@ -783,6 +783,32 @@ button.tab-chip {
   padding: 0.85rem;
 }
 
+.song-module-editor {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.song-module-row {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #d9e1da;
+  border-radius: 0.85rem;
+  background: #fffef9;
+  padding: 0.85rem;
+}
+
+.song-module-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.song-module-row select[multiple] {
+  min-height: 8.5rem;
+  background: #fff;
+}
+
 .admin-guidance-card {
   display: grid;
   gap: 0.35rem;

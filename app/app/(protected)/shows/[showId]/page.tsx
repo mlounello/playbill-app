@@ -131,7 +131,7 @@ export default async function ShowWorkspacePage({
 
   const savePlanAction = updateShowModules.bind(null, show.id);
   const mappedTokens = getProgramTokensFromShowModules(show.modules);
-  const people = activeTab === "people-roles" ? await getShowSubmissionPeople(show.id) : [];
+  const people = activeTab === "people-roles" || activeTab === "program-plan" ? await getShowSubmissionPeople(show.id) : [];
   const specialNoteAssignments =
     activeTab === "people-roles"
       ? await getShowSpecialNoteAssignments(show.id)
@@ -394,13 +394,27 @@ export default async function ShowWorkspacePage({
         richTextHasContent(task.bio)
     );
   };
+  const hasStructuredSongs = (settings: Record<string, unknown>) =>
+    Array.isArray(settings.songs) &&
+    settings.songs.some((entry) => {
+      const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+      const singerIds = Array.isArray(row.singerIds) ? row.singerIds : [];
+      return (
+        String(row.title ?? "").trim() ||
+        String(row.act ?? "").trim() ||
+        singerIds.length > 0 ||
+        Boolean(row.includeCompany ?? row.include_company) ||
+        Boolean(row.includeEnsemble ?? row.include_ensemble)
+      );
+    });
   const sectionHasKnownContent = (module: (typeof show.modules)[number]) => {
     const moduleType = module.module_type;
     if (moduleType === "cover") return Boolean(show.poster_image_url.trim() || show.title.trim());
     if (moduleType === "production_info") return Boolean(show.venue.trim() || show.show_dates.trim() || show.performance_schedule.length > 0);
     if (moduleType === "bios") return submissionQueue.some((task) => task.submission_type === "bio" && (richTextHasContent(task.bio) || task.no_bio));
     if (moduleType === "contributor_note") return hasSubmittedBodyForNoteTitle(module.display_title || "Contributor Note");
-    if (moduleType === "acts_scenes" || moduleType === "songs") return richTextHasContent(show.acts_and_songs);
+    if (moduleType === "acts_scenes") return richTextHasContent(show.acts_and_songs);
+    if (moduleType === "songs") return hasStructuredSongs(module.settings) || richTextHasContent(show.acts_and_songs);
     if (moduleType === "sponsors") return richTextHasContent(show.sponsorships) || Boolean(show.sponsorship_image_url.trim());
     if (moduleType === "actf_sponsorship") return richTextHasContent(String(module.settings.body ?? "")) || Boolean(String(module.settings.image_url ?? "").trim() || show.sponsorship_image_url.trim());
     if (moduleType === "acknowledgements") return richTextHasContent(show.acknowledgements);
@@ -834,6 +848,11 @@ export default async function ShowWorkspacePage({
                 paddingSimIds={paddingSimIds}
                 showId={show.id}
                 programSlug={show.program_slug}
+                singerOptions={people.map((person) => ({
+                  id: person.id,
+                  full_name: person.full_name,
+                  role_title: person.role_title
+                }))}
               />
             </section>
           ) : null}
