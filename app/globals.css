@@ -567,7 +567,13 @@ button:disabled,
 .rich-render div + p,
 .rich-render blockquote + p,
 .rich-render p + blockquote {
-  margin-top: 0.42em;
+  margin-top: 0.82em;
+}
+
+.rich-render br + br {
+  display: block;
+  margin-top: 0.82em;
+  content: "";
 }
 
 .rich-render ul,
@@ -2152,19 +2158,22 @@ body.density-compact .admin-surface textarea {
 .text-fit-compact .rich-render p + p,
 .text-fit-compact .rich-render div + div,
 .text-fit-compact .rich-render p + div,
-.text-fit-compact .rich-render div + p {
-  margin-top: 0.34em;
+.text-fit-compact .rich-render div + p,
+.text-fit-compact .rich-render br + br {
+  margin-top: 0.62em;
 }
 
 .text-fit-tight .rich-render p + p,
 .text-fit-tight .rich-render div + div,
 .text-fit-tight .rich-render p + div,
 .text-fit-tight .rich-render div + p,
+.text-fit-tight .rich-render br + br,
 .text-fit-small .rich-render p + p,
 .text-fit-small .rich-render div + div,
 .text-fit-small .rich-render p + div,
-.text-fit-small .rich-render div + p {
-  margin-top: 0.25em;
+.text-fit-small .rich-render div + p,
+.text-fit-small .rich-render br + br {
+  margin-top: 0.48em;
 }
 
 .poster-page {
