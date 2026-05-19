@@ -95,10 +95,11 @@ type ShowRoleRecord = {
 };
 
 type DensityMode = "normal" | "compact" | "loose";
+type TextFitMode = "normal" | "compact" | "tight" | "small";
 
 export type ProgramPage =
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
-  | { id: string; type: "text"; title: string; body: string }
+  | { id: string; type: "text"; title: string; body: string; textFit?: TextFitMode }
   | {
       id: string;
       type: "actf_sponsorship";
@@ -1165,6 +1166,15 @@ function getTextPageBudget(densityMode: DensityMode) {
   return 880;
 }
 
+function getTextFitMode(html: string, title: string, densityMode: DensityMode): TextFitMode {
+  const pageBudget = Math.max(520, getTextPageBudget(densityMode) - (title.trim() ? 44 : 0));
+  const estimatedUnits = Math.round(estimateRichTextLines(html) * 10.5);
+  if (estimatedUnits <= pageBudget) return "normal";
+  if (estimatedUnits <= pageBudget * 1.12) return "compact";
+  if (estimatedUnits <= pageBudget * 1.28) return "tight";
+  return "small";
+}
+
 function paginateTextModulePages(params: {
   idBase: string;
   title: string;
@@ -1178,12 +1188,28 @@ function paginateTextModulePages(params: {
   }
 
   if (!params.allowMultiplePages) {
-    return [{ id: params.idBase, type: "text", title: params.title, body: safeBody }] satisfies ProgramPage[];
+    return [
+      {
+        id: params.idBase,
+        type: "text",
+        title: params.title,
+        body: safeBody,
+        textFit: getTextFitMode(safeBody, params.title, params.densityMode)
+      }
+    ] satisfies ProgramPage[];
   }
 
   const blocks = splitRichTextIntoBlocks(safeBody);
   if (blocks.length <= 1) {
-    return [{ id: params.idBase, type: "text", title: params.title, body: safeBody }] satisfies ProgramPage[];
+    return [
+      {
+        id: params.idBase,
+        type: "text",
+        title: params.title,
+        body: safeBody,
+        textFit: getTextFitMode(safeBody, params.title, params.densityMode)
+      }
+    ] satisfies ProgramPage[];
   }
 
   const pageBudget = Math.max(520, getTextPageBudget(params.densityMode) - (params.title.trim() ? 44 : 0));
@@ -1198,7 +1224,8 @@ function paginateTextModulePages(params: {
         id: `${params.idBase}-${pages.length + 1}`,
         type: "text",
         title: pages.length === 0 ? params.title : `${params.title} (cont.)`,
-        body: currentBlocks.join("")
+        body: currentBlocks.join(""),
+        textFit: "normal"
       });
       currentBlocks = [];
       currentUnits = 0;
@@ -1212,11 +1239,22 @@ function paginateTextModulePages(params: {
       id: `${params.idBase}-${pages.length + 1}`,
       type: "text",
       title: pages.length === 0 ? params.title : `${params.title} (cont.)`,
-      body: currentBlocks.join("")
+      body: currentBlocks.join(""),
+      textFit: "normal"
     });
   }
 
-  return pages.length > 0 ? pages : ([{ id: params.idBase, type: "text", title: params.title, body: safeBody }] satisfies ProgramPage[]);
+  return pages.length > 0
+    ? pages
+    : ([
+        {
+          id: params.idBase,
+          type: "text",
+          title: params.title,
+          body: safeBody,
+          textFit: getTextFitMode(safeBody, params.title, params.densityMode)
+        }
+      ] satisfies ProgramPage[]);
 }
 
 function estimateStackUnits(page: ProgramPage) {
