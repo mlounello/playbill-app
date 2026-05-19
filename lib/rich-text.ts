@@ -80,7 +80,12 @@ export function sanitizeRichText(input: string | undefined) {
     return "";
   }
 
-  const withoutDangerousBlocks = input
+  const restoredEditorTags = input.replace(
+    /&lt;(\/?(?:p|br|strong|b|em|i|u|ul|ol|li|a|blockquote|h3|h4|span|div|section)(?:\s+[^&]*?)?)&gt;/gi,
+    "<$1>"
+  );
+
+  const withoutDangerousBlocks = restoredEditorTags
     .replace(/<\s*(script|style|iframe|object|embed)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
     .replace(/on\w+\s*=\s*(["'])[\s\S]*?\1/gi, "")
     .replace(/javascript:/gi, "");

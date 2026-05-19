@@ -90,7 +90,7 @@ export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
   }
 
   return (
-    <article className="booklet-page">
+    <article className={`booklet-page ${page.type === "text" ? `text-fit-${page.textFit ?? "normal"}` : ""}`.trim()}>
       {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
       <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(page.body) }} />
     </article>

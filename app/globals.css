@@ -464,6 +464,15 @@ button:disabled,
   margin: 0;
 }
 
+.rich-render p + p,
+.rich-render div + div,
+.rich-render p + div,
+.rich-render div + p,
+.rich-render blockquote + p,
+.rich-render p + blockquote {
+  margin-top: 0.42em;
+}
+
 .rich-render ul,
 .rich-render ol {
   margin: 0.2rem 0 0.2rem 1.15rem;
@@ -2020,6 +2029,45 @@ body.density-compact .admin-surface textarea {
   background: #ffffff;
   padding: 0.36in;
   position: relative;
+}
+
+.text-fit-compact .page-body {
+  font-size: 9.4pt;
+  line-height: 1.38;
+}
+
+.text-fit-tight .page-body {
+  font-size: 8.7pt;
+  line-height: 1.32;
+}
+
+.text-fit-small .page-body {
+  font-size: 8pt;
+  line-height: 1.26;
+}
+
+.text-fit-compact .playbill-title,
+.text-fit-tight .playbill-title,
+.text-fit-small .playbill-title {
+  margin-bottom: 0.34rem;
+}
+
+.text-fit-compact .rich-render p + p,
+.text-fit-compact .rich-render div + div,
+.text-fit-compact .rich-render p + div,
+.text-fit-compact .rich-render div + p {
+  margin-top: 0.34em;
+}
+
+.text-fit-tight .rich-render p + p,
+.text-fit-tight .rich-render div + div,
+.text-fit-tight .rich-render p + div,
+.text-fit-tight .rich-render div + p,
+.text-fit-small .rich-render p + p,
+.text-fit-small .rich-render div + div,
+.text-fit-small .rich-render p + div,
+.text-fit-small .rich-render div + p {
+  margin-top: 0.25em;
 }
 
 .poster-page {

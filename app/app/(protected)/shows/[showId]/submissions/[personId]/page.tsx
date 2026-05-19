@@ -135,6 +135,8 @@ export default async function ShowSubmissionReviewPage({
             label={`${submissionLabel} (admin editable)`}
             required={false}
             initialValue={hasNoBio ? "" : review.person.bio}
+            previewName={isBioTask ? review.person.full_name : submissionLabel.replace(/\s+Submission$/i, "")}
+            previewRole={isBioTask ? review.person.role_title : review.person.full_name}
             counter={
               isBioTask
                 ? { mode: "characters", limit: review.person.bio_char_limit }

@@ -15,7 +15,7 @@ function PublicRenderPage({ page }: { page: ProgramPage }) {
 
   if (page.type === "text") {
     return (
-      <article className="booklet-page">
+      <article className={`booklet-page text-fit-${page.textFit ?? "normal"}`}>
         <h2 className="section-title playbill-title">{page.title}</h2>
         <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(page.body) }} />
       </article>
