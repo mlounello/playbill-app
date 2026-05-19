@@ -50,6 +50,9 @@ function normalizeColor(value: string) {
 
 export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeightPx = 280 }: Props) {
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const sourceTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceDraft, setSourceDraft] = useState("");
   const [format, setFormat] = useState<FormatState>({
     bold: false,
     italic: false,
@@ -68,6 +71,11 @@ export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeigh
       editorRef.current.innerHTML = value;
     }
   }, [value]);
+
+  useEffect(() => {
+    if (!sourceOpen) return;
+    window.setTimeout(() => sourceTextareaRef.current?.focus(), 0);
+  }, [sourceOpen]);
 
   const refreshFormatState = () => {
     const nextBlock = String(document.queryCommandValue("formatBlock") || "P").replace(/[<>]/g, "").toUpperCase();
@@ -93,6 +101,23 @@ export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeigh
     document.execCommand(command, false, arg);
     onChange(editorRef.current.innerHTML);
     refreshFormatState();
+  };
+
+  const openSource = () => {
+    setSourceDraft(editorRef.current?.innerHTML ?? value);
+    setSourceOpen(true);
+  };
+
+  const saveSource = () => {
+    onChange(sourceDraft);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = sourceDraft;
+    }
+    setSourceOpen(false);
+    window.setTimeout(() => {
+      editorRef.current?.focus();
+      refreshFormatState();
+    }, 0);
   };
 
   const toolbar = useMemo(
@@ -205,9 +230,15 @@ export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeigh
             Clear
           </button>
         </div>
+
+        <div className="rich-toolbar-group">
+          <button type="button" className="rich-tool-button rich-tool-source-button" onClick={openSource} title="Edit HTML source">
+            Source
+          </button>
+        </div>
       </div>
     ),
-    [format, label]
+    [format, label, value]
   );
 
   return (
@@ -228,6 +259,47 @@ export function ModuleHtmlEditor({ label, value, onChange, placeholder, minHeigh
         onKeyUp={refreshFormatState}
         onMouseUp={refreshFormatState}
       />
+      {sourceOpen ? (
+        <div
+          className="rich-source-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSourceOpen(false);
+            }
+          }}
+        >
+          <section className="rich-source-modal" role="dialog" aria-modal="true" aria-label={`${label} source code`}>
+            <div className="rich-source-modal-header">
+              <strong>Source Code</strong>
+              <button type="button" className="rich-source-close" onClick={() => setSourceOpen(false)} aria-label="Close source editor">
+                x
+              </button>
+            </div>
+            <textarea
+              ref={sourceTextareaRef}
+              className="rich-source-textarea"
+              value={sourceDraft}
+              onChange={(event) => setSourceDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSourceOpen(false);
+                }
+              }}
+              spellCheck={false}
+            />
+            <div className="rich-source-modal-actions">
+              <button type="button" className="rich-source-cancel" onClick={() => setSourceOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={saveSource}>
+                Save
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

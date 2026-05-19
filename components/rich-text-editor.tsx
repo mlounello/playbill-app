@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { sanitizeRichText } from "@/lib/rich-text";
 
 type Props = {
   label: string;
@@ -28,6 +29,9 @@ const blockOptions = [
 
 export function RichTextEditor({ label, value, onChange, placeholder, minHeightPx = 180 }: Props) {
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const sourceTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceDraft, setSourceDraft] = useState("");
   const [format, setFormat] = useState<FormatState>({
     bold: false,
     italic: false,
@@ -43,6 +47,11 @@ export function RichTextEditor({ label, value, onChange, placeholder, minHeightP
       editorRef.current.innerHTML = value;
     }
   }, [value]);
+
+  useEffect(() => {
+    if (!sourceOpen) return;
+    window.setTimeout(() => sourceTextareaRef.current?.focus(), 0);
+  }, [sourceOpen]);
 
   const refreshFormatState = () => {
     const nextBlock = String(document.queryCommandValue("formatBlock") || "P").replace(/[<>]/g, "").toUpperCase();
@@ -62,6 +71,25 @@ export function RichTextEditor({ label, value, onChange, placeholder, minHeightP
     document.execCommand(command, false, arg);
     onChange(editorRef.current.innerHTML);
     refreshFormatState();
+  };
+
+  const openSource = () => {
+    const html = editorRef.current?.innerHTML ?? value;
+    setSourceDraft(sanitizeRichText(html));
+    setSourceOpen(true);
+  };
+
+  const saveSource = () => {
+    const nextHtml = sanitizeRichText(sourceDraft);
+    onChange(nextHtml);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = nextHtml;
+    }
+    setSourceOpen(false);
+    window.setTimeout(() => {
+      editorRef.current?.focus();
+      refreshFormatState();
+    }, 0);
   };
 
   const toolbar = useMemo(
@@ -86,13 +114,13 @@ export function RichTextEditor({ label, value, onChange, placeholder, minHeightP
         </div>
 
         <div className="rich-toolbar-group">
-          <button type="button" className={`rich-tool-button ${format.bold ? "is-active" : ""}`} onClick={() => run("bold")} aria-pressed={format.bold}>
+          <button type="button" className={`rich-tool-button rich-tool-button-icon ${format.bold ? "is-active" : ""}`} onClick={() => run("bold")} aria-pressed={format.bold} title="Bold">
             B
           </button>
-          <button type="button" className={`rich-tool-button ${format.italic ? "is-active" : ""}`} onClick={() => run("italic")} aria-pressed={format.italic}>
+          <button type="button" className={`rich-tool-button rich-tool-button-icon ${format.italic ? "is-active" : ""}`} onClick={() => run("italic")} aria-pressed={format.italic} title="Italic">
             I
           </button>
-          <button type="button" className={`rich-tool-button ${format.underline ? "is-active" : ""}`} onClick={() => run("underline")} aria-pressed={format.underline}>
+          <button type="button" className={`rich-tool-button rich-tool-button-icon ${format.underline ? "is-active" : ""}`} onClick={() => run("underline")} aria-pressed={format.underline} title="Underline">
             U
           </button>
         </div>
@@ -103,6 +131,7 @@ export function RichTextEditor({ label, value, onChange, placeholder, minHeightP
             className={`rich-tool-button ${format.unorderedList ? "is-active" : ""}`}
             onClick={() => run("insertUnorderedList")}
             aria-pressed={format.unorderedList}
+            title="Bulleted list"
           >
             Bullets
           </button>
@@ -111,16 +140,23 @@ export function RichTextEditor({ label, value, onChange, placeholder, minHeightP
             className={`rich-tool-button ${format.orderedList ? "is-active" : ""}`}
             onClick={() => run("insertOrderedList")}
             aria-pressed={format.orderedList}
+            title="Numbered list"
           >
             Numbered
+          </button>
+          <button type="button" className="rich-tool-button" onClick={() => run("outdent")} title="Decrease indent">
+            Outdent
+          </button>
+          <button type="button" className="rich-tool-button" onClick={() => run("indent")} title="Increase indent">
+            Indent
           </button>
         </div>
 
         <div className="rich-toolbar-group">
-          <button type="button" className="rich-tool-button" onClick={() => run("undo")}>
+          <button type="button" className="rich-tool-button" onClick={() => run("undo")} title="Undo">
             Undo
           </button>
-          <button type="button" className="rich-tool-button" onClick={() => run("redo")}>
+          <button type="button" className="rich-tool-button" onClick={() => run("redo")} title="Redo">
             Redo
           </button>
         </div>
@@ -133,19 +169,26 @@ export function RichTextEditor({ label, value, onChange, placeholder, minHeightP
               const url = window.prompt("Link URL (https://...)");
               if (url?.trim()) run("createLink", url.trim());
             }}
+            title="Create link"
           >
             Link
           </button>
-          <button type="button" className="rich-tool-button" onClick={() => run("unlink")}>
+          <button type="button" className="rich-tool-button" onClick={() => run("unlink")} title="Remove link">
             Unlink
           </button>
-          <button type="button" className="rich-tool-button" onClick={() => run("removeFormat")}>
+          <button type="button" className="rich-tool-button" onClick={() => run("removeFormat")} title="Clear formatting">
             Clear
+          </button>
+        </div>
+
+        <div className="rich-toolbar-group">
+          <button type="button" className="rich-tool-button rich-tool-source-button" onClick={openSource} title="Edit HTML source">
+            Source
           </button>
         </div>
       </div>
     ),
-    [format, label]
+    [format, label, value]
   );
 
   return (
@@ -166,6 +209,47 @@ export function RichTextEditor({ label, value, onChange, placeholder, minHeightP
         onKeyUp={refreshFormatState}
         onMouseUp={refreshFormatState}
       />
+      {sourceOpen ? (
+        <div
+          className="rich-source-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSourceOpen(false);
+            }
+          }}
+        >
+          <section className="rich-source-modal" role="dialog" aria-modal="true" aria-label={`${label} source code`}>
+            <div className="rich-source-modal-header">
+              <strong>Source Code</strong>
+              <button type="button" className="rich-source-close" onClick={() => setSourceOpen(false)} aria-label="Close source editor">
+                x
+              </button>
+            </div>
+            <textarea
+              ref={sourceTextareaRef}
+              className="rich-source-textarea"
+              value={sourceDraft}
+              onChange={(event) => setSourceDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSourceOpen(false);
+                }
+              }}
+              spellCheck={false}
+            />
+            <div className="rich-source-modal-actions">
+              <button type="button" className="rich-source-cancel" onClick={() => setSourceOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={saveSource}>
+                Save
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }

@@ -304,9 +304,25 @@ a:focus-visible,
   min-height: 32px;
 }
 
+.rich-tool-button-icon {
+  min-width: 2.05rem;
+  padding-inline: 0.42rem;
+}
+
+.rich-tool-source-button {
+  background: #17392f;
+  color: #ffffff;
+  border-color: #17392f;
+}
+
 .rich-tool-button:hover {
   background: #eaf4f1;
   border-color: #9eb9b0;
+}
+
+.rich-tool-source-button:hover {
+  background: #0f5c49;
+  border-color: #0f5c49;
 }
 
 .rich-tool-button.is-active {
@@ -351,6 +367,87 @@ a:focus-visible,
 .rich-editor ol {
   margin: 0.2rem 0 0.2rem 1.1rem;
   padding: 0;
+}
+
+.rich-source-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: clamp(0.8rem, 3vw, 2rem);
+  background: rgba(20, 24, 28, 0.36);
+  backdrop-filter: blur(4px);
+}
+
+.rich-source-modal {
+  width: min(1180px, 96vw);
+  height: min(760px, 88vh);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid #d8d2c2;
+  background: #ffffff;
+  box-shadow: 0 28px 70px rgba(28, 35, 32, 0.24);
+  padding: 0.9rem;
+}
+
+.rich-source-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #24332f;
+  font-size: 1.1rem;
+}
+
+.rich-source-close {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: #24332f;
+  font-size: 1.2rem;
+  padding: 0;
+}
+
+.rich-source-close:hover {
+  background: #eef5f2;
+  color: #0f5c49;
+}
+
+.rich-source-textarea {
+  min-height: 0;
+  resize: none;
+  border: 1px solid #8db3ff;
+  border-radius: 0.45rem;
+  padding: 0.75rem;
+  background: #ffffff;
+  color: #1f2d3a;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  tab-size: 2;
+  outline: 2px solid rgba(54, 115, 255, 0.18);
+}
+
+.rich-source-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.rich-source-cancel {
+  border-color: #d8d2c2;
+  background: #f2f0ec;
+  color: #27352f;
+}
+
+.rich-source-cancel:hover {
+  background: #e8e4dd;
+  border-color: #c8bfaf;
 }
 
 .rich-field-layout {
