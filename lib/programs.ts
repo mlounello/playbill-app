@@ -1169,9 +1169,9 @@ function getTextPageBudget(densityMode: DensityMode) {
 function getTextFitMode(html: string, title: string, densityMode: DensityMode): TextFitMode {
   const pageBudget = Math.max(520, getTextPageBudget(densityMode) - (title.trim() ? 44 : 0));
   const estimatedUnits = Math.round(estimateRichTextLines(html) * 10.5);
-  if (estimatedUnits <= pageBudget) return "normal";
-  if (estimatedUnits <= pageBudget * 1.12) return "compact";
-  if (estimatedUnits <= pageBudget * 1.28) return "tight";
+  if (estimatedUnits <= pageBudget * 1.22) return "normal";
+  if (estimatedUnits <= pageBudget * 1.42) return "compact";
+  if (estimatedUnits <= pageBudget * 1.62) return "tight";
   return "small";
 }
 
