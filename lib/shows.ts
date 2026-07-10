@@ -89,6 +89,7 @@ export const moduleToProgramTokens: Record<string, string[]> = {
   cast_list: ["cast_bios"],
   creative_team: ["team_bios"],
   production_team: ["team_bios"],
+  band: ["team_bios"],
   bios: ["cast_bios", "team_bios"],
   director_note: ["director_note"],
   dramaturgical_note: ["dramaturgical_note"],
@@ -119,6 +120,7 @@ function normalizeModuleType(value: string) {
   if (normalized === "cast" || normalized === "cast_team" || normalized === "cast_team_list") return "cast_list";
   if (normalized === "creative_team_list") return "creative_team";
   if (normalized === "production_team_list") return "production_team";
+  if (normalized === "band_list" || normalized === "music_band") return "band";
   if (normalized === "director_notes") return "director_note";
   if (normalized === "program_note" || normalized === "contributor_notes") return "contributor_note";
   if (normalized === "acknowledgments") return "acknowledgements";
@@ -453,6 +455,7 @@ export async function createShow(formData: FormData) {
     "cast_list",
     "creative_team",
     "production_team",
+    "band",
     "bios",
     "director_note",
     "dramaturgical_note",

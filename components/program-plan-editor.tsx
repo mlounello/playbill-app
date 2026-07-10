@@ -67,6 +67,7 @@ const moduleTypeLabels: Record<string, string> = {
   cast_list: "Cast List",
   creative_team: "Creative Team",
   production_team: "Production Team",
+  band: "Band",
   bios: "Bio Collection",
   contributor_note: "Contributor Note",
   acts_scenes: "Acts / Scenes",
@@ -91,6 +92,7 @@ const moduleTypeDescriptions: Record<string, string> = {
   cast_list: "Printed cast list from people and roles.",
   creative_team: "Creative team list from people and roles.",
   production_team: "Production team list from people and roles.",
+  band: "Band list from people and roles.",
   bios: "Collected bios from requested submissions.",
   contributor_note: "A flexible note request. Title it Director's Note, Choreographer's Note, Playwright's Note, or anything else.",
   acts_scenes: "Uses the Acts & Songs content source.",
@@ -117,6 +119,7 @@ const addableModuleTypes = [
   "cast_list",
   "creative_team",
   "production_team",
+  "band",
   "acts_scenes",
   "songs",
   "department_info",
@@ -461,7 +464,7 @@ function ModuleSettings({
     );
   }
 
-  if (item.module_type === "creative_team" || item.module_type === "production_team") {
+  if (item.module_type === "creative_team" || item.module_type === "production_team" || item.module_type === "band") {
     return (
       <div className="module-settings-grid">
         <label className="checkbox-inline">

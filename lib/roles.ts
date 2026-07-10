@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
-export type RoleCategory = "cast" | "creative" | "production";
+export type RoleCategory = "cast" | "creative" | "production" | "band";
 export type RoleScope = "global" | "show_only";
 
 export type RoleTemplateRecord = {
@@ -43,6 +43,7 @@ function normalizeCategory(value: string): RoleCategory {
   const lowered = value.trim().toLowerCase();
   if (lowered === "cast") return "cast";
   if (lowered === "creative") return "creative";
+  if (lowered === "band" || lowered === "music_band") return "band";
   return "production";
 }
 

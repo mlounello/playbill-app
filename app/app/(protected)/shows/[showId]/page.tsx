@@ -1130,6 +1130,7 @@ export default async function ShowWorkspacePage({
                         <option value="cast">Cast</option>
                         <option value="creative">Creative Team</option>
                         <option value="production">Production</option>
+                        <option value="band">Band</option>
                       </select>
                     </label>
                     <label>
@@ -1198,7 +1199,7 @@ export default async function ShowWorkspacePage({
                       </label>
                       <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
                         <input type="checkbox" name="targetFields" value="team_type" />
-                        Category (cast/creative/production)
+                        Category (cast/creative/production/band)
                       </label>
                       <label style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
                         <input type="checkbox" name="targetFields" value="email" />

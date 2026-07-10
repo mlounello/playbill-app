@@ -6,7 +6,7 @@ type RoleRow = {
   id: string;
   person_name: string;
   role_name: string;
-  category: "cast" | "creative" | "production";
+  category: "cast" | "creative" | "production" | "band";
 };
 
 function moveItem<T>(items: T[], from: number, to: number) {
@@ -30,12 +30,13 @@ export function RoleListOrderEditor({
     () => ({
       cast: ordered.filter((item) => item.category === "cast"),
       creative: ordered.filter((item) => item.category === "creative"),
-      production: ordered.filter((item) => item.category === "production")
+      production: ordered.filter((item) => item.category === "production"),
+      band: ordered.filter((item) => item.category === "band")
     }),
     [ordered]
   );
 
-  const reorderWithinCategory = (category: "cast" | "creative" | "production", fromLocalIndex: number, toLocalIndex: number) => {
+  const reorderWithinCategory = (category: "cast" | "creative" | "production" | "band", fromLocalIndex: number, toLocalIndex: number) => {
     const group = ordered.filter((item) => item.category === category);
     const movedGroup = moveItem(group, fromLocalIndex, toLocalIndex);
     const queue = [...movedGroup];
@@ -43,7 +44,7 @@ export function RoleListOrderEditor({
     setOrdered(rebuilt);
   };
 
-  const renderCategory = (label: string, category: "cast" | "creative" | "production") => {
+  const renderCategory = (label: string, category: "cast" | "creative" | "production" | "band") => {
     const rows = byCategory[category];
     return (
       <div className="card stack-sm">
@@ -84,6 +85,7 @@ export function RoleListOrderEditor({
         {renderCategory("Cast Order", "cast")}
         {renderCategory("Creative Team Order", "creative")}
         {renderCategory("Production Team Order", "production")}
+        {renderCategory("Band Order", "band")}
       </div>
       <button type="submit">Save List Order</button>
     </form>

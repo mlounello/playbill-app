@@ -43,6 +43,7 @@ export default async function RolesLibraryPage({
                   <option value="cast">cast</option>
                   <option value="creative">creative</option>
                   <option value="production">production</option>
+                  <option value="band">band</option>
                 </select>
               </label>
             </div>
@@ -126,6 +127,7 @@ export default async function RolesLibraryPage({
                           <option value="cast">cast</option>
                           <option value="creative">creative</option>
                           <option value="production">production</option>
+                          <option value="band">band</option>
                         </select>
                       </label>
                     </div>

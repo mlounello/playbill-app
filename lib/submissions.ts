@@ -10,7 +10,7 @@ export const BIO_CHAR_LIMIT_DEFAULT = 375;
 export const SPECIAL_NOTE_WORD_LIMIT_DEFAULT = 400;
 export const NO_BIO_PLACEHOLDER = "<p><em>No biography provided.</em></p>";
 export type SubmissionType = "bio" | "note" | "director_note" | "dramaturgical_note" | "music_director_note";
-export type RoleCategory = "cast" | "creative" | "production";
+export type RoleCategory = "cast" | "creative" | "production" | "band";
 
 export function normalizeSubmissionType(value: string): SubmissionType {
   if (value === "note" || value === "notes" || value === "generic_note" || value === "production_note") {
@@ -146,7 +146,7 @@ function defaultSpecialNoteTemplates(): SpecialNoteTemplateOption[] {
 const manualPersonSchema = z.object({
   fullName: z.string().min(1),
   roleTitle: z.string().min(1),
-  roleCategory: z.enum(["cast", "creative", "production"]).default("production"),
+  roleCategory: z.enum(["cast", "creative", "production", "band"]).default("production"),
   email: z.string().email(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
@@ -182,7 +182,7 @@ export type ShowSubmissionPerson = {
   full_name: string;
   role_title: string;
   team_type: "cast" | "production";
-  role_category_display?: "cast" | "creative" | "production" | "mixed";
+  role_category_display?: "cast" | "creative" | "production" | "band" | "mixed";
   email: string;
   submission_type: SubmissionType;
   submission_label: string;
@@ -205,7 +205,7 @@ export type ShowSubmissionQueueItem = {
   full_name: string;
   role_title: string;
   team_type: "cast" | "production";
-  role_category_display?: "cast" | "creative" | "production" | "mixed";
+  role_category_display?: "cast" | "creative" | "production" | "band" | "mixed";
   email: string;
   submission_type: SubmissionType;
   submission_label: string;
@@ -307,12 +307,12 @@ function joinRoles(values: string[]) {
   return ordered.join(" & ");
 }
 
-function getRoleCategoryDisplay(categories: string[]): "cast" | "creative" | "production" | "mixed" {
+function getRoleCategoryDisplay(categories: string[]): "cast" | "creative" | "production" | "band" | "mixed" {
   const normalized = [...new Set(categories.map((value) => value.trim().toLowerCase()).filter(Boolean))];
   if (normalized.length === 0) return "production";
   if (normalized.length === 1) {
     const only = normalized[0];
-    if (only === "cast" || only === "creative" || only === "production") {
+    if (only === "cast" || only === "creative" || only === "production" || only === "band") {
       return only;
     }
     return "production";
@@ -586,7 +586,9 @@ function parseBulkPeople(text: string) {
         ? "cast"
         : roleCategoryRaw.toLowerCase() === "creative"
           ? "creative"
-          : "production";
+          : roleCategoryRaw.toLowerCase() === "band"
+            ? "band"
+            : "production";
     return manualPersonSchema.parse({
       fullName,
       roleTitle,
@@ -648,6 +650,7 @@ function normalizeRoleCategoryValue(value: string): RoleCategory {
   const lowered = value.trim().toLowerCase();
   if (lowered === "cast") return "cast";
   if (lowered === "creative") return "creative";
+  if (lowered === "band" || lowered === "music_band") return "band";
   return "production";
 }
 
@@ -1847,7 +1850,7 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
 
       if (field === "team_type") {
         const lowered = rawValue.toLowerCase();
-        if (lowered !== "cast" && lowered !== "creative" && lowered !== "production") {
+        if (lowered !== "cast" && lowered !== "creative" && lowered !== "production" && lowered !== "band") {
           invalid.push(line);
           continue;
         }
@@ -1869,7 +1872,7 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
         continue;
       }
 
-      const persistedPeopleValue = field === "team_type" && nextValue === "creative" ? "production" : nextValue;
+      const persistedPeopleValue = field === "team_type" && nextValue !== "cast" ? "production" : nextValue;
       peopleUpdate[field] = persistedPeopleValue;
       auditEntries.push({ field, beforeValue: currentValue, afterValue: nextValue });
 
@@ -1877,7 +1880,7 @@ export async function bulkEditPeopleField(showId: string, formData: FormData) {
         nextRoleName = nextValue;
       }
       if (field === "team_type") {
-        nextRoleCategory = nextValue === "cast" ? "cast" : nextValue === "creative" ? "creative" : "production";
+        nextRoleCategory = nextValue === "cast" ? "cast" : nextValue === "creative" ? "creative" : nextValue === "band" ? "band" : "production";
       }
     }
 
@@ -1980,8 +1983,8 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
   if (enableRoleTitle && !roleTitle) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Role Title is required when enabled.");
   }
-  if (enableTeamType && !["cast", "creative", "production"].includes(teamType)) {
-    withError(`/app/shows/${showId}?tab=people-roles`, "Category must be cast, creative, or production.");
+  if (enableTeamType && !["cast", "creative", "production", "band"].includes(teamType)) {
+    withError(`/app/shows/${showId}?tab=people-roles`, "Category must be cast, creative, production, or band.");
   }
   if (enableEmail && !z.string().email().safeParse(email).success) {
     withError(`/app/shows/${showId}?tab=people-roles`, "Email must be valid when enabled.");
@@ -2054,7 +2057,7 @@ export async function bulkEditSelectedPeople(showId: string, formData: FormData)
     if (enableTeamType) {
       await db
         .from("show_roles")
-        .update({ category: teamType === "cast" ? "cast" : teamType === "creative" ? "creative" : "production" })
+        .update({ category: teamType === "cast" ? "cast" : teamType === "creative" ? "creative" : teamType === "band" ? "band" : "production" })
         .eq("show_id", showId)
         .eq("person_id", person.id);
     }
@@ -2393,7 +2396,8 @@ export async function reorderRoleListOrder(showId: string, formData: FormData) {
   const categoryBuckets: Record<RoleCategory, string[]> = {
     cast: [],
     creative: [],
-    production: []
+    production: [],
+    band: []
   };
   for (const roleId of finalOrder) {
     const role = roleById.get(roleId);
@@ -2419,6 +2423,14 @@ export async function reorderRoleListOrder(showId: string, formData: FormData) {
   }
   for (let idx = 0; idx < categoryBuckets.production.length; idx += 1) {
     const roleId = categoryBuckets.production[idx];
+    await db
+      .from("show_roles")
+      .update({ bio_order: idx + 1 })
+      .eq("show_id", showId)
+      .eq("id", roleId);
+  }
+  for (let idx = 0; idx < categoryBuckets.band.length; idx += 1) {
+    const roleId = categoryBuckets.band[idx];
     await db
       .from("show_roles")
       .update({ bio_order: idx + 1 })

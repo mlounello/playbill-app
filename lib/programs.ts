@@ -852,6 +852,7 @@ function normalizeRoleCategory(value: string) {
   const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (normalized === "cast" || normalized === "cast_member" || normalized === "cast_list") return "cast";
   if (normalized === "creative" || normalized === "creative_team") return "creative";
+  if (normalized === "band" || normalized === "music_band") return "band";
   if (normalized === "production" || normalized === "production_team" || normalized === "crew" || normalized === "team") {
     return "production";
   }
@@ -863,6 +864,7 @@ function normalizeModuleType(value: string) {
   if (normalized === "cast" || normalized === "cast_team" || normalized === "cast_team_list") return "cast_list";
   if (normalized === "creative_team_list") return "creative_team";
   if (normalized === "production_team_list") return "production_team";
+  if (normalized === "band_list" || normalized === "music_band") return "band";
   if (normalized === "director_notes") return "director_note";
   if (normalized === "program_note" || normalized === "contributor_notes") return "contributor_note";
   if (normalized === "acknowledgments") return "acknowledgements";
@@ -1059,7 +1061,7 @@ function derivePeopleForBiosFromRoles(
 function buildRoleListRowsByCategory(
   people: PersonRecord[],
   roles: ShowRoleRecord[],
-  category: "cast" | "creative" | "production"
+  category: "cast" | "creative" | "production" | "band"
 ) {
   const personNameById = new Map(people.map((person) => [person.id, person.full_name]));
   const grouped = new Map<
@@ -1112,6 +1114,12 @@ function buildRoleListRowsByCategory(
 
   if (rowsFromRoles.length > 0) {
     return rowsFromRoles;
+  }
+
+  // Band is a new explicit category and has no reliable legacy equivalent in
+  // people.team_type, so never backfill it from generic production records.
+  if (category === "band") {
+    return [];
   }
 
   const creativeRolePattern =
@@ -1521,6 +1529,21 @@ async function renderModulePages(
       return emptyPlaceholder(
         title,
         "Production Team module is enabled, but no production records were found. Add people in People and Roles with category: production."
+      );
+    }
+    return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
+  }
+
+  if (normalizedType === "band") {
+    const body = buildCategoryRoleListHtml(
+      moduleTitle,
+      buildRoleListRowsByCategory(rosterPeople, showRoles, "band"),
+      showHeader
+    );
+    if (!richTextHasContent(body)) {
+      return emptyPlaceholder(
+        title,
+        "Band module is enabled, but no band records were found. Add people in People and Roles with category: band."
       );
     }
     return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
@@ -1963,7 +1986,8 @@ async function buildRenderablePagesFromModules(
     const isRoleListModule =
       normalizedModuleType === "cast_list" ||
       normalizedModuleType === "creative_team" ||
-      normalizedModuleType === "production_team";
+      normalizedModuleType === "production_team" ||
+      normalizedModuleType === "band";
     const roleListGroupingEnabled =
       module.settings.role_list_grouping_enabled === undefined
         ? true

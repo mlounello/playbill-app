@@ -6,7 +6,7 @@ type PersonRow = {
   id: string;
   full_name: string;
   role_title: string;
-  team_type: "cast" | "production" | "creative" | "mixed";
+  team_type: "cast" | "production" | "creative" | "band" | "mixed";
   email: string;
   role_count?: number;
   role_summary?: string;
@@ -24,7 +24,7 @@ type PersonRoleRow = {
   id: string;
   person_id: string;
   role_name: string;
-  category: "cast" | "creative" | "production";
+  category: "cast" | "creative" | "production" | "band";
   role_template_id: string | null;
 };
 
@@ -40,7 +40,7 @@ type RoleActionResult =
 type RoleTemplateOption = {
   id: string;
   name: string;
-  category: "cast" | "creative" | "production";
+  category: "cast" | "creative" | "production" | "band";
 };
 
 export function PeopleBulkEditor({
@@ -478,6 +478,7 @@ export function PeopleBulkEditor({
                   <option value="cast">cast</option>
                   <option value="creative">creative</option>
                   <option value="production">production</option>
+                  <option value="band">band</option>
                 </select>
               </div>
 
@@ -656,6 +657,7 @@ export function PeopleBulkEditor({
                               <option value="cast">cast</option>
                               <option value="creative">creative</option>
                               <option value="production">production</option>
+                              <option value="band">band</option>
                             </select>
                           </label>
                           <div className="row-wrap">
@@ -705,6 +707,7 @@ export function PeopleBulkEditor({
                     <option value="cast">cast</option>
                     <option value="creative">creative</option>
                     <option value="production">production</option>
+                    <option value="band">band</option>
                   </select>
                 </label>
                 <button type="submit" className="ghost-button" disabled={savingRoleIds.has("new-role")}>
