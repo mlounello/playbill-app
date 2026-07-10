@@ -36,6 +36,7 @@ type SongSingerOption = {
   id: string;
   full_name: string;
   role_title: string;
+  person_id: string;
 };
 
 type SongRow = {
@@ -43,6 +44,7 @@ type SongRow = {
   act: string;
   title: string;
   singerIds: string[];
+  singerRoleIds: string[];
   includeCompany: boolean;
   includeEnsemble: boolean;
 };
@@ -180,16 +182,22 @@ function normalizeSongRows(value: unknown): SongRow[] {
         : Array.isArray(row.singer_ids)
           ? row.singer_ids.map((id) => String(id)).filter(Boolean)
           : [];
+      const singerRoleIds = Array.isArray(row.singerRoleIds)
+        ? row.singerRoleIds.map((id) => String(id)).filter(Boolean)
+        : Array.isArray(row.singer_role_ids)
+          ? row.singer_role_ids.map((id) => String(id)).filter(Boolean)
+          : [];
       return {
         id: String(row.id ?? `song-${index}`),
         act: String(row.act ?? ""),
         title: String(row.title ?? ""),
         singerIds,
+        singerRoleIds,
         includeCompany: Boolean(row.includeCompany ?? row.include_company),
         includeEnsemble: Boolean(row.includeEnsemble ?? row.include_ensemble)
       };
     })
-    .filter((row) => row.title.trim() || row.act.trim() || row.singerIds.length > 0 || row.includeCompany || row.includeEnsemble);
+    .filter((row) => row.title.trim() || row.act.trim() || row.singerIds.length > 0 || row.singerRoleIds.length > 0 || row.includeCompany || row.includeEnsemble);
 }
 
 function SortableOrderItem({
@@ -353,6 +361,7 @@ function ModuleSettings({
           act: songs[songs.length - 1]?.act || "Act I",
           title: "",
           singerIds: [],
+          singerRoleIds: [],
           includeCompany: false,
           includeEnsemble: false
         }
@@ -400,22 +409,28 @@ function ModuleSettings({
                   </label>
                 </div>
                 <label>
-                  Characters / people who sing it
+                  Characters who sing it
                   <select
                     multiple
-                    value={song.singerIds}
+                    value={song.singerRoleIds.length > 0
+                      ? song.singerRoleIds
+                      : singerOptions.filter((option) => song.singerIds.includes(option.person_id)).map((option) => option.id)}
                     onChange={(event) =>
                       updateSong(song.id, {
-                        singerIds: Array.from(event.currentTarget.selectedOptions).map((option) => option.value)
+                        singerIds: [],
+                        singerRoleIds: Array.from(event.currentTarget.selectedOptions).map((option) => option.value)
                       })
                     }
                   >
-                    {singerOptions.map((person) => (
-                      <option key={`song-singer-${song.id}-${person.id}`} value={person.id}>
-                        {person.role_title ? `${person.role_title} - ${person.full_name}` : person.full_name}
+                    {singerOptions.map((role) => (
+                      <option key={`song-singer-${song.id}-${role.id}`} value={role.id}>
+                        {role.full_name ? `${role.role_title} - ${role.full_name}` : `${role.role_title} - Vacant`}
                       </option>
                     ))}
                   </select>
+                  {singerOptions.length === 0 ? (
+                    <span className="meta-text">Add cast roles in People and Roles, or sync them from Production Management.</span>
+                  ) : null}
                 </label>
                 <div className="row-wrap">
                   <label className="checkbox-inline">

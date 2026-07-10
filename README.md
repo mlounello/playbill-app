@@ -30,6 +30,8 @@ Canonical schema-scoped setup files:
 - `playbill_schema_app.sql`
 - `playbill_data_app.sql` (optional sample/import data, only if you intentionally want seeded content)
 
+`show_roles.person_id` is nullable by design. This lets Production Management create stable vacant role slots that structured songs can reference before casting; filling a role later preserves its id and song associations.
+
 Do **not** use these legacy public-schema files for new setup:
 
 - `db/schema.sql`

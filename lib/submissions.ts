@@ -2333,17 +2333,19 @@ export async function getShowRoleAssignments(showId: string) {
   }
 
   const personIds = [...new Set(roles.map((row) => String(row.person_id ?? "")).filter(Boolean))];
-  const { data: peopleRows } = await db
-    .from("people")
-    .select("id, full_name")
-    .eq("program_id", context.program_id)
-    .in("id", personIds);
+  const { data: peopleRows } = personIds.length
+    ? await db
+        .from("people")
+        .select("id, full_name")
+        .eq("program_id", context.program_id)
+        .in("id", personIds)
+    : { data: [] as Array<{ id: string; full_name: string }> };
   const personNameById = new Map((peopleRows ?? []).map((row) => [String(row.id), String(row.full_name ?? "")]));
 
   return roles.map((row) => ({
     id: String(row.id ?? ""),
     person_id: String(row.person_id ?? ""),
-    person_name: personNameById.get(String(row.person_id ?? "")) ?? "Unknown Person",
+    person_name: personNameById.get(String(row.person_id ?? "")) ?? (row.person_id ? "Unknown Person" : "Vacant"),
     role_name: String(row.role_name ?? ""),
     category: normalizeRoleCategoryValue(String(row.category ?? "production")),
     role_template_id: row.role_template_id ? String(row.role_template_id) : null,

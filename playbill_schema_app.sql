@@ -294,7 +294,7 @@ CREATE TABLE app_playbill.show_departments (
 CREATE TABLE app_playbill.show_roles (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     show_id uuid NOT NULL,
-    person_id uuid NOT NULL,
+    person_id uuid,
     role_name text NOT NULL,
     category text DEFAULT 'production'::text NOT NULL,
     billing_order integer,
@@ -940,7 +940,7 @@ ALTER TABLE ONLY app_playbill.show_departments
 --
 
 ALTER TABLE ONLY app_playbill.show_roles
-    ADD CONSTRAINT show_roles_person_id_fkey FOREIGN KEY (person_id) REFERENCES app_playbill.people(id) ON DELETE CASCADE;
+    ADD CONSTRAINT show_roles_person_id_fkey FOREIGN KEY (person_id) REFERENCES app_playbill.people(id) ON DELETE SET NULL;
 
 
 --

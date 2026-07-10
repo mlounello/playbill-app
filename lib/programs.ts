@@ -98,6 +98,7 @@ type SongRow = {
   act: string;
   title: string;
   singerIds: string[];
+  singerRoleIds: string[];
   includeCompany: boolean;
   includeEnsemble: boolean;
 };
@@ -941,23 +942,30 @@ function normalizeSongRows(value: unknown): SongRow[] {
         : Array.isArray(row.singer_ids)
           ? row.singer_ids.map((id) => String(id)).filter(Boolean)
           : [];
+      const singerRoleIds = Array.isArray(row.singerRoleIds)
+        ? row.singerRoleIds.map((id) => String(id)).filter(Boolean)
+        : Array.isArray(row.singer_role_ids)
+          ? row.singer_role_ids.map((id) => String(id)).filter(Boolean)
+          : [];
       return {
         act: String(row.act ?? "").trim(),
         title: String(row.title ?? "").trim(),
         singerIds,
+        singerRoleIds,
         includeCompany: Boolean(row.includeCompany ?? row.include_company),
         includeEnsemble: Boolean(row.includeEnsemble ?? row.include_ensemble)
       };
     })
-    .filter((row) => row.title || row.singerIds.length > 0 || row.includeCompany || row.includeEnsemble);
+    .filter((row) => row.title || row.singerIds.length > 0 || row.singerRoleIds.length > 0 || row.includeCompany || row.includeEnsemble);
 }
 
-function buildSongsListHtml(moduleTitle: string, songs: SongRow[], people: PersonRecord[]) {
+function buildSongsListHtml(moduleTitle: string, songs: SongRow[], people: PersonRecord[], showRoles: ShowRoleRecord[]) {
   if (songs.length === 0) {
     return "";
   }
 
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const rolesById = new Map(showRoles.map((role) => [role.id, role]));
   const grouped = new Map<string, Array<{ role: string; name: string }>>();
   const actOrder: string[] = [];
 
@@ -968,6 +976,9 @@ function buildSongsListHtml(moduleTitle: string, songs: SongRow[], people: Perso
       actOrder.push(actTitle);
     }
     const singers = [
+      ...song.singerRoleIds
+        .map((id) => rolesById.get(id)?.role_name.trim() ?? "")
+        .filter(Boolean),
       ...song.singerIds
         .map((id) => peopleById.get(id))
         .filter((person): person is PersonRecord => Boolean(person))
@@ -1607,7 +1618,7 @@ async function renderModulePages(
 
   if (normalizedType === "songs") {
     const songs = normalizeSongRows(module.settings.songs);
-    const body = buildSongsListHtml(moduleTitle, songs, rosterPeople);
+    const body = buildSongsListHtml(moduleTitle, songs, rosterPeople, showRoles);
     if (richTextHasContent(body)) {
       return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
     }

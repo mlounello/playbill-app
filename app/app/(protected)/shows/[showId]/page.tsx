@@ -399,10 +399,12 @@ export default async function ShowWorkspacePage({
     settings.songs.some((entry) => {
       const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
       const singerIds = Array.isArray(row.singerIds) ? row.singerIds : [];
+      const singerRoleIds = Array.isArray(row.singerRoleIds) ? row.singerRoleIds : [];
       return (
         String(row.title ?? "").trim() ||
         String(row.act ?? "").trim() ||
         singerIds.length > 0 ||
+        singerRoleIds.length > 0 ||
         Boolean(row.includeCompany ?? row.include_company) ||
         Boolean(row.includeEnsemble ?? row.include_ensemble)
       );
@@ -503,7 +505,7 @@ export default async function ShowWorkspacePage({
       ["director_note", "dramaturgical_note", "music_director_note"].includes(module.module_type)
     ) ||
     Boolean(currentDirectorNotePersonId || currentDramaturgNotePersonId || currentMusicDirectorNotePersonId);
-  const roleAssignments = activeTab === "people-roles" ? await getShowRoleAssignments(show.id) : [];
+  const roleAssignments = activeTab === "people-roles" || activeTab === "program-plan" ? await getShowRoleAssignments(show.id) : [];
   const roleLibrary =
     activeTab === "people-roles"
       ? await getRoleLibraryData(show.id)
@@ -848,11 +850,14 @@ export default async function ShowWorkspacePage({
                 paddingSimIds={paddingSimIds}
                 showId={show.id}
                 programSlug={show.program_slug}
-                singerOptions={people.map((person) => ({
-                  id: person.id,
-                  full_name: person.full_name,
-                  role_title: person.role_title
-                }))}
+                singerOptions={roleAssignments
+                  .filter((role) => role.category === "cast")
+                  .map((role) => ({
+                    id: role.id,
+                    person_id: role.person_id,
+                    full_name: role.person_id ? role.person_name : "",
+                    role_title: role.role_name
+                  }))}
               />
             </section>
           ) : null}

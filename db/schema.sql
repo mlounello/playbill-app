@@ -184,7 +184,7 @@ create table if not exists public.show_departments (
 create table if not exists public.show_roles (
   id uuid primary key default gen_random_uuid(),
   show_id uuid not null references public.shows (id) on delete cascade,
-  person_id uuid not null references public.people (id) on delete cascade,
+  person_id uuid references public.people (id) on delete set null,
   role_template_id uuid,
   role_name text not null,
   category text not null default 'production',

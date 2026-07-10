@@ -293,7 +293,7 @@ CREATE TABLE public.show_departments (
 CREATE TABLE public.show_roles (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     show_id uuid NOT NULL,
-    person_id uuid NOT NULL,
+    person_id uuid,
     role_name text NOT NULL,
     category text DEFAULT 'production'::text NOT NULL,
     billing_order integer,
@@ -930,7 +930,7 @@ ALTER TABLE ONLY public.show_departments
 --
 
 ALTER TABLE ONLY public.show_roles
-    ADD CONSTRAINT show_roles_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE CASCADE;
+    ADD CONSTRAINT show_roles_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE SET NULL;
 
 
 --
@@ -1280,4 +1280,3 @@ ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 --
 
 \unrestrict j82worMtAYhLCcqpl9WZylerdBctevXazA85w9jGrspgjVKtoL2e9vK1WolUPGl
-
