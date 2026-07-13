@@ -311,13 +311,17 @@ function filterToColumns(record: Record<string, unknown>, columns: Set<string>) 
 }
 
 function withError(path: string, message: string): never {
-  const qp = new URLSearchParams({ error: message });
-  redirect(`${path}?${qp.toString()}`);
+  const [pathname, existingQuery = ""] = path.split("?", 2);
+  const qp = new URLSearchParams(existingQuery);
+  qp.set("error", message);
+  redirect(`${pathname}?${qp.toString()}`);
 }
 
 function withSuccess(path: string, message: string): never {
-  const qp = new URLSearchParams({ success: message });
-  redirect(`${path}?${qp.toString()}`);
+  const [pathname, existingQuery = ""] = path.split("?", 2);
+  const qp = new URLSearchParams(existingQuery);
+  qp.set("success", message);
+  redirect(`${pathname}?${qp.toString()}`);
 }
 
 function buildProgramLayoutTokens(modules: Array<z.infer<typeof modulePayloadSchema>>) {
@@ -910,14 +914,6 @@ export async function updateShowSubmissionSettings(showId: string, formData: For
   const bioIntakeMode = z.enum(["playbill_standalone", "production_managed", "hybrid"]).parse(String(formData.get("bioIntakeMode") ?? "playbill_standalone"));
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
-  const showColumns = await getTableColumns(db, "shows");
-  if (!showColumns.has("bio_char_limit") || !showColumns.has("bio_intake_mode")) {
-    withError(
-      `/app/shows/${showId}?tab=settings`,
-      "Bio character limit settings need the Phase 11 database migration before they can be saved."
-    );
-  }
-
   const { error } = await db
     .from("shows")
     .update({
@@ -927,7 +923,10 @@ export async function updateShowSubmissionSettings(showId: string, formData: For
     })
     .eq("id", showId);
   if (error) {
-    withError(`/app/shows/${showId}?tab=settings`, error.message);
+    const migrationMessage = ["42703", "PGRST204"].includes(String(error.code ?? ""))
+      ? "Submission settings need the Phase 11 and Phase 16 database migrations before they can be saved."
+      : error.message;
+    withError(`/app/shows/${showId}?tab=settings`, migrationMessage);
   }
 
   redirect(`/app/shows/${showId}?tab=settings&success=${encodeURIComponent("Submission settings saved.")}`);
