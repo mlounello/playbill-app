@@ -322,12 +322,22 @@ async function getReminderRecipients(showId: string) {
     return [] as ReminderRecipient[];
   }
 
-  const { data: requests } = await db
+  let { data: requests, error: requestsError } = await db
     .from("submission_requests")
-    .select("id, show_role_id, due_date, status, request_type")
+    .select("id, show_role_id, due_date, status, request_type, submission_source")
     .in("show_role_id", roleIds);
+  if (requestsError) {
+    const legacy = await db
+      .from("submission_requests")
+      .select("id, show_role_id, due_date, status, request_type")
+      .in("show_role_id", roleIds);
+    requests = (legacy.data ?? []).map((row) => ({ ...row, submission_source: "playbill" }));
+    requestsError = legacy.error;
+  }
+  if (requestsError) return [] as ReminderRecipient[];
   const requestRows = (requests ?? []).filter((row) =>
-    ["bio", "note", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio"))
+    ["bio", "note", "director_note", "dramaturgical_note", "music_director_note"].includes(String(row.request_type ?? "bio")) &&
+    !(String(row.request_type ?? "bio") === "bio" && String(row.submission_source ?? "playbill") === "production_management")
   );
   if (requestRows.length === 0) {
     return [] as ReminderRecipient[];

@@ -217,6 +217,7 @@ export type ShowSubmissionQueueItem = {
   bio_char_count: number;
   bio_char_limit: number;
   bio_char_limit_override: number | null;
+  submission_source: "playbill" | "production_management";
 };
 
 export type ContributorTaskSummary = {
@@ -909,10 +910,19 @@ export async function getShowSubmissionQueue(showId: string) {
     return [] as ShowSubmissionQueueItem[];
   }
 
-  const { data: requests } = await db
+  let { data: requests, error: requestsError } = await db
     .from("submission_requests")
-    .select("id, show_role_id, request_type, label, status, constraints")
+    .select("id, show_role_id, request_type, label, status, constraints, submission_source")
     .in("show_role_id", roleIds);
+  if (requestsError) {
+    const legacy = await db
+      .from("submission_requests")
+      .select("id, show_role_id, request_type, label, status, constraints")
+      .in("show_role_id", roleIds);
+    requests = (legacy.data ?? []).map((row) => ({ ...row, submission_source: "playbill" }));
+    requestsError = legacy.error;
+  }
+  if (requestsError) return [] as ShowSubmissionQueueItem[];
   const requestIds = (requests ?? []).map((row) => String(row.id ?? "")).filter(Boolean);
   const { data: submissionRows } = requestIds.length
     ? await db
@@ -1000,7 +1010,11 @@ export async function getShowSubmissionQueue(showId: string) {
       submitted_at: person.submitted_at ? String(person.submitted_at) : null,
       bio_char_count: stripRichTextToPlain(taskBody).length,
       bio_char_limit: bioCharLimit,
-      bio_char_limit_override: bioLimitOverride
+      bio_char_limit_override: bioLimitOverride,
+      submission_source:
+        String(request.submission_source ?? person.submission_source ?? "playbill") === "production_management"
+          ? "production_management"
+          : "playbill"
     });
   }
 

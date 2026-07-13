@@ -29,6 +29,7 @@ export type ShowSummary = {
   admin_submission_notifications_enabled: boolean;
   admin_submission_notification_emails: string;
   bio_char_limit: number;
+  bio_intake_mode: "playbill_standalone" | "production_managed" | "hybrid";
   acts_and_songs: string;
   season_calendar: string;
   sponsorships: string;
@@ -549,6 +550,9 @@ export async function getShowsForDashboard() {
             : Boolean(show.admin_submission_notifications_enabled),
         admin_submission_notification_emails: String(show.admin_submission_notification_emails ?? ""),
         bio_char_limit: normalizeBioCharLimit((show as Record<string, unknown>).bio_char_limit),
+        bio_intake_mode: (["production_managed", "hybrid"].includes(String((show as Record<string, unknown>).bio_intake_mode))
+          ? String((show as Record<string, unknown>).bio_intake_mode)
+          : "playbill_standalone") as ShowSummary["bio_intake_mode"],
         acts_and_songs: String(program?.acts_songs ?? ""),
         season_calendar: String(program?.season_calendar ?? ""),
         sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
@@ -628,6 +632,9 @@ export async function getShowById(showId: string) {
           : Boolean(show.admin_submission_notifications_enabled),
       admin_submission_notification_emails: String(show.admin_submission_notification_emails ?? ""),
       bio_char_limit: normalizeBioCharLimit((show as Record<string, unknown>).bio_char_limit),
+      bio_intake_mode: (["production_managed", "hybrid"].includes(String((show as Record<string, unknown>).bio_intake_mode))
+        ? String((show as Record<string, unknown>).bio_intake_mode)
+        : "playbill_standalone") as ShowSummary["bio_intake_mode"],
       acts_and_songs: String(program?.acts_songs ?? ""),
       season_calendar: String(program?.season_calendar ?? ""),
       sponsorships: String((program as Record<string, unknown> | undefined)?.sponsorships ?? ""),
@@ -900,10 +907,11 @@ export async function updateShowSubmissionSettings(showId: string, formData: For
   }
 
   const bioCharLimit = normalizeBioCharLimit(String(formData.get("bioCharLimit") ?? BIO_CHAR_LIMIT_DEFAULT));
+  const bioIntakeMode = z.enum(["playbill_standalone", "production_managed", "hybrid"]).parse(String(formData.get("bioIntakeMode") ?? "playbill_standalone"));
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
   const showColumns = await getTableColumns(db, "shows");
-  if (!showColumns.has("bio_char_limit")) {
+  if (!showColumns.has("bio_char_limit") || !showColumns.has("bio_intake_mode")) {
     withError(
       `/app/shows/${showId}?tab=settings`,
       "Bio character limit settings need the Phase 11 database migration before they can be saved."
@@ -914,6 +922,7 @@ export async function updateShowSubmissionSettings(showId: string, formData: For
     .from("shows")
     .update({
       bio_char_limit: bioCharLimit,
+      bio_intake_mode: bioIntakeMode,
       updated_at: new Date().toISOString()
     })
     .eq("id", showId);

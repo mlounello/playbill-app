@@ -1395,6 +1395,7 @@ export default async function ShowWorkspacePage({
                             <th scope="col">Role</th>
                             <th scope="col">Category</th>
                             <th scope="col">Requirement</th>
+                            <th scope="col">Source</th>
                             <th scope="col">Status</th>
                             <th scope="col">Count</th>
                             <th scope="col">Next Step</th>
@@ -1417,6 +1418,7 @@ export default async function ShowWorkspacePage({
                                 <td>{task.role_title}</td>
                                 <td style={{ textTransform: "capitalize" }}>{task.role_category_display ?? task.team_type}</td>
                                 <td>{task.submission_label || getSubmissionTypeLabel(task.submission_type)}</td>
+                                <td>{task.submission_source === "production_management" ? "Production Management" : "Playbill"}</td>
                                 <td><span className="status-pill">{task.submission_status}</span></td>
                                 <td>
                                   {task.submission_type === "bio"
@@ -1428,9 +1430,11 @@ export default async function ShowWorkspacePage({
                                 <td>
                                   <div className="submission-actions">
                                     <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Review</Link>
-                                    <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true" data-no-overlay="true">
-                                      <button type="submit">Send Reminder</button>
-                                    </form>
+                                    {task.submission_source === "playbill" ? (
+                                      <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true" data-no-overlay="true">
+                                        <button type="submit">Send Reminder</button>
+                                      </form>
+                                    ) : null}
                                     <form action={approveAction} data-pending-label="Approving submission..." data-preserve-scroll="true">
                                       <button type="submit">Approve</button>
                                     </form>
@@ -1462,7 +1466,7 @@ export default async function ShowWorkspacePage({
                               <div className="submission-identity">
                                 <strong>{task.full_name}</strong> - {task.role_title}
                                 <div className="submission-meta">
-                                  {task.role_category_display ?? task.team_type} • {task.email}
+                                  {task.role_category_display ?? task.team_type} • {task.email} • Source: {task.submission_source === "production_management" ? "Production Management" : "Playbill"}
                                 </div>
                               </div>
                               <div className="submission-meta">
@@ -1477,9 +1481,11 @@ export default async function ShowWorkspacePage({
                             </div>
                             <div className="submission-actions">
                               <Link href={`/app/shows/${show.id}/submissions/${task.task_id}`}>Open Review</Link>
-                              <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true" data-no-overlay="true">
-                                <button type="submit">Send Reminder</button>
-                              </form>
+                              {task.submission_source === "playbill" ? (
+                                <form action={remindAction} data-pending-label="Sending reminder..." data-preserve-scroll="true" data-no-overlay="true">
+                                  <button type="submit">Send Reminder</button>
+                                </form>
+                              ) : null}
                               <form action={approveAction} data-pending-label="Approving submission..." data-preserve-scroll="true">
                                 <button type="submit">Approve</button>
                               </form>
@@ -1657,6 +1663,17 @@ export default async function ShowWorkspacePage({
                       required
                     />
                   </label>
+                  <label>
+                    Bio intake source
+                    <select name="bioIntakeMode" defaultValue={show.bio_intake_mode}>
+                      <option value="playbill_standalone">Playbill standalone</option>
+                      <option value="production_managed">Production Management</option>
+                      <option value="hybrid">Hybrid by person</option>
+                    </select>
+                  </label>
+                  <div className="meta-text">
+                    Production Management bios do not receive Playbill contributor reminders. Hybrid keeps the regular Playbill form available for people who are not linked.
+                  </div>
                   <div className="meta-text">
                     Current playbill limit: {show.bio_char_limit} characters. Existing playbills use 375 until changed.
                   </div>
