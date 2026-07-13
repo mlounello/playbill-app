@@ -58,6 +58,12 @@ export function normalizeAssetUrl(rawUrl: string | null | undefined) {
     const parts = storagePath.split("/").filter(Boolean);
     const bucket = parts.shift() ?? "";
     const objectPath = parts.join("/");
+    // Only Playbill-owned assets belong behind Playbill's authenticated proxy.
+    // Shared public assets (for example Production Management headshots) must
+    // retain their absolute URL because the proxy intentionally rejects other buckets.
+    if (bucket !== getProgramAssetBucketName()) {
+      return input;
+    }
     const proxyUrl = buildAssetProxyUrl(bucket, objectPath);
     return proxyUrl || input;
   } catch {
