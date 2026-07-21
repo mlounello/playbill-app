@@ -68,7 +68,7 @@ export async function POST(request: Request) {
 
     const { data: person } = await db
       .from("people")
-      .select("id, email, program_id")
+      .select("id, email, program_id, submission_status")
       .eq("id", personId)
       .eq("program_id", show.program_id)
       .maybeSingle();
@@ -76,9 +76,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Person not found." }, { status: 404 });
     }
 
-    if (!role || !["owner", "admin", "editor"].includes(role)) {
+    const isStaff = Boolean(role && ["owner", "admin", "editor"].includes(role));
+    if (!isStaff) {
       if (String(person.email ?? "").toLowerCase() !== user.email.toLowerCase()) {
         return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+      }
+      if (["approved", "locked"].includes(String(person.submission_status ?? ""))) {
+        return NextResponse.json({ ok: false, error: "This submission is read-only." }, { status: 403 });
+      }
+
+      const { data: roles } = await db
+        .from("show_roles")
+        .select("id")
+        .eq("show_id", showId)
+        .eq("person_id", personId);
+      const roleIds = (roles ?? []).map((item) => String(item.id)).filter(Boolean);
+      const { data: openBioRequest } = roleIds.length
+        ? await db
+            .from("submission_requests")
+            .select("id")
+            .in("show_role_id", roleIds)
+            .eq("request_type", "bio")
+            .not("status", "in", "(approved,locked)")
+            .limit(1)
+            .maybeSingle()
+        : { data: null };
+      if (!openBioRequest?.id) {
+        return NextResponse.json({ ok: false, error: "No editable bio task is assigned to this account." }, { status: 403 });
       }
     }
 

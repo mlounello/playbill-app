@@ -20,10 +20,10 @@ export default async function ContributorAccessPage({
   searchParams
 }: {
   params: Promise<{ showId: string; taskId: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; success?: string }>;
 }) {
   const { showId, taskId } = await params;
-  const { error } = await searchParams;
+  const { error, success } = await searchParams;
   const summary = await getContributorTaskLoginSummary(showId, taskId);
 
   if (!summary) {
@@ -53,16 +53,17 @@ export default async function ContributorAccessPage({
             Due: {formatDueDate(summary.due_date)}
           </div>
           <p className="section-note">
-            Click Continue and Playbill will generate a fresh one-time secure session for this submission.
+            Playbill will send a fresh one-time secure link to the email address assigned to this submission.
           </p>
         </section>
 
         {error ? <div className="card card-error">{decodeURIComponent(error)}</div> : null}
+        {success ? <div className="card card-success">{decodeURIComponent(success)}</div> : null}
 
         <form action={continueAction} method="post" className="card stack-sm">
-          <button type="submit">Continue</button>
+          <button type="submit">Email My One-Time Link</button>
           <p className="section-note">
-            This page does not sign you in automatically. The secure session is only created after you click Continue.
+            For your protection, this page cannot sign anyone in directly. The link is sent only to the assigned email.
           </p>
         </form>
 

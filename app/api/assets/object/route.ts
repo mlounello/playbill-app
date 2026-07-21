@@ -26,6 +26,13 @@ function parseAssetTarget(path: string): AssetTarget | null {
     return { kind: "program", programId: String(programMatch[1]) };
   }
 
+  // Early Playbill uploads used <program-id>/<type>/<file> before the
+  // "programs/" prefix was introduced.
+  const legacyProgramMatch = path.match(/^([0-9a-f-]+)\/[^/]+\/[^/]+$/i);
+  if (legacyProgramMatch) {
+    return { kind: "program", programId: String(legacyProgramMatch[1]) };
+  }
+
   const personMatch = path.match(/^shows\/([0-9a-f-]+)\/people\/([0-9a-f-]+)\/[^/]+$/i);
   if (personMatch) {
     return {
@@ -36,6 +43,18 @@ function parseAssetTarget(path: string): AssetTarget | null {
   }
 
   return null;
+}
+
+function storedValueReferencesPath(value: unknown, path: string) {
+  const serialized = typeof value === "string" ? value : JSON.stringify(value ?? null);
+  if (!serialized) return false;
+  const candidates = [path, encodeURIComponent(path)];
+  try {
+    candidates.push(decodeURIComponent(path));
+  } catch {
+    // The path need not be URI encoded.
+  }
+  return candidates.some((candidate) => Boolean(candidate) && serialized.includes(candidate));
 }
 
 export async function GET(request: Request) {
@@ -88,7 +107,17 @@ export async function GET(request: Request) {
         return NextResponse.json({ ok: false, error: "Asset owner not found." }, { status: 404 });
       }
 
-      allowPublic = Boolean(show.is_published);
+      const [{ data: program }, { data: modules }] = await Promise.all([
+        db
+          .from("programs")
+          .select("poster_image_url, actf_ad_image_url, production_photo_urls, custom_pages")
+          .eq("id", target.programId)
+          .maybeSingle(),
+        db.from("program_modules").select("settings").eq("show_id", String(show.id))
+      ]);
+      const referencedByPublishedProgram =
+        storedValueReferencesPath(program, path) || (modules ?? []).some((module) => storedValueReferencesPath(module.settings, path));
+      allowPublic = Boolean(show.is_published) && referencedByPublishedProgram;
       allowAuthenticated = isPrivileged;
     } else {
       const { data: show } = await db
@@ -102,7 +131,7 @@ export async function GET(request: Request) {
 
       const { data: person } = await db
         .from("people")
-        .select("id, email, program_id")
+        .select("id, email, program_id, headshot_url")
         .eq("id", target.personId)
         .eq("program_id", String(show.program_id))
         .maybeSingle();
@@ -110,7 +139,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ ok: false, error: "Person not found." }, { status: 404 });
       }
 
-      allowPublic = Boolean(show.is_published);
+      allowPublic = Boolean(show.is_published) && storedValueReferencesPath(person.headshot_url, path);
       allowAuthenticated =
         isPrivileged || (Boolean(currentEmail) && String(person.email ?? "").trim().toLowerCase() === currentEmail);
     }

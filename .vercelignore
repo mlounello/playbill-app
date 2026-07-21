@@ -1,0 +1,5 @@
+# Database exports and migrations are operational artifacts, not application
+# runtime inputs. Keep roster data and schema history out of deployment bundles.
+playbill_data*.sql
+playbill_schema*.sql
+db/

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildExportPageMap, generateExportBinary, toPageMapCsv } from "@/lib/export-runtime";
 import { getProgramBySlug } from "@/lib/programs";
-import { APP_SCHEMA, getSupabaseReadClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,9 @@ export async function GET(
     return NextResponse.json({ error: "invalid_export_type" }, { status: 400 });
   }
 
-  const supabase = getSupabaseReadClient();
+  // This is a server-only route. Raw tables stay private; publication is the
+  // explicit public-access boundary.
+  const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
   const { data: show } = await db
     .from("shows")

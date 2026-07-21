@@ -4,24 +4,6 @@ import { getCurrentUserWithProfile, resolvePlatformRoleForUser } from "@/lib/aut
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseAuthCookieName } from "@/lib/supabase";
 
-function safeJsonParse(value: string) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
-function tryDecodeBase64Url(value: string) {
-  try {
-    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
-    return Buffer.from(padded, "base64").toString("utf-8");
-  } catch {
-    return null;
-  }
-}
-
 export async function GET() {
   try {
     const current = await getCurrentUserWithProfile();
@@ -41,18 +23,10 @@ export async function GET() {
     const cookieNames = allCookies.map((cookie) => cookie.name);
     const authCookies = allCookies.filter((cookie) => cookie.name.includes("auth-token"));
     const authCookieDiagnostics = authCookies.map((cookie) => {
-      const raw = cookie.value;
-      const rawPreview = raw.slice(0, 24);
-      const rawJson = safeJsonParse(raw);
-      const decoded = tryDecodeBase64Url(raw);
-      const decodedJson = decoded ? safeJsonParse(decoded) : null;
       return {
         name: cookie.name,
-        length: raw.length,
-        preview: rawPreview,
-        parsed_raw_json: Boolean(rawJson),
-        decoded_length: decoded?.length ?? 0,
-        parsed_decoded_json: Boolean(decodedJson)
+        present: cookie.value.length > 0,
+        length: cookie.value.length
       };
     });
     const callbackHitCookie = cookieStore.get("playbill_callback_hit")?.value ?? null;

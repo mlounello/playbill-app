@@ -403,7 +403,7 @@ function getRequestLabel(value: string) {
   return "bio";
 }
 
-function getContributorTaskPath(item: ReminderRecipient) {
+function getContributorTaskPath(item: Pick<ReminderRecipient, "showId" | "requestId">) {
   return `/contribute/shows/${item.showId}/tasks/${item.requestId}`;
 }
 
@@ -640,7 +640,14 @@ async function buildContributorReminderEmail(params: {
   const subject = `${params.context.title}: submission reminder`;
   const daysRemainingPhrase = getDaysRemainingPhrase(openItems);
   const optionalBioNote = getOptionalBioNote(openItems);
-  const accessUrl = getContributorAccessUrl(targetItem);
+  const accessUrl = await generateDirectMagicLink(params.group.email, getContributorTaskPath(targetItem));
+  if (!accessUrl) {
+    return {
+      ok: false,
+      reason: "secure_link_generation_failed",
+      openItems
+    };
+  }
   const freshLinkUrl = getContributorLinkRefreshUrl(targetItem);
   const textParts = [
     `Hello ${params.group.name},`,
@@ -648,7 +655,7 @@ async function buildContributorReminderEmail(params: {
     buildOutstandingItemsText(openItems),
     `You have ${daysRemainingPhrase} to complete your outstanding submission items for inclusion in the program.`,
     optionalBioNote,
-    `Please click here to submit your materials. You will be asked to click Continue before your secure session opens.`,
+    `Please click the one-time secure link below to submit your materials.`,
     accessUrl,
     "Need a new link? Click here to have a fresh secure access link sent to you.",
     freshLinkUrl,
@@ -663,7 +670,7 @@ async function buildContributorReminderEmail(params: {
     buildOutstandingItemsHtml(openItems) +
     `<p>You have ${daysRemainingPhrase} to complete your outstanding submission items for inclusion in the program.</p>` +
     (optionalBioNote ? `<p>${optionalBioNote}</p>` : "") +
-    `<p><a href="${accessUrl}">Please click here to submit your materials.</a> You will be asked to click Continue before your secure session opens.</p>` +
+    `<p><a href="${accessUrl}">Open your Playbill submission with a one-time secure link.</a></p>` +
     `<p><a href="${freshLinkUrl}">Need a new link? Click here to have a fresh secure access link sent to you.</a></p>` +
     `<p>Thanks,<br/>Mike</p>`;
 
@@ -706,7 +713,6 @@ async function wasSecureLinkRequestedRecently(personId: string, minutes: number)
     .eq("entity_id", personId)
     .eq("field", "secure_link_requested")
     .eq("reason", "sent")
-    .filter("after_value->>mode", "eq", "self_service_refresh")
     .gte("changed_at", since)
     .limit(1);
   return (data ?? []).length > 0;
@@ -1201,7 +1207,10 @@ export async function sendContributorSubmissionConfirmation(params: {
   showId: string;
   taskId: string;
 }) {
-  const link = getContributorAccessUrl({ showId: params.showId, requestId: params.taskId });
+  const taskPath = getContributorTaskPath({ showId: params.showId, requestId: params.taskId });
+  const link =
+    (await generateDirectMagicLink(params.email, taskPath)) ||
+    getContributorLinkRefreshUrl({ showId: params.showId, requestId: params.taskId });
 
   const subject = `${params.showTitle}: ${params.submissionLabel} received`;
   const text = `Thank you ${params.name} for submitting your ${params.submissionLabel} for ${params.showTitle}. You can view or edit your submission until it is accepted by clicking the link here: ${link}\n\nThanks,`;
@@ -1226,6 +1235,14 @@ export async function getContributorContinueRedirect(showId: string, taskId: str
     };
   }
 
+  const neutralMessage = "If this task is still available, a one-time secure link has been sent to the assigned email address.";
+  if (await wasSecureLinkRequestedRecently(accessContext.recipient.personId, 2)) {
+    return {
+      ok: true as const,
+      redirectTo: `${responsePath}?${new URLSearchParams({ success: neutralMessage }).toString()}`
+    };
+  }
+
   const directLink = await generateDirectMagicLink(accessContext.recipientGroup.email, accessContext.destinationPath);
   if (!directLink) {
     await writeReminderAudit({
@@ -1236,43 +1253,50 @@ export async function getContributorContinueRedirect(showId: string, taskId: str
         request_ids: accessContext.openItems.map((item) => item.requestId),
         requested_task_id: taskId,
         sent: false,
-        mode: "intermediate_access_continue"
+        mode: "legacy_access_bridge"
       }
     });
     return {
       ok: false as const,
       redirectTo: `${responsePath}?${new URLSearchParams({
-        error: "We could not open a secure session right now. You can request a fresh email link below."
+        error: "We could not send a secure link right now. You can request a fresh email link below."
       }).toString()}`
     };
   }
 
-  const generatedUrl = new URL(directLink);
-  console.info("[contributor/access]", "continue_redirect", {
-    requested_task_id: taskId,
-    destination_path: accessContext.destinationPath,
-    pathname: generatedUrl.pathname,
-    has_token_hash: generatedUrl.searchParams.has("token_hash"),
-    type: generatedUrl.searchParams.get("type"),
-    next: generatedUrl.searchParams.get("next")
+  const context = await getShowContext(showId);
+  const showTitle = context?.title || "your production";
+  const result = await sendEmailWithThrottle({
+    to: accessContext.recipientGroup.email,
+    subject: `${showTitle}: your one-time secure Playbill link`,
+    text:
+      `Hello ${accessContext.recipientGroup.name},\n\n` +
+      `Open your Playbill submission using this one-time secure link:\n\n${directLink}\n\n` +
+      `If you did not request this link, you can ignore this email.\n\nThanks,\nMike\n`,
+    html:
+      `<p>Hello ${accessContext.recipientGroup.name},</p>` +
+      `<p><a href="${directLink}">Open your Playbill submission using this one-time secure link.</a></p>` +
+      `<p>If you did not request this link, you can ignore this email.</p>` +
+      `<p>Thanks,<br/>Mike</p>`
   });
 
   await writeReminderAudit({
     personId: accessContext.recipient.personId,
     field: "secure_link_requested",
-    reason: "intermediate_access_redirected",
+    reason: result.sent ? "sent" : result.reason,
     payload: {
       request_ids: accessContext.openItems.map((item) => item.requestId),
       requested_task_id: taskId,
-      destination_path: accessContext.destinationPath,
-      sent: true,
-      mode: "intermediate_access_continue"
+      sent: result.sent,
+      mode: "legacy_access_bridge"
     }
   });
 
   return {
-    ok: true as const,
-    redirectTo: directLink
+    ok: result.sent,
+    redirectTo: result.sent
+      ? `${responsePath}?${new URLSearchParams({ success: neutralMessage }).toString()}`
+      : `${responsePath}?${new URLSearchParams({ error: "We could not send a secure link right now. Please try again shortly." }).toString()}`
   };
 }
 
@@ -1337,18 +1361,32 @@ export async function requestContributorFreshLink(showId: string, taskId: string
   const context = await getShowContext(showId);
   const showTitle = context?.title || "your production";
   const subject = `${showTitle}: your fresh secure link`;
-  const accessUrl = accessContext.accessUrl;
+  const accessUrl = await generateDirectMagicLink(accessContext.recipientGroup.email, accessContext.destinationPath);
+  if (!accessUrl) {
+    await writeReminderAudit({
+      personId: accessContext.recipient.personId,
+      field: "secure_link_requested",
+      reason: "secure_link_generation_failed",
+      payload: {
+        request_ids: accessContext.openItems.map((item) => item.requestId),
+        sent: false,
+        mode: "self_service_refresh",
+        email_matched: true
+      }
+    });
+    withSuccess(responsePath, neutralMessage);
+  }
   const text =
     `Hello ${accessContext.recipientGroup.name},\n\n` +
-    `Here is your fresh secure link to continue your Playbill submission:\n\n` +
+    `Here is your one-time secure link to continue your Playbill submission:\n\n` +
     `${accessUrl}\n\n` +
-    `You will be asked to click Continue before your secure session opens.\n\n` +
+    `This link is intended only for you and expires automatically.\n\n` +
     `Thanks,\nMike\n`;
   const html =
     `<p>Hello ${accessContext.recipientGroup.name},</p>` +
-    `<p>Here is your fresh secure link to continue your Playbill submission:</p>` +
+    `<p>Here is your one-time secure link to continue your Playbill submission:</p>` +
     `<p><a href="${accessUrl}">${accessUrl}</a></p>` +
-    `<p>You will be asked to click Continue before your secure session opens.</p>` +
+    `<p>This link is intended only for you and expires automatically.</p>` +
     `<p>Thanks,<br/>Mike</p>`;
 
   const result = await sendEmailWithThrottle({

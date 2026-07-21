@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PublicDigitalProgramViewer, PublicProgramViewer } from "@/components/public-program-viewer";
 import { getProgramBySlug } from "@/lib/programs";
-import { APP_SCHEMA, getSupabaseReadClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
 export default async function PublicProgramPage({
   params,
@@ -13,7 +13,9 @@ export default async function PublicProgramPage({
 }) {
   const { showSlug } = await params;
   const { view } = await searchParams;
-  const supabase = getSupabaseReadClient();
+  // Public pages render on the server. Keep the raw Playbill tables private and
+  // use the server credential only after enforcing the published-show gate.
+  const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
 
   let { data: show } = await db

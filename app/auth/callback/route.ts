@@ -107,11 +107,18 @@ function readNextFromCookie(cookieStore: Awaited<ReturnType<typeof cookies>>) {
 
   try {
     const decoded = decodeURIComponent(pbNext);
-    if (!decoded.startsWith("/")) return null;
-    return decoded;
+    return sanitizeNextPath(decoded);
   } catch {
     return null;
   }
+}
+
+function sanitizeNextPath(value: string | null | undefined) {
+  const next = String(value ?? "").trim();
+  if (!next.startsWith("/") || next.startsWith("//")) {
+    return null;
+  }
+  return next;
 }
 
 export async function GET(request: Request) {
@@ -121,7 +128,7 @@ export async function GET(request: Request) {
   const type = searchParams.get("type");
 
   const cookieStore = await cookies();
-  const nextFromQuery = searchParams.get("next");
+  const nextFromQuery = sanitizeNextPath(searchParams.get("next"));
   const nextFromCookie = readNextFromCookie(cookieStore);
   const next = nextFromQuery || nextFromCookie || "/app/shows";
 
@@ -129,7 +136,7 @@ export async function GET(request: Request) {
     has_code: Boolean(code),
     has_token_hash: Boolean(tokenHash),
     type: type ?? null,
-    next
+    destination_kind: next.startsWith("/contribute/") ? "contributor_task" : next.startsWith("/app/") ? "staff_app" : "other"
   });
 
   const { supabase, applyPendingCookies } = await createRouteSupabase(origin);
@@ -151,8 +158,7 @@ export async function GET(request: Request) {
       ok: !authError,
       error: authError,
       has_session: Boolean(session),
-      user_id: user?.id ?? null,
-      email: user?.email ?? null
+      has_user: Boolean(user?.id)
     });
   } else if (tokenHash && type) {
     try {
@@ -175,8 +181,7 @@ export async function GET(request: Request) {
       ok: !authError,
       error: authError,
       has_session: Boolean(session),
-      user_id: user?.id ?? null,
-      email: user?.email ?? null
+      has_user: Boolean(user?.id)
     });
   } else {
     logCallback("missing_callback_params", {
@@ -198,8 +203,7 @@ export async function GET(request: Request) {
           }
 
           logCallback("oauth_not_authorized", {
-            user_id: user.id,
-            email: user.email
+            has_user: true
           });
 
           const unauthorizedRedirect = new URL("/login?error=Your+account+is+not+authorized+for+staff+access.", origin);

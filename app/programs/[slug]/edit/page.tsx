@@ -1,20 +1,22 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { requireRole } from "@/lib/auth";
 import { getProgramBySlug } from "@/lib/programs";
-import { APP_SCHEMA, getSupabaseReadClient } from "@/lib/supabase";
+import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
 export default async function LegacyEditProgramPage({
   params
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  await requireRole(["owner", "admin", "editor"]);
   const { slug } = await params;
   const program = await getProgramBySlug(slug);
   if (!program) {
     notFound();
   }
 
-  const supabase = getSupabaseReadClient();
+  const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
   const { data: showRow } = await db
     .from("shows")
