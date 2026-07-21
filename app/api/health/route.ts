@@ -1,7 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { getCurrentUserWithProfile } from "@/lib/auth";
-import { APP_SCHEMA, getMissingSupabaseEnvVars } from "@/lib/supabase";
+import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient } from "@/lib/supabase";
 
 function isStaffRole(role: string | null | undefined) {
   return role === "owner" || role === "admin" || role === "editor";
@@ -26,6 +25,7 @@ export async function GET() {
     env: {
       NEXT_PUBLIC_SUPABASE_URL: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
       NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+      SUPABASE_SECRET_KEY: Boolean(process.env.SUPABASE_SECRET_KEY),
       SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
       NEXT_PUBLIC_SITE_URL: Boolean(process.env.NEXT_PUBLIC_SITE_URL),
       RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
@@ -47,10 +47,7 @@ export async function GET() {
   }
 
   try {
-    const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-      auth: { persistSession: false },
-      db: { schema: APP_SCHEMA }
-    });
+    const client = getSupabaseWriteClient();
     const db = client.schema(APP_SCHEMA);
 
     const [programsCheck, showsCheck, peopleCheck] = await Promise.all([

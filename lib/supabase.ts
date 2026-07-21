@@ -31,12 +31,13 @@ export function getSupabaseAuthCookieName(url: string) {
 }
 
 export function getMissingSupabaseEnvVars() {
-  const required = [
-    "NEXT_PUBLIC_SUPABASE_URL",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY"
-  ];
-  return required.filter((name) => !process.env[name]);
+  const missing: string[] = [];
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) missing.push("NEXT_PUBLIC_SUPABASE_URL");
+  if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) missing.push("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  if (!process.env.SUPABASE_SECRET_KEY && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    missing.push("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY");
+  }
+  return missing;
 }
 
 function requireEnv(name: string) {
@@ -47,8 +48,16 @@ function requireEnv(name: string) {
   return value;
 }
 
+export function getSupabaseAdminKey() {
+  const key = process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!key) {
+    throw new Error("Missing environment variable: SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY");
+  }
+  return key;
+}
+
 export function getSupabaseWriteClient() {
-  return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+  return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), getSupabaseAdminKey(), {
     auth: { persistSession: false },
     db: { schema: APP_SCHEMA }
   });
@@ -62,7 +71,7 @@ export function getSupabaseReadClient() {
 }
 
 export function getSupabaseWriteClientRaw() {
-  return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+  return createClient(requireEnv("NEXT_PUBLIC_SUPABASE_URL"), getSupabaseAdminKey(), {
     auth: { persistSession: false }
   });
 }
