@@ -148,7 +148,22 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const { data, error } = await admin.storage.from(bucket).download(path);
+    let download = await admin.storage.from(bucket).download(path);
+
+    // The initial storage migration copied some early Playbill objects from
+    // "programs/<program-id>/..." into the legacy root-level
+    // "<program-id>/..." layout. Keep the database reference as the public
+    // authorization source, but fall back to the migrated physical path when
+    // the canonical object is absent.
+    if ((!download.data || download.error) && target.kind === "program" && path.startsWith("programs/")) {
+      const legacyPath = path.slice("programs/".length);
+      const legacyTarget = parseAssetTarget(legacyPath);
+      if (legacyTarget?.kind === "program" && legacyTarget.programId === target.programId) {
+        download = await admin.storage.from(bucket).download(legacyPath);
+      }
+    }
+
+    const { data, error } = download;
     if (error || !data) {
       return NextResponse.json({ ok: false, error: error?.message || "Asset not found." }, { status: 404 });
     }
