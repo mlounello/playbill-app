@@ -1,8 +1,30 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PublicDigitalProgramViewer, PublicProgramViewer } from "@/components/public-program-viewer";
-import { getProgramBySlug } from "@/lib/programs";
+import {
+  PublicDigitalProgramViewer,
+  PublicProgramViewer,
+  type PublicProgramPage
+} from "@/components/public-program-viewer";
+import { getProgramBySlug, type ProgramPage } from "@/lib/programs";
 import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
+
+function toPublicProgramPages(pages: ProgramPage[]): PublicProgramPage[] {
+  return pages.map((page) => {
+    if (page.type !== "bios") {
+      return page;
+    }
+
+    return {
+      ...page,
+      people: page.people.map((person) => ({
+        full_name: person.full_name,
+        role_title: person.role_title,
+        bio: person.bio,
+        headshot_url: person.headshot_url
+      }))
+    };
+  });
+}
 
 export default async function PublicProgramPage({
   params,
@@ -53,6 +75,7 @@ export default async function PublicProgramPage({
   }
 
   const flipView = view === "flip";
+  const publicPages = toPublicProgramPages(program.paddedPages);
 
   return (
     <main className="public-playbill-main">
@@ -69,10 +92,10 @@ export default async function PublicProgramPage({
                 Print PDF
               </a>
             </div>
-            <PublicProgramViewer pages={program.paddedPages} showSlug={canonicalShowSlug} programSlug={program.slug} />
+            <PublicProgramViewer pages={publicPages} showSlug={canonicalShowSlug} programSlug={program.slug} />
           </>
         ) : (
-          <PublicDigitalProgramViewer pages={program.paddedPages} title={program.title} showSlug={canonicalShowSlug} />
+          <PublicDigitalProgramViewer pages={publicPages} title={program.title} showSlug={canonicalShowSlug} />
         )}
       </div>
     </main>

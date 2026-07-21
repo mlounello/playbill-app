@@ -4,7 +4,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { sanitizeRichText } from "@/lib/rich-text";
 import type { ProgramPage } from "@/lib/programs";
 
-function PublicRenderPage({ page }: { page: ProgramPage }) {
+type ProgramBioPage = Extract<ProgramPage, { type: "bios" }>;
+
+export type PublicProgramPerson = Pick<
+  ProgramBioPage["people"][number],
+  "full_name" | "role_title" | "bio" | "headshot_url"
+>;
+
+export type PublicProgramPage =
+  | Exclude<ProgramPage, { type: "bios" }>
+  | (Omit<ProgramBioPage, "people"> & { people: PublicProgramPerson[] });
+
+function PublicRenderPage({ page }: { page: PublicProgramPage }) {
   if (page.type === "poster") {
     return (
       <article className="booklet-page poster-page">
@@ -78,8 +89,8 @@ function PublicRenderPage({ page }: { page: ProgramPage }) {
       <article className="booklet-page">
         <h2 className="section-title playbill-title">{page.title}</h2>
         <div className="bios-list">
-          {page.people.map((person) => (
-            <section key={person.id} className="bio-row">
+          {page.people.map((person, index) => (
+            <section key={`${person.full_name}-${person.role_title}-${index}`} className="bio-row">
               {page.showHeadshots !== false && person.headshot_url ? (
                 <img src={person.headshot_url} alt={person.full_name} className="headshot" />
               ) : null}
@@ -110,7 +121,7 @@ export function PublicDigitalProgramViewer({
   title,
   showSlug
 }: {
-  pages: ProgramPage[];
+  pages: PublicProgramPage[];
   title: string;
   showSlug: string;
 }) {
@@ -164,7 +175,7 @@ export function PublicProgramViewer({
   showSlug,
   programSlug
 }: {
-  pages: ProgramPage[];
+  pages: PublicProgramPage[];
   showSlug: string;
   programSlug: string;
 }) {
@@ -175,8 +186,8 @@ export function PublicProgramViewer({
   const steps = useMemo(() => {
     const items: Array<{
       kind: "single" | "spread";
-      left: ProgramPage;
-      right: ProgramPage | null;
+      left: PublicProgramPage;
+      right: PublicProgramPage | null;
       startPage: number;
       endPage: number;
     }> = [];
