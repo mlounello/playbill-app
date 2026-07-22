@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test:phase6-contract": "node --test scripts/phase6-production-management-contract.test.mjs",
     "start": "next start",
     "lint": "next lint"
   },
