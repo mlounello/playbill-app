@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { tryAutoSyncAppUsers } from "@/lib/app-user-sync";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { APP_ID, APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 
@@ -151,7 +150,6 @@ export async function ensureUserProfileIdentity(
       updatePayload.platform_role = "contributor";
     }
     await db.from("user_profiles").update(updatePayload).eq("user_id", userId);
-    await tryAutoSyncAppUsers("profile-email-updated");
     return { user_id: String(existing.user_id), email: normalizedEmail };
   }
 
@@ -170,7 +168,6 @@ export async function ensureUserProfileIdentity(
       relinkPayload.platform_role = "contributor";
     }
     await db.from("user_profiles").update(relinkPayload).eq("user_id", previousUserId);
-    await tryAutoSyncAppUsers(previousUserId === userId ? "profile-email-updated" : "profile-relinked-by-email");
     return { user_id: userId, email: normalizedEmail };
   }
 
@@ -188,7 +185,6 @@ export async function ensureUserProfileIdentity(
     return { user_id: userId, email: normalizedEmail };
   }
 
-  await tryAutoSyncAppUsers("profile-created");
   return { user_id: String(inserted.user_id), email: String(inserted.email ?? normalizedEmail) };
 }
 
