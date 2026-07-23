@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "test:phase6-contract": "node --test scripts/phase6-production-management-contract.test.mjs",
+    "test:phase6c-submissions": "node --test scripts/phase6c-submission-dedupe.test.mjs",
     "start": "next start",
     "lint": "next lint"
   },

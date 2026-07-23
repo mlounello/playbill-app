@@ -795,13 +795,16 @@ export async function getShowSubmissionPeople(showId: string) {
   }
   const roleIds = [...personIdByRoleId.keys()].filter(Boolean);
   const { data: requestRows } = roleIds.length
-    ? await db
+      ? await db
         .from("submission_requests")
-        .select("show_role_id, request_type, status, constraints")
+        .select("id, show_role_id, request_type, status, constraints, created_at")
         .in("show_role_id", roleIds)
     : { data: [] as Array<Record<string, unknown>> };
   const requestedTypesByPersonId = new Map<string, Set<SubmissionType>>();
-  const requestStatusesByPersonId = new Map<string, ShowSubmissionPerson["submission_status"][]>();
+  const latestRequestByPersonAndType = new Map<
+    string,
+    { createdAt: string; status: ShowSubmissionPerson["submission_status"] }
+  >();
   const bioLimitByPersonId = new Map<string, number>();
   for (const request of requestRows ?? []) {
     const personId = personIdByRoleId.get(String(request.show_role_id ?? ""));
@@ -816,9 +819,15 @@ export async function getShowSubmissionPeople(showId: string) {
         bioLimitByPersonId.set(personId, normalizeBioCharLimit(requestLimit));
       }
     }
-    const statuses = requestStatusesByPersonId.get(personId) ?? [];
-    statuses.push(normalizeSubmissionStatus(String(request.status ?? "pending")));
-    requestStatusesByPersonId.set(personId, statuses);
+    const requestKey = `${personId}|${requestType}`;
+    const createdAt = String(request.created_at ?? "");
+    const currentRequest = latestRequestByPersonAndType.get(requestKey);
+    if (!currentRequest || createdAt >= currentRequest.createdAt) {
+      latestRequestByPersonAndType.set(requestKey, {
+        createdAt,
+        status: normalizeSubmissionStatus(String(request.status ?? "pending"))
+      });
+    }
   }
 
   return (peopleRows ?? []).map((person) => {
@@ -839,7 +848,9 @@ export async function getShowSubmissionPeople(showId: string) {
     const bioCharLimit = bioLimitOverride ?? bioLimitByPersonId.get(personId) ?? context.bio_char_limit;
     const requestBio = requestedTypes.has("bio");
     const requestNotes = [...requestedTypes].some((type) => type !== "bio");
-    const requestStatuses = requestStatusesByPersonId.get(personId) ?? [];
+    const requestStatuses = [...latestRequestByPersonAndType.entries()]
+      .filter(([key]) => key.startsWith(`${personId}|`))
+      .map(([, request]) => request.status);
     const aggregateStatus = requestStatuses.includes("returned")
       ? "returned"
       : requestStatuses.includes("submitted")
@@ -912,12 +923,12 @@ export async function getShowSubmissionQueue(showId: string) {
 
   let { data: requests, error: requestsError } = await db
     .from("submission_requests")
-    .select("id, show_role_id, request_type, label, status, constraints, submission_source")
+    .select("id, show_role_id, request_type, label, status, constraints, submission_source, created_at")
     .in("show_role_id", roleIds);
   if (requestsError) {
     const legacy = await db
       .from("submission_requests")
-      .select("id, show_role_id, request_type, label, status, constraints")
+      .select("id, show_role_id, request_type, label, status, constraints, created_at")
       .in("show_role_id", roleIds);
     requests = (legacy.data ?? []).map((row) => ({ ...row, submission_source: "playbill" }));
     requestsError = legacy.error;
@@ -953,7 +964,10 @@ export async function getShowSubmissionQueue(showId: string) {
   const seenTaskTypes = new Set<string>();
   const items: ShowSubmissionQueueItem[] = [];
 
-  for (const request of requests ?? []) {
+  const newestRequestsFirst = [...(requests ?? [])].sort((left, right) =>
+    String(right.created_at ?? "").localeCompare(String(left.created_at ?? ""))
+  );
+  for (const request of newestRequestsFirst) {
     const requestType = normalizeSubmissionType(String(request.request_type ?? "bio"));
     if (!supportedTypes.has(requestType)) {
       continue;
@@ -968,7 +982,9 @@ export async function getShowSubmissionQueue(showId: string) {
     }
     const moduleId = getConstraintString(request.constraints, "module_id");
     const requestLabel = getSubmissionLabel(requestType, String(request.label ?? "") || getConstraintString(request.constraints, "module_title"));
-    const dedupeKey = `${personId}|${requestType}|${moduleId || String(request.id ?? "")}`;
+    const dedupeKey = requestType === "bio"
+      ? `${personId}|bio`
+      : `${personId}|${requestType}|${moduleId || String(request.id ?? "")}`;
     if (seenTaskTypes.has(dedupeKey)) {
       continue;
     }
