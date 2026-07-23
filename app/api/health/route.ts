@@ -31,7 +31,10 @@ export async function GET() {
       RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
       REMINDER_FROM_EMAIL: Boolean(process.env.REMINDER_FROM_EMAIL),
       DISABLE_OUTBOUND_EMAIL: /^(1|true|yes|on)$/i.test(String(process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim()),
-      CRON_SECRET: Boolean(process.env.CRON_SECRET)
+      CRON_SECRET: Boolean(process.env.CRON_SECRET),
+      PM_TO_PLAYBILL_INTEGRATION_SECRET: Boolean(process.env.PM_TO_PLAYBILL_INTEGRATION_SECRET),
+      PLAYBILL_TO_PM_INTEGRATION_SECRET: Boolean(process.env.PLAYBILL_TO_PM_INTEGRATION_SECRET),
+      PRODUCTION_MANAGEMENT_OUTBOX_URL: Boolean(process.env.PRODUCTION_MANAGEMENT_OUTBOX_URL)
     }
   };
 
