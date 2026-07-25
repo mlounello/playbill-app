@@ -1,21 +1,33 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export function HomeLanding() {
   return (
-    <main>
+    <>
       <div className="container page-shell">
-        <section className="banner">
-          <h1>Playbill Builder</h1>
-          <p className="section-note">
-            Build polished theatre programs from cast bios, director&apos;s notes, photos, and credits. Publish online and print beautifully.
-          </p>
-          <div className="top-actions">
-            <Link className="button-link" href="/app/shows/new">
-              Create a New Show
-            </Link>
-            <Link className="tab-chip" href="/app/shows">
-              Open Admin Workspace
-            </Link>
+        <section className="banner home-hero">
+          <div className="home-hero-copy">
+            <h1>Build Your Next Playbill</h1>
+            <p className="section-note">
+              Build polished theatre programs from cast bios, director&apos;s notes, photos, and credits. Publish online and print beautifully.
+            </p>
+            <div className="top-actions">
+              <Link className="button-link" href="/app/shows/new">
+                Create a New Show
+              </Link>
+              <Link className="tab-chip" href="/app/shows">
+                Open Admin Workspace
+              </Link>
+            </div>
+          </div>
+          <div className="home-hero-mark" aria-hidden="true">
+            <Image
+              src="/brand/playbill-app-square.png"
+              alt=""
+              width={1200}
+              height={1200}
+              priority
+            />
           </div>
         </section>
 
@@ -28,6 +40,6 @@ export function HomeLanding() {
           </ul>
         </section>
       </div>
-    </main>
+    </>
   );
 }

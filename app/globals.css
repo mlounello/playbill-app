@@ -74,11 +74,16 @@ main {
 }
 
 .site-brand {
-  font-family: var(--font-title);
-  color: var(--accent);
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
   text-decoration: none;
-  font-size: 1.05rem;
-  letter-spacing: 0.02em;
+}
+
+.site-brand-logo {
+  display: block;
+  width: clamp(10.5rem, 18vw, 13.5rem);
+  height: auto;
 }
 
 .site-nav {
@@ -145,6 +150,39 @@ h2 {
   padding: 1.3rem;
   display: grid;
   gap: 0.8rem;
+}
+
+.home-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.7fr);
+  align-items: center;
+  gap: clamp(1rem, 4vw, 3.5rem);
+  overflow: hidden;
+  padding: clamp(1.35rem, 4vw, 3rem);
+  background:
+    radial-gradient(circle at 86% 10%, rgba(255, 208, 66, 0.26), transparent 42%),
+    linear-gradient(135deg, #fffdf7, #f2faf6);
+}
+
+.home-hero-copy {
+  display: grid;
+  gap: 0.85rem;
+  justify-items: start;
+}
+
+.home-hero-copy h1 {
+  margin-bottom: 0;
+}
+
+.home-hero-mark {
+  display: grid;
+  place-items: center;
+}
+
+.home-hero-mark img {
+  display: block;
+  width: min(25rem, 100%);
+  height: auto;
+  filter: drop-shadow(0 18px 22px rgba(15, 76, 63, 0.16));
 }
 
 .card {
@@ -2755,6 +2793,23 @@ body.density-compact .admin-surface textarea {
 }
 
 @media (max-width: 900px) {
+  .site-header-inner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .site-brand-logo {
+    width: 12rem;
+  }
+
+  .home-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .home-hero-mark {
+    display: none;
+  }
+
   .workspace-grid {
     grid-template-columns: 1fr;
   }

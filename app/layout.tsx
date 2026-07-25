@@ -6,8 +6,27 @@ import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Playbill Builder",
-  description: "Create printable and online theatre programs."
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://playbillapp.mlounello.com"),
+  title: "Playbill App",
+  applicationName: "Playbill App",
+  description: "Create polished printable and online theatre programs.",
+  icons: {
+    icon: [{ url: "/brand/playbill-app-icon.png", type: "image/png" }],
+    shortcut: "/brand/playbill-app-icon.png",
+    apple: "/brand/playbill-app-icon.png"
+  },
+  openGraph: {
+    title: "Playbill App",
+    description: "Create polished printable and online theatre programs.",
+    images: [
+      {
+        url: "/brand/playbill-app-square.png",
+        width: 1200,
+        height: 1200,
+        alt: "Playbill App"
+      }
+    ]
+  }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

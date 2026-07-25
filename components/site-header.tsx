@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { getCurrentUserWithProfile } from "@/lib/auth";
 
@@ -29,8 +30,15 @@ export async function SiteHeader() {
   return (
     <header className="site-header hide-print">
       <div className="site-header-inner">
-        <Link href="/" className="site-brand">
-          Playbill Platform
+        <Link href="/" className="site-brand" aria-label="Playbill App home">
+          <Image
+            className="site-brand-logo"
+            src="/brand/playbill-app-horizontal.png"
+            alt="Playbill App"
+            width={1600}
+            height={414}
+            priority
+          />
         </Link>
         <nav className="site-nav" aria-label="Primary">
           {publicNavItems.map((item) => (
