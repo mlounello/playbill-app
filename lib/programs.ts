@@ -1064,37 +1064,16 @@ function buildRoleListRowsByCategory(
   category: "cast" | "creative" | "production" | "band"
 ) {
   const personNameById = new Map(people.map((person) => [person.id, person.full_name]));
-  const grouped = new Map<
-    string,
-    { personId: string; name: string; roles: string[]; billingOrder: number | null; bioOrder: number | null }
-  >();
-
-  for (const role of roles) {
-    if (normalizeRoleCategory(role.category) !== category) {
-      continue;
-    }
-    const personName = personNameById.get(role.person_id);
-    if (!personName) {
-      continue;
-    }
-    const existing = grouped.get(role.person_id) ?? {
-      personId: role.person_id,
-      name: personName,
-      roles: [],
+  const rowsFromRoles = roles
+    .filter((role) => normalizeRoleCategory(role.category) === category)
+    .map((role) => ({
+      id: role.id,
+      role: role.role_name,
+      name: personNameById.get(role.person_id) ?? "",
       billingOrder: role.billing_order ?? null,
       bioOrder: role.bio_order ?? null
-    };
-    existing.roles.push(role.role_name);
-    if (existing.billingOrder === null && role.billing_order !== null) {
-      existing.billingOrder = role.billing_order;
-    }
-    if (existing.bioOrder === null && role.bio_order !== null) {
-      existing.bioOrder = role.bio_order;
-    }
-    grouped.set(role.person_id, existing);
-  }
-
-  const rowsFromRoles = [...grouped.values()]
+    }))
+    .filter((row) => Boolean(row.name))
     .sort((a, b) => {
       if (category === "cast") {
         const aOrder = a.billingOrder ?? Number.MAX_SAFE_INTEGER;
@@ -1105,10 +1084,13 @@ function buildRoleListRowsByCategory(
         const bOrder = b.bioOrder ?? Number.MAX_SAFE_INTEGER;
         if (aOrder !== bOrder) return aOrder - bOrder;
       }
-      return a.name.localeCompare(b.name);
+      const roleComparison = a.role.localeCompare(b.role);
+      if (roleComparison !== 0) return roleComparison;
+      const nameComparison = a.name.localeCompare(b.name);
+      return nameComparison !== 0 ? nameComparison : a.id.localeCompare(b.id);
     })
     .map((row) => ({
-      role: joinRoles(row.roles),
+      role: row.role,
       name: row.name
     }));
 

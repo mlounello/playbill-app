@@ -769,16 +769,22 @@ export async function getShowSubmissionPeople(showId: string) {
 
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
-  const { data: peopleRows } = await db
-    .from("people")
-    .select("*")
-    .eq("program_id", context.program_id)
-    .order("team_type", { ascending: true })
-    .order("full_name", { ascending: true });
   const { data: roleRows } = await db
     .from("show_roles")
     .select("id, person_id, role_name, category, billing_order")
     .eq("show_id", showId);
+  const assignedPersonIds = [...new Set(
+    (roleRows ?? []).map((role) => String(role.person_id ?? "")).filter(Boolean)
+  )];
+  const { data: peopleRows } = assignedPersonIds.length
+    ? await db
+        .from("people")
+        .select("*")
+        .eq("program_id", context.program_id)
+        .in("id", assignedPersonIds)
+        .order("team_type", { ascending: true })
+        .order("full_name", { ascending: true })
+    : { data: [] as Array<Record<string, unknown>> };
   const rolesByPersonId = new Map<string, Array<{ role_name: string; category: string; billing_order: number | null }>>();
   const personIdByRoleId = new Map<string, string>();
   for (const role of roleRows ?? []) {
@@ -1259,7 +1265,20 @@ async function syncPersonRequestRequirements(params: {
           .eq("id", keep.id);
       }
       for (const duplicate of existing.slice(1)) {
-        await db.from("submission_requests").delete().eq("id", duplicate.id);
+        const { error: moveSubmissionError } = await db
+          .from("submissions")
+          .update({ request_id: keep.id })
+          .eq("request_id", duplicate.id);
+        if (moveSubmissionError) {
+          throw new Error(moveSubmissionError.message);
+        }
+        const { error: deleteDuplicateError } = await db
+          .from("submission_requests")
+          .delete()
+          .eq("id", duplicate.id);
+        if (deleteDuplicateError) {
+          throw new Error(deleteDuplicateError.message);
+        }
         removed += 1;
       }
       return;
@@ -3146,19 +3165,6 @@ export async function resyncShowSubmissionRequests(showId: string) {
 
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
-  const showRolesColumns = await getTableColumns(db, "show_roles");
-
-  const { data: peopleRows } = await db
-    .from("people")
-    .select("id, role_title, team_type, submission_type, bio_char_limit_override")
-    .eq("program_id", context.program_id);
-  const people = (peopleRows ?? []).map((row) => ({
-    id: String(row.id),
-    role_title: String(row.role_title ?? ""),
-    team_type: String(row.team_type ?? "") === "cast" ? "cast" : "production",
-    submission_type: String(row.submission_type ?? "bio"),
-    bio_char_limit_override: normalizeOptionalBioCharLimit((row as Record<string, unknown>).bio_char_limit_override)
-  }));
 
   const { data: roleRows } = await db
     .from("show_roles")
@@ -3170,44 +3176,27 @@ export async function resyncShowSubmissionRequests(showId: string) {
     category: normalizeRoleCategoryValue(String(row.category ?? "production")),
     billing_order: row.billing_order === null ? null : Number(row.billing_order ?? null)
   }));
+  const assignedPersonIds = [...new Set(roles.map((role) => role.person_id).filter(Boolean))];
+  const { data: peopleRows } = assignedPersonIds.length
+    ? await db
+        .from("people")
+        .select("id, role_title, team_type, submission_type, bio_char_limit_override")
+        .eq("program_id", context.program_id)
+        .in("id", assignedPersonIds)
+    : { data: [] as Array<Record<string, unknown>> };
+  const people = (peopleRows ?? []).map((row) => ({
+    id: String(row.id),
+    role_title: String(row.role_title ?? ""),
+    team_type: String(row.team_type ?? "") === "cast" ? "cast" : "production",
+    submission_type: String(row.submission_type ?? "bio"),
+    bio_char_limit_override: normalizeOptionalBioCharLimit((row as Record<string, unknown>).bio_char_limit_override)
+  }));
   const rolesByPerson = new Map<string, Array<{ id: string; category: RoleCategory; billing_order: number | null }>>();
   for (const role of roles) {
+    if (!role.person_id) continue;
     const list = rolesByPerson.get(role.person_id) ?? [];
     list.push(role);
     rolesByPerson.set(role.person_id, list);
-  }
-
-  let nextCastBillingOrder =
-    Math.max(
-      0,
-      ...roles
-        .filter((role) => role.category === "cast")
-        .map((role) => Number(role.billing_order ?? 0))
-    ) + 1;
-  let createdRoles = 0;
-  for (const person of people) {
-    if ((rolesByPerson.get(person.id) ?? []).length > 0) continue;
-    const inferredCategory = person.team_type === "cast" ? "cast" : inferRoleCategoryFromRole(person.role_title);
-    const roleInsert = filterToColumns(
-      {
-        show_id: showId,
-        person_id: person.id,
-        role_name: person.role_title || "Production Team",
-        category: inferredCategory,
-        role_template_id: null,
-        billing_order: inferredCategory === "cast" ? nextCastBillingOrder++ : null,
-        bio_order: null
-      },
-      showRolesColumns
-    );
-    const { data: inserted } = await db.from("show_roles").insert(roleInsert).select("id").maybeSingle();
-    if (inserted?.id) {
-      const createdRole = { id: String(inserted.id), category: inferredCategory as RoleCategory, billing_order: null };
-      const list = rolesByPerson.get(person.id) ?? [];
-      list.push(createdRole);
-      rolesByPerson.set(person.id, list);
-      createdRoles += 1;
-    }
   }
 
   const roleIds = [...new Set(Array.from(rolesByPerson.values()).flat().map((role) => role.id))];
@@ -3261,7 +3250,20 @@ export async function resyncShowSubmissionRequests(showId: string) {
 
     const keep = personBioRequests[0];
     for (const duplicate of personBioRequests.slice(1)) {
-      await db.from("submission_requests").delete().eq("id", duplicate.id);
+      const { error: moveSubmissionError } = await db
+        .from("submissions")
+        .update({ request_id: keep.id })
+        .eq("request_id", duplicate.id);
+      if (moveSubmissionError) {
+        throw new Error(moveSubmissionError.message);
+      }
+      const { error: deleteDuplicateError } = await db
+        .from("submission_requests")
+        .delete()
+        .eq("id", duplicate.id);
+      if (deleteDuplicateError) {
+        throw new Error(deleteDuplicateError.message);
+      }
       removedDuplicateBioRequests += 1;
     }
     if (keep && keep.id && requestsByRoleId.get(primaryRoleId)?.every((req) => req.id !== keep.id)) {
@@ -3299,7 +3301,7 @@ export async function resyncShowSubmissionRequests(showId: string) {
 
   redirect(
     `/app/shows/${showId}?tab=people-roles&success=${encodeURIComponent(
-      `Submission requests resynced. Added ${createdRoles} roles, created ${createdBioRequests} bio requests, removed ${removedDuplicateBioRequests} duplicate bios, removed ${removedOrphanNoteRequests} stale note requests.`
+      `Submission requests resynced for ${people.length} people already assigned to this show. Created ${createdBioRequests} bio requests, removed ${removedDuplicateBioRequests} duplicate bios, and removed ${removedOrphanNoteRequests} stale note requests.`
     )}`
   );
 }
