@@ -3,15 +3,17 @@ import { notFound } from "next/navigation";
 import { FlashToast } from "@/components/flash-toast";
 import { HeadshotUploadField } from "@/components/headshot-upload-field";
 import { RichTextField } from "@/components/rich-text-field";
+import { RestoreBioHistoryForm } from "@/components/restore-bio-history-form";
 import {
   NO_BIO_PLACEHOLDER,
   SPECIAL_NOTE_WORD_LIMIT_DEFAULT,
   adminSaveSubmission,
+  adminRestoreBioFromHistory,
   countWordsFromRichText,
   getShowSubmissionByPerson,
   getSubmissionTypeLabel
 } from "@/lib/submissions";
-import { richTextHasContent } from "@/lib/rich-text";
+import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
 
 function formatAuditValue(value: unknown) {
   if (value === null || value === undefined) {
@@ -86,10 +88,10 @@ export default async function ShowSubmissionReviewPage({
   searchParams
 }: {
   params: Promise<{ showId: string; personId: string }>;
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; restored?: string }>;
 }) {
   const { showId, personId } = await params;
-  const { error, saved } = await searchParams;
+  const { error, saved, restored } = await searchParams;
   const review = await getShowSubmissionByPerson(showId, personId);
 
   if (!review) {
@@ -97,12 +99,13 @@ export default async function ShowSubmissionReviewPage({
   }
 
   const saveAction = adminSaveSubmission.bind(null, showId, personId);
+  const restoreAction = adminRestoreBioFromHistory.bind(null, showId, personId);
   const submissionLabel = review.person.submission_label || getSubmissionTypeLabel(review.person.submission_type);
   const isBioTask = review.person.submission_type === "bio";
   const noteWordCount = countWordsFromRichText(review.person.bio);
   const hasNoBio =
     isBioTask &&
-    (review.person.bio.trim() === NO_BIO_PLACEHOLDER ||
+    (review.person.no_bio || review.person.bio.trim() === NO_BIO_PLACEHOLDER ||
       (!richTextHasContent(review.person.bio) && ["submitted", "approved", "locked"].includes(review.person.submission_status)));
 
   return (
@@ -127,10 +130,11 @@ export default async function ShowSubmissionReviewPage({
         </section>
 
         <FlashToast message={error} tone="error" />
-        <FlashToast message={saved ? "Review update saved." : undefined} tone="success" />
+        <FlashToast message={restored ? "Bio restored from history. No bio requested has been cleared." : saved ? "Review update saved." : undefined} tone="success" />
 
         <form action={saveAction} className="card stack-md">
           <RichTextField
+            key={`${review.person.bio}:${review.person.no_bio}`}
             name="bio"
             label={`${submissionLabel} (admin editable)`}
             required={false}
@@ -182,6 +186,12 @@ export default async function ShowSubmissionReviewPage({
 
         <section className="card stack-sm">
           <strong>Recent History</strong>
+          {isBioTask ? (
+            <p className="section-note">Expand a bio version to read the complete text and restore it. Restoring records a new history entry and clears "no bio requested". Status and headshot stay the same.</p>
+          ) : null}
+          {isBioTask && review.person.submission_status === "locked" ? (
+            <p className="section-note">This submission is locked. History is available to read; restoring is disabled.</p>
+          ) : null}
           {review.history.length === 0 ? (
             <div>No audit records yet.</div>
           ) : (
@@ -203,6 +213,27 @@ export default async function ShowSubmissionReviewPage({
                     <div>
                       <strong>After:</strong> {formatAuditValue(entry.after_value)}
                     </div>
+                    {isBioTask && entry.field === "bio" ? (["before", "after"] as const).map((version) => {
+                      const value = version === "before" ? entry.before_value : entry.after_value;
+                      if (typeof value !== "string" || !richTextHasContent(value) || value.trim() === NO_BIO_PLACEHOLDER) return null;
+                      const unchanged = value === review.person.bio && !review.person.no_bio;
+                      return (
+                        <details key={version} className="stack-sm">
+                          <summary>View full {version === "before" ? "previous" : "saved"} bio</summary>
+                          <div className="rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(value) }} />
+                          {unchanged ? <p className="meta-text">This is the current bio.</p> : review.person.submission_status !== "locked" ? (
+                            <RestoreBioHistoryForm
+                              action={restoreAction}
+                              auditId={entry.id}
+                              version={version}
+                              expectedBio={review.person.bio}
+                              expectedStatus={review.person.submission_status}
+                              expectedNoBio={review.person.no_bio}
+                            />
+                          ) : null}
+                        </details>
+                      );
+                    }) : null}
                     {textDiff ? (
                       <div>
                         <strong>Text change:</strong> <code>{textDiff.before} {"=>"} {textDiff.after}</code>

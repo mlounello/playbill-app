@@ -4139,6 +4139,62 @@ export async function adminSaveSubmission(showId: string, personId: string, form
   redirect(`/app/shows/${showId}/submissions/${personId}?saved=1`);
 }
 
+export async function adminRestoreBioFromHistory(showId: string, personId: string, formData: FormData) {
+  "use server";
+
+  await requireRole(["owner", "admin", "editor"]);
+  const path = `/app/shows/${showId}/submissions/${personId}`;
+  const auditId = z.string().uuid().safeParse(formData.get("auditId"));
+  const version = formData.get("version");
+  if (!auditId.success || (version !== "before" && version !== "after")) {
+    withError(path, "Choose a bio version from history to restore.");
+  }
+
+  const current = await getShowSubmissionByPerson(showId, personId);
+  if (!current || current.person.submission_type !== "bio") {
+    withError(path, "Bio submission request not found.");
+  }
+  if (current.person.submission_status === "locked") {
+    withError(path, "This submission is locked. A historical bio cannot replace locked content.");
+  }
+  if (
+    formData.get("expectedBio") !== current.person.bio ||
+    formData.get("expectedStatus") !== current.person.submission_status ||
+    formData.get("expectedNoBio") !== String(current.person.no_bio)
+  ) {
+    withError(path, "This bio changed since you opened the page. Review the latest version before restoring.");
+  }
+
+  const db = getSupabaseWriteClient().schema(APP_SCHEMA);
+  const { data: entry, error } = await db.from("audit_log")
+    .select("before_value, after_value, changed_at")
+    .eq("id", auditId.data)
+    .eq("entity", "people")
+    .eq("entity_id", current.person.id)
+    .eq("field", "bio")
+    .maybeSingle();
+  if (error || !entry) {
+    withError(path, "That bio history entry could not be loaded. Refresh and try again.");
+  }
+  const historicalBio = version === "before" ? entry.before_value : entry.after_value;
+  if (typeof historicalBio !== "string" || !stripRichTextToPlain(sanitizeRichText(historicalBio)).trim() || historicalBio.trim() === NO_BIO_PLACEHOLDER) {
+    withError(path, "This history version does not contain a bio to restore.");
+  }
+  const result = await updateSubmissionCore({
+    showId,
+    requestId: current.task_id,
+    personId: current.person.id,
+    submissionType: "bio",
+    bio: historicalBio,
+    headshotUrl: current.person.headshot_url,
+    status: current.person.submission_status,
+    skipBio: false,
+    reason: `Restored ${version} bio from audit ${auditId.data} (${entry.changed_at})`
+  });
+  if (!result.ok) withError(path, result.message);
+  redirect(`${path}?restored=1`);
+}
+
 export async function adminReturnSubmission(showId: string, personId: string, formData: FormData) {
   "use server";
 
