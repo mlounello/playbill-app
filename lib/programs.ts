@@ -39,6 +39,8 @@ type PersonRecord = {
   headshot_url: string;
   email: string;
   submission_status: string;
+  submission_source?: string;
+  production_management_person_id?: string;
 };
 
 type CustomPageRecord = {
@@ -998,6 +1000,16 @@ function buildSongsListHtml(moduleTitle: string, songs: SongRow[], people: Perso
   return actOrder
     .map((actTitle) => buildCategoryRoleListHtml(actTitle, grouped.get(actTitle) ?? [], true))
     .join("");
+}
+
+function filterProgramPeopleByRoles(people: PersonRecord[], roles: ShowRoleRecord[]) {
+  const assignedPersonIds = new Set(roles.map((role) => role.person_id).filter(Boolean));
+  return people.filter((person) => {
+    const fromProductionManagement = person.submission_source === "production_management" ||
+      Boolean(person.production_management_person_id);
+    // Imported bio records survive removal for history, but no longer belong in the program.
+    return !fromProductionManagement || assignedPersonIds.has(person.id);
+  });
 }
 
 function derivePeopleForBiosFromRoles(
@@ -2412,7 +2424,7 @@ export async function getProgramBySlug(
       throw new Error(peopleError.message);
     }
 
-    const normalizedPeople = (people ?? []).map((person) => ({
+    let normalizedPeople = (people ?? []).map((person) => ({
       id: String(person.id),
       full_name: String(person.full_name ?? ""),
       role_title: String(person.role_title ?? ""),
@@ -2420,7 +2432,9 @@ export async function getProgramBySlug(
       team_type: person.team_type === "cast" ? "cast" : "production",
       headshot_url: normalizeAssetUrl(String(person.headshot_url ?? "")),
       email: String(person.email ?? ""),
-      submission_status: String(person.submission_status ?? "pending")
+      submission_status: String(person.submission_status ?? "pending"),
+      submission_source: String(person.submission_source ?? "playbill"),
+      production_management_person_id: String(person.production_management_person_id ?? "")
     })) as PersonRecord[];
 
     let castPeople = normalizedPeople
@@ -2472,10 +2486,11 @@ export async function getProgramBySlug(
 
     if (show?.id) {
       try {
-        const { data: roleRows } = await db
+        const { data: roleRows, error: roleError } = await db
           .from("show_roles")
           .select("id, person_id, role_name, category, billing_order, bio_order")
           .eq("show_id", String(show.id));
+        if (roleError) throw new Error(roleError.message);
         showRoleAssignments = (roleRows ?? []).map((row) => ({
           id: String(row.id ?? ""),
           person_id: String(row.person_id ?? ""),
@@ -2484,11 +2499,10 @@ export async function getProgramBySlug(
           billing_order: row.billing_order === null ? null : Number(row.billing_order ?? null),
           bio_order: row.bio_order === null ? null : Number(row.bio_order ?? null)
         }));
-        if (showRoleAssignments.length > 0) {
-          const derived = derivePeopleForBiosFromRoles(normalizedPeople, showRoleAssignments);
-          castPeople = derived.castPeople;
-          productionPeople = derived.productionPeople;
-        }
+        normalizedPeople = filterProgramPeopleByRoles(normalizedPeople, showRoleAssignments);
+        const derived = derivePeopleForBiosFromRoles(normalizedPeople, showRoleAssignments);
+        castPeople = derived.castPeople;
+        productionPeople = derived.productionPeople;
       } catch {
         // keep legacy people-role data if show_roles table is unavailable
       }
