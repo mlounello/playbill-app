@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { z } from "zod";
 import { buildDepartmentInfoHtml } from "@/lib/departments";
 import { sendAdminSubmissionNotification, sendContributorSubmissionConfirmation } from "@/lib/reminders";
@@ -8,6 +9,7 @@ import { BIO_CHAR_LIMIT_DEFAULT, normalizeBioCharLimit } from "@/lib/submissions
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
 import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
+import { normalizeSongRows, normalizeSongShortNames, resolveSongs, paginateSongs, buildSongMeasurementHtml, readSongMeasurements, SONG_PAGE_CSS, type ResolvedSong, type SongMeasurements, type SongProgramPage } from "@/lib/songs";
 
 const layoutTokenValues = [
   "poster",
@@ -96,19 +98,11 @@ type ShowRoleRecord = {
   bio_order: number | null;
 };
 
-type SongRow = {
-  act: string;
-  title: string;
-  singerIds: string[];
-  singerRoleIds: string[];
-  includeCompany: boolean;
-  includeEnsemble: boolean;
-};
-
 type DensityMode = "normal" | "compact" | "loose";
 type TextFitMode = "normal" | "compact" | "tight" | "small";
 
 export type ProgramPage =
+  | SongProgramPage
   | { id: string; type: "poster"; title: string; imageUrl: string; subtitle: string }
   | { id: string; type: "text"; title: string; body: string; textFit?: TextFitMode }
   | {
@@ -280,6 +274,22 @@ async function launchMeasurementBrowser() {
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
   });
 }
+
+const measureSongs = cache(async (serializedSongs: string, title: string, twoColumns: boolean): Promise<SongMeasurements | undefined> => {
+  const songs = JSON.parse(serializedSongs) as ResolvedSong[];
+  let browser: Awaited<ReturnType<typeof launchMeasurementBrowser>> | undefined;
+  try {
+    browser = await launchMeasurementBrowser();
+    const page = await browser.newPage();
+    await page.setContent(`<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Oswald:wght@700&display=swap"><style>body{margin:0}${SONG_PAGE_CSS}</style></head><body>${buildSongMeasurementHtml(songs, title, twoColumns)}</body></html>`, { waitUntil: "domcontentloaded", timeout: 5000 });
+    try { await page.waitForFunction(() => document.fonts.status === "loaded", { timeout: 2500 }); } catch { /* Use fallback font measurements. */ }
+    return await page.evaluate(`(${readSongMeasurements.toString()})(document)`) as SongMeasurements | undefined;
+  } catch {
+    return undefined;
+  } finally {
+    await browser?.close();
+  }
+});
 
 function buildBioMeasurementRow(person: PersonRecord, showHeadshots: boolean) {
   const safeBio = sanitizeRichText(person.bio);
@@ -934,73 +944,7 @@ function buildCategoryRoleListHtml(title: string, rows: Array<{ role: string; na
   return `<section class="billing-section">${heading}<ul class="billing-list">${listItems}</ul></section>`;
 }
 
-function normalizeSongRows(value: unknown): SongRow[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((entry) => {
-      const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
-      const singerIds = Array.isArray(row.singerIds)
-        ? row.singerIds.map((id) => String(id)).filter(Boolean)
-        : Array.isArray(row.singer_ids)
-          ? row.singer_ids.map((id) => String(id)).filter(Boolean)
-          : [];
-      const singerRoleIds = Array.isArray(row.singerRoleIds)
-        ? row.singerRoleIds.map((id) => String(id)).filter(Boolean)
-        : Array.isArray(row.singer_role_ids)
-          ? row.singer_role_ids.map((id) => String(id)).filter(Boolean)
-          : [];
-      return {
-        act: String(row.act ?? "").trim(),
-        title: String(row.title ?? "").trim(),
-        singerIds,
-        singerRoleIds,
-        includeCompany: Boolean(row.includeCompany ?? row.include_company),
-        includeEnsemble: Boolean(row.includeEnsemble ?? row.include_ensemble)
-      };
-    })
-    .filter((row) => row.title || row.singerIds.length > 0 || row.singerRoleIds.length > 0 || row.includeCompany || row.includeEnsemble);
-}
 
-function buildSongsListHtml(moduleTitle: string, songs: SongRow[], people: PersonRecord[], showRoles: ShowRoleRecord[]) {
-  if (songs.length === 0) {
-    return "";
-  }
-
-  const peopleById = new Map(people.map((person) => [person.id, person]));
-  const rolesById = new Map(showRoles.map((role) => [role.id, role]));
-  const grouped = new Map<string, Array<{ role: string; name: string }>>();
-  const actOrder: string[] = [];
-
-  for (const song of songs) {
-    const actTitle = song.act || moduleTitle || "Songs";
-    if (!grouped.has(actTitle)) {
-      grouped.set(actTitle, []);
-      actOrder.push(actTitle);
-    }
-    const singers = [
-      ...song.singerRoleIds
-        .map((id) => rolesById.get(id)?.role_name.trim() ?? "")
-        .filter(Boolean),
-      ...song.singerIds
-        .map((id) => peopleById.get(id))
-        .filter((person): person is PersonRecord => Boolean(person))
-        .map((person) => person.role_title.trim() || person.full_name.trim())
-        .filter(Boolean),
-      ...(song.includeCompany ? ["Company"] : []),
-      ...(song.includeEnsemble ? ["Ensemble"] : [])
-    ];
-    grouped.get(actTitle)?.push({
-      role: song.title || "Untitled Song",
-      name: uniqueRoleNames(singers).join(", ")
-    });
-  }
-
-  return actOrder
-    .map((actTitle) => buildCategoryRoleListHtml(actTitle, grouped.get(actTitle) ?? [], true))
-    .join("");
-}
 
 function filterProgramPeopleByRoles(people: PersonRecord[], roles: ShowRoleRecord[], requireAssignments = false) {
   const assignedPersonIds = new Set(roles.map((role) => role.person_id).filter(Boolean));
@@ -1652,9 +1596,15 @@ async function renderModulePages(
 
   if (normalizedType === "songs") {
     const songs = normalizeSongRows(module.settings.songs);
-    const body = buildSongsListHtml(moduleTitle, songs, rosterPeople, showRoles);
-    if (richTextHasContent(body)) {
-      return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
+    const castOptions = [
+      ...showRoles.map((role) => ({ id: role.id, person_id: role.person_id, role_title: role.role_name, full_name: rosterPeople.find((person) => person.id === role.person_id)?.full_name ?? "" })),
+      ...rosterPeople.filter((person) => !showRoles.some((role) => role.person_id === person.id)).map((person) => ({ id: `legacy-${person.id}`, person_id: person.id, role_title: person.role_title, full_name: person.full_name }))
+    ];
+    const resolved = resolveSongs(songs, castOptions, normalizeSongShortNames(module.settings.song_character_names));
+    if (resolved.length) {
+      const twoColumns = module.settings.songs_layout === "two_columns";
+      const measured = await measureSongs(JSON.stringify(resolved), title, twoColumns);
+      return paginateSongs(resolved, { idBase, title, twoColumns }, measured);
     }
     if (hasActsSongs) {
       return paginateTextModulePages({ idBase, title, body: program.acts_songs, densityMode, allowMultiplePages });

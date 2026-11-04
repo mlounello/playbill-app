@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:multi-role-bio": "node --test scripts/multi-role-bio.test.mjs"
+    "test:multi-role-bio": "node --test scripts/multi-role-bio.test.mjs",
+    "test:songs": "node --test scripts/songs.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

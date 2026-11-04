@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { sanitizeRichText } from "@/lib/rich-text";
 import type { ProgramPage } from "@/lib/programs";
+import { SongProgramPageView } from "@/components/song-program-page";
 
 type ProgramBioPage = Extract<ProgramPage, { type: "bios" }>;
 
@@ -16,6 +17,7 @@ export type PublicProgramPage =
   | (Omit<ProgramBioPage, "people"> & { people: PublicProgramPerson[] });
 
 function PublicRenderPage({ page }: { page: PublicProgramPage }) {
+  if (page.type === "songs") return <SongProgramPageView page={page} />;
   if (page.type === "poster") {
     return (
       <article className="booklet-page poster-page">

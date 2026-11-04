@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { normalizeSongRows, normalizeSongShortNames } from "@/lib/songs";
 import { requireRole } from "@/lib/auth";
 import { hideShowOnlyCastRoleTemplatesForShow } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/rich-text";
@@ -161,26 +162,9 @@ function normalizeModuleSettings(settings: Record<string, unknown> | undefined, 
   }
 
   if (normalizedType === "songs") {
-    next.songs = Array.isArray(next.songs)
-      ? next.songs
-          .map((entry, index) => {
-            const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
-            const singerIds = Array.isArray(row.singerIds)
-              ? row.singerIds.map((id) => String(id)).filter(Boolean)
-              : Array.isArray(row.singer_ids)
-                ? row.singer_ids.map((id) => String(id)).filter(Boolean)
-                : [];
-            return {
-              id: String(row.id ?? `song-${index}`),
-              act: String(row.act ?? ""),
-              title: String(row.title ?? ""),
-              singerIds,
-              includeCompany: Boolean(row.includeCompany ?? row.include_company),
-              includeEnsemble: Boolean(row.includeEnsemble ?? row.include_ensemble)
-            };
-          })
-          .filter((row) => row.act.trim() || row.title.trim() || row.singerIds.length > 0 || row.includeCompany || row.includeEnsemble)
-      : [];
+    next.songs = normalizeSongRows(next.songs);
+    next.song_character_names = normalizeSongShortNames(next.song_character_names);
+    next.songs_layout = next.songs_layout === "two_columns" ? "two_columns" : "single_column";
   }
 
   if (normalizedType === "actf_sponsorship") {

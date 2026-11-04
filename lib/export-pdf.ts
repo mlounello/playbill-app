@@ -11,6 +11,9 @@ function stripHtml(value: string) {
 }
 
 function summarizePage(page: ProgramPage) {
+  if (page.type === "songs") {
+    return page.columns.flatMap((act) => act ? [act.title, ...act.songs.map((song) => `${song.title}${song.credits.length ? `: ${song.credits.join(", ")}` : ""}`)] : []).join("\n");
+  }
   if (page.type === "poster") {
     return page.subtitle || "Poster page";
   }

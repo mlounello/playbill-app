@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SongProgramPageView } from "@/components/song-program-page";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/print-button";
 import { requireRole } from "@/lib/auth";
@@ -8,6 +9,7 @@ import { APP_SCHEMA, getSupabaseWriteClient } from "@/lib/supabase";
 import type { ProgramPage } from "@/lib/programs";
 
 function RenderPageContent({ page }: { page: ProgramPage }) {
+  if (page.type === "songs") return <SongProgramPageView page={page} />;
   if (page.type === "poster") {
     return (
       <article className="booklet-page poster-page">

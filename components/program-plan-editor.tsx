@@ -21,6 +21,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { ModuleHtmlEditor } from "@/components/module-html-editor";
 import { ProgramImageUpload } from "@/components/program-image-upload";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { SongsEditor } from "@/components/songs-editor";
+import type { SongCastOption as SongSingerOption } from "@/lib/songs";
 import type { ShowModule } from "@/lib/shows";
 
 type ModuleItem = {
@@ -30,23 +32,6 @@ type ModuleItem = {
   visible: boolean;
   filler_eligible: boolean;
   settings: Record<string, unknown>;
-};
-
-type SongSingerOption = {
-  id: string;
-  full_name: string;
-  role_title: string;
-  person_id: string;
-};
-
-type SongRow = {
-  id: string;
-  act: string;
-  title: string;
-  singerIds: string[];
-  singerRoleIds: string[];
-  includeCompany: boolean;
-  includeEnsemble: boolean;
 };
 
 type PlanMode = "sections" | "order";
@@ -171,36 +156,6 @@ function getPlacementLabel(item: ModuleItem) {
     String(item.settings.placement_mode ?? "").toLowerCase() === "isolated" ||
     Boolean(item.settings.separate_page ?? isDefaultIsolated(item.module_type));
   return isolated ? "Own page" : "Can flow with nearby sections";
-}
-
-function normalizeSongRows(value: unknown): SongRow[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((entry, index) => {
-      const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
-      const singerIds = Array.isArray(row.singerIds)
-        ? row.singerIds.map((id) => String(id)).filter(Boolean)
-        : Array.isArray(row.singer_ids)
-          ? row.singer_ids.map((id) => String(id)).filter(Boolean)
-          : [];
-      const singerRoleIds = Array.isArray(row.singerRoleIds)
-        ? row.singerRoleIds.map((id) => String(id)).filter(Boolean)
-        : Array.isArray(row.singer_role_ids)
-          ? row.singer_role_ids.map((id) => String(id)).filter(Boolean)
-          : [];
-      return {
-        id: String(row.id ?? `song-${index}`),
-        act: String(row.act ?? ""),
-        title: String(row.title ?? ""),
-        singerIds,
-        singerRoleIds,
-        includeCompany: Boolean(row.includeCompany ?? row.include_company),
-        includeEnsemble: Boolean(row.includeEnsemble ?? row.include_ensemble)
-      };
-    })
-    .filter((row) => row.title.trim() || row.act.trim() || row.singerIds.length > 0 || row.singerRoleIds.length > 0 || row.includeCompany || row.includeEnsemble);
 }
 
 function SortableOrderItem({
@@ -351,117 +306,7 @@ function ModuleSettings({
   }
 
   if (item.module_type === "songs") {
-    const songs = normalizeSongRows(item.settings.songs);
-    const updateSongs = (nextSongs: SongRow[]) => setSetting("songs", nextSongs);
-    const updateSong = (rowId: string, patch: Partial<SongRow>) => {
-      updateSongs(songs.map((song) => (song.id === rowId ? { ...song, ...patch } : song)));
-    };
-    const addSong = () => {
-      updateSongs([
-        ...songs,
-        {
-          id: `song-${Date.now()}`,
-          act: songs[songs.length - 1]?.act || "Act I",
-          title: "",
-          singerIds: [],
-          singerRoleIds: [],
-          includeCompany: false,
-          includeEnsemble: false
-        }
-      ]);
-    };
-
-    return (
-      <div className="module-settings-grid module-settings-wide">
-        <div className="module-settings-empty">
-          Add songs here instead of typing a free-form songs page. Acts become section headers, and each song prints as
-          <strong> Song Title </strong> with dotted leaders to the singers.
-        </div>
-        <div className="song-module-editor">
-          {songs.length === 0 ? (
-            <div className="empty-state-card">No songs added yet.</div>
-          ) : (
-            songs.map((song, index) => (
-              <article key={song.id} className="song-module-row">
-                <div className="song-module-row-header">
-                  <strong>Song {index + 1}</strong>
-                  <button
-                    type="button"
-                    className="ghost-button ghost-button-danger"
-                    onClick={() => updateSongs(songs.filter((item) => item.id !== song.id))}
-                  >
-                    Remove
-                  </button>
-                </div>
-                <div className="module-settings-grid">
-                  <label>
-                    Act / section header
-                    <input
-                      value={song.act}
-                      onChange={(event) => updateSong(song.id, { act: event.target.value })}
-                      placeholder="Act I"
-                    />
-                  </label>
-                  <label>
-                    Song title
-                    <input
-                      value={song.title}
-                      onChange={(event) => updateSong(song.id, { title: event.target.value })}
-                      placeholder="Opening Number"
-                    />
-                  </label>
-                </div>
-                <label>
-                  Characters who sing it
-                  <select
-                    multiple
-                    value={song.singerRoleIds.length > 0
-                      ? song.singerRoleIds
-                      : singerOptions.filter((option) => song.singerIds.includes(option.person_id)).map((option) => option.id)}
-                    onChange={(event) =>
-                      updateSong(song.id, {
-                        singerIds: [],
-                        singerRoleIds: Array.from(event.currentTarget.selectedOptions).map((option) => option.value)
-                      })
-                    }
-                  >
-                    {singerOptions.map((role) => (
-                      <option key={`song-singer-${song.id}-${role.id}`} value={role.id}>
-                        {role.full_name ? `${role.role_title} - ${role.full_name}` : `${role.role_title} - Vacant`}
-                      </option>
-                    ))}
-                  </select>
-                  {singerOptions.length === 0 ? (
-                    <span className="meta-text">Add cast roles in People and Roles, or sync them from Production Management.</span>
-                  ) : null}
-                </label>
-                <div className="row-wrap">
-                  <label className="checkbox-inline">
-                    <input
-                      type="checkbox"
-                      checked={song.includeCompany}
-                      onChange={(event) => updateSong(song.id, { includeCompany: event.target.checked })}
-                    />
-                    <span>Company</span>
-                  </label>
-                  <label className="checkbox-inline">
-                    <input
-                      type="checkbox"
-                      checked={song.includeEnsemble}
-                      onChange={(event) => updateSong(song.id, { includeEnsemble: event.target.checked })}
-                    />
-                    <span>Ensemble</span>
-                  </label>
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-        <button type="button" className="ghost-button" onClick={addSong}>
-          Add Song
-        </button>
-      </div>
-    );
+    return <SongsEditor settings={item.settings} onUpdate={onUpdate} cast={singerOptions} title={item.display_title} />;
   }
 
   if (item.module_type === "creative_team" || item.module_type === "production_team" || item.module_type === "band") {

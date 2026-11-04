@@ -1,10 +1,12 @@
 import { sanitizeRichText } from "@/lib/rich-text";
 import type { ProgramPage } from "@/lib/programs";
+import { SongProgramPageView } from "@/components/song-program-page";
 
 export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
   if (!page) {
     return <div className="meta-text">Select a module to see its first rendered page preview.</div>;
   }
+  if (page.type === "songs") return <SongProgramPageView page={page} />;
 
   if (page.type === "poster") {
     return (
