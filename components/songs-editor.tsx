@@ -70,7 +70,7 @@ export function SongsEditor({ settings, onUpdate, cast, title }: {
     <p className="section-note">Add songs, choose their act, and build credits in the order you want them printed. Custom characters and group labels only apply here; they do not change your cast list.</p>
     <label>Program layout
       <select aria-label="Program layout" value={twoColumns ? "two_columns" : "single_column"} onChange={(event) => onUpdate({ ...settings, songs_layout: event.target.value })}>
-        <option value="single_column">Single column, grouped by act</option>
+        <option value="single_column">Single column with dotted leaders</option>
         <option value="two_columns">Two columns: acts side by side</option>
       </select>
       <span className="meta-text">Acts follow their first appearance below. With two columns, the first two acts start side by side; additional acts use the next page.</span>
@@ -158,12 +158,14 @@ export function SongsEditor({ settings, onUpdate, cast, title }: {
       <aside className="song-live-preview">
         <div className="card-toolbar"><strong>Program preview</strong><span className="meta-text">5.5 x 8.5 inches</span></div>
         <p className="meta-text">Changes appear here immediately. Save Sections and Order to apply them to your program.</p>
+        <p className="meta-text">Song text automatically shrinks to fit, down to approximately 8pt. Longer content wraps or continues onto another page.</p>
         {pages.length ? <>
           <div className="song-editor-actions">
             <button type="button" className="ghost-button" disabled={previewIndex === 0} onClick={() => setPageIndex(previewIndex - 1)}>Previous page</button>
             <span>Page {previewIndex + 1} of {pages.length}</span>
             <button type="button" className="ghost-button" disabled={previewIndex === pages.length - 1} onClick={() => setPageIndex(previewIndex + 1)}>Next page</button>
           </div>
+          {(pages[previewIndex].fontScale ?? 1) < 1 ? <span className="meta-text">Auto-fit: {Math.round((pages[previewIndex].fontScale ?? 1) * 100)}% text size</span> : null}
           {pages[previewIndex].warnings.map((warning) => <p key={warning} className="alert" role="status">{warning}</p>)}
           <SongPreview page={pages[previewIndex]} />
         </> : <div className="empty-state-card">Your song layout will appear here.</div>}

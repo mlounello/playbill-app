@@ -32,7 +32,10 @@ Open Sections & Order, then the Songs section's content options.
   These section-level names do not rename master cast records. Song-specific
   overrides take priority, then section short names, then an existing role short
   name if supplied, then the full character name.
-- Select single-column or two-column layout. Two-column mode pairs acts in order,
+- Select single-column dotted leaders or two-column layout. Single-column mode
+  prints titles on the left and credits against the right margin, with flexible
+  dotted leaders between them. Acts share the page when space permits.
+  Two-column mode pairs acts in order,
   preserves left/right slots on continuation pages, and uses full width for one act.
 - The inline preview shows unsaved changes. Save Sections and Order to apply them.
 
@@ -59,6 +62,13 @@ are reused within a server render; unavailable Chromium uses conservative estima
 Pagination reserves additional space for font variations. An individual song longer
 than a page or an unresolved character/performer selection produces a visible
 warning. Shorten an oversized credit or choose one column before exporting.
+
+Both layouts automatically reduce song text and spacing before adding continuation
+pages. The largest fitting size is selected in steps from 100% to 85% (approximately
+8pt for credits). Single-column fitting considers the combined natural width of
+the title and its credits as well as total page height. Text still wraps and long
+lists paginate when the readable minimum cannot fit everything. Headings and other
+playbill sections retain their sizes. The editor reports the selected auto-fit size.
 
 The app's existing emergency PDF fallback remains a simplified text summary;
 visual parity depends on the normal Playwright renderer. Old exported PDFs are

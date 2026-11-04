@@ -82,6 +82,26 @@ test("one-act productions use the full width and empty song lists render no page
   assert.deepEqual(songs.paginateSongs([], { idBase: "empty", title: "", twoColumns: true }), []);
 });
 
+test("single-column acts share a page and preserve the dotted-leader layout", () => {
+  const pages = songs.paginateSongs(resolve(), { idBase: "single", title: "Songs", twoColumns: false });
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].columns.length, 2);
+  assert.equal(pages[0].layout, "single_column");
+  const html = songs.renderSongPageHtml(pages[0]);
+  assert.match(html, /songs-single-column/);
+  assert.doesNotMatch(html, /songs-two-columns/);
+  assert.match(html, /song-leader/);
+  assert.equal(pages[0].columns.flatMap((act) => act.songs).length, 4);
+});
+
+test("auto-fit never shrinks below its readable floor and still paginates large lists", () => {
+  const rows = Array.from({ length: 100 }, (_, i) => ({ id: String(i), title: "Long song with many credits", act: "ACT I", credits: ["Roger", "Mark", "Ensemble"] }));
+  const pages = songs.paginateSongs(rows, { idBase: "many", title: "Songs", twoColumns: false });
+  assert.ok(pages.length > 1);
+  assert.ok(pages.every((page) => page.fontScale >= .85 && page.fontScale <= 1));
+  assert.equal(pages.flatMap((page) => page.columns.flatMap((act) => act.songs)).length, 100);
+});
+
 test("missing assignments and a single oversized song produce explicit warnings", () => {
   const rows = resolve([{ title: "Long song", credits: [credit("role", { roleId: "removed" }), credit("custom", { label: "Ensemble ".repeat(800) })] }]);
   const pages = songs.paginateSongs(rows, { idBase: "long", title: "", twoColumns: false });
@@ -137,6 +157,47 @@ test("RENT wraps and paginates within booklet margins in browser and PDF", async
       assert.equal(printPdf.getPageCount(), spreads.length);
       assert.equal(printPdf.getPages()[0].getWidth(), 792);
       assert.equal(printPdf.getPages()[0].getHeight(), 612);
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("browser auto-fit shrinks tall acts and wide single-column rows before pagination", async () => {
+  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL });
+  try {
+    const page = await browser.newPage();
+    const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    for (const twoColumns of [true, false]) {
+      const values = twoColumns
+        ? [...Array.from({ length: 24 }, (_, i) => ({ id: `s-${i}`, title: `Song ${i + 1}`, act: "ACT I", credits: [] })), { id: "second", title: "Finale", act: "ACT II", credits: [] }]
+        : [{ id: "wide", title: "La Vie Boheme/I Should Tell You/Happy New Year", act: "ACT I", credits: ["Roger", "Mark", "Joanne", "Maureen", "Collins", "Angel"] }];
+      await page.setContent(`<style>${css}${songs.SONG_PAGE_CSS}</style>${songs.buildSongMeasurementHtml(values, "Musical Numbers", twoColumns)}`);
+      await page.evaluate(() => document.fonts.ready);
+      const measured = await page.evaluate(`(${songs.readSongMeasurements.toString()})(document)`);
+      assert.ok(measured.fontScale < 1, `Expected font reduction for ${twoColumns ? "height" : "row width"}`);
+      assert.ok(measured.fontScale >= .85);
+      const pages = songs.paginateSongs(values, { idBase: "fit", title: "Musical Numbers", twoColumns }, measured);
+      assert.equal(pages.length, 1, "Reduce the font before adding another page");
+      await page.setContent(`<style>${css}${songs.SONG_PAGE_CSS}</style><article class="booklet-page songs-print-page">${songs.renderSongPageHtml(pages[0])}</article>`);
+      await page.evaluate(() => document.fonts.ready);
+      const geometry = await page.locator(".songs-print-page").evaluate((article) => {
+        const first = article.querySelector(".song-entry"), title = first.querySelector(".song-title"), credits = first.querySelector(".song-credits");
+        const rect = article.getBoundingClientRect(), style = getComputedStyle(article);
+        return {
+          fits: [...article.querySelectorAll(".song-entry")].every((row) => row.getBoundingClientRect().bottom <= rect.bottom - parseFloat(style.paddingBottom) + 1),
+          left: title.getBoundingClientRect().left,
+          right: credits?.getBoundingClientRect().right,
+          expectedLeft: rect.left + parseFloat(style.paddingLeft) + 1,
+          expectedRight: rect.right - parseFloat(style.paddingRight) - 1
+        };
+      });
+      assert.equal(geometry.fits, true);
+      if (!twoColumns) {
+        assert.ok(Math.abs(geometry.left - geometry.expectedLeft) < 2);
+        assert.ok(Math.abs(geometry.right - geometry.expectedRight) < 2);
+        await page.screenshot({ path: "/tmp/rent-single-column-leaders.png" });
+      }
     }
   } finally {
     await browser.close();
