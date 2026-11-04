@@ -1286,8 +1286,8 @@ function estimateStackUnits(page: ProgramPage) {
     const textBody = page.body;
     const titleUnits = page.title?.trim() ? 44 : 0;
     if (isBillingStyledPage(page)) {
-      // CSS uses single-line 10pt rows. Reserve room for headings and section gaps.
-      return titleUnits + countTag(textBody, "li") * 18 + countTag(textBody, "h3") * 48 + 48;
+      // 10pt / 1.15 rows plus the .01in gap use about 16.3px; round up slightly.
+      return titleUnits + countTag(textBody, "li") * 16.5 + countTag(textBody, "h3") * 32 + 16;
     }
     return titleUnits + Math.round(estimateRichTextLines(textBody) * 11.5);
   }
@@ -1331,13 +1331,13 @@ function getStackPageBudget(densityMode: DensityMode) {
 }
 
 function getBillingStackBudget(densityMode: DensityMode) {
-  // A 5.5 x 8.5in page has about 747px inside its margins. Keep a safety allowance.
-  return densityMode === "loose" ? 600 : 640;
+  // About 745px inside the bordered page; retain room for font rounding and an empty outer heading.
+  return densityMode === "loose" ? 700 : 728;
 }
 
-function paginateRoleListPages(idBase: string, title: string, rows: Array<{ role: string; name: string }>, showTitle: boolean, densityMode: DensityMode): ProgramPage[] {
-  const headingUnits = showTitle ? 48 : 0;
-  const rowsPerPage = Math.max(1, Math.floor((getBillingStackBudget(densityMode) - headingUnits - 48) / 18));
+function paginateRoleListPages(idBase: string, title: string, rows: Array<{ role: string; name: string }>, showTitle: boolean, densityMode: DensityMode, deferSplit = false): ProgramPage[] {
+  const headingUnits = showTitle ? 32 : 0;
+  const rowsPerPage = deferSplit ? Math.max(1, rows.length) : Math.max(1, Math.floor((getBillingStackBudget(densityMode) - headingUnits - 16) / 16.5));
   const pages: ProgramPage[] = [];
   for (let offset = 0; offset < rows.length; offset += rowsPerPage) {
     pages.push({
@@ -1348,6 +1348,24 @@ function paginateRoleListPages(idBase: string, title: string, rows: Array<{ role
     });
   }
   return pages;
+}
+
+function splitRoleListForBudget(page: Extract<ProgramPage, { type: "text" }>, budget: number) {
+  const list = page.body.match(/(<ul\b[^>]*class="billing-list"[^>]*>)([\s\S]*?)(<\/ul>)/);
+  const rows = list?.[2].match(/<li\b[^>]*>[\s\S]*?<\/li>/g) ?? [];
+  if (!list || !rows.length) return { head: page, tail: null };
+  const overhead = estimateStackUnits({ ...page, body: page.body.replace(list[0], `${list[1]}${list[3]}`) });
+  let count = Math.min(rows.length, Math.floor((budget - overhead) / 16.5));
+  if (count < Math.min(2, rows.length)) return { head: null, tail: page };
+  if (count === rows.length) return { head: page, tail: null };
+  if (rows.length - count === 1 && count > 2) count -= 1;
+  const head = { ...page, body: page.body.replace(list[0], `${list[1]}${rows.slice(0, count).join("")}${list[3]}`) };
+  const tail = {
+    ...page, id: `${page.id}-cont`,
+    body: page.body.replace(list[0], `${list[1]}${rows.slice(count).join("")}${list[3]}`)
+      .replace(/(<h3\b[^>]*>)([\s\S]*?)(<\/h3>)/, (_match, open, title, close) => `${open}${title.replace(/\s*\(cont\.\)$/, "")} (cont.)${close}`)
+  };
+  return { head, tail };
 }
 
 async function renderModulePages(
@@ -1453,7 +1471,7 @@ async function renderModulePages(
         "Cast List is enabled, but no cast records were found. In People and Roles, confirm entries are assigned to category: cast."
       );
     }
-    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode);
+    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode, Boolean(module.settings.role_list_grouping_enabled ?? true));
   }
 
   if (normalizedType === "creative_team") {
@@ -1469,7 +1487,7 @@ async function renderModulePages(
         "Creative Team module is enabled, but no creative team records were found. Add people in People and Roles with category: creative."
       );
     }
-    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode);
+    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode, Boolean(module.settings.role_list_grouping_enabled ?? true));
   }
 
   if (normalizedType === "production_team") {
@@ -1485,7 +1503,7 @@ async function renderModulePages(
         "Production Team module is enabled, but no production records were found. Add people in People and Roles with category: production."
       );
     }
-    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode);
+    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode, Boolean(module.settings.role_list_grouping_enabled ?? true));
   }
 
   if (normalizedType === "band") {
@@ -1501,7 +1519,7 @@ async function renderModulePages(
         "Band module is enabled, but no band records were found. Add people in People and Roles with category: band."
       );
     }
-    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode);
+    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode, Boolean(module.settings.role_list_grouping_enabled ?? true));
   }
 
   if (normalizedType === "bios") {
@@ -1857,7 +1875,25 @@ async function buildRenderablePagesFromModules(
     stackUsed = 0;
   };
 
-  const appendPackedPage = (page: ProgramPage, options?: { allowBiosCarry?: boolean }) => {
+  const appendPackedPage = (page: ProgramPage, options?: { allowBiosCarry?: boolean; allowRoleListSplit?: boolean }) => {
+    if (options?.allowRoleListSplit && page.type === "text" && isBillingStyledPage(page)) {
+      if (stackBuffer.length && !stackBuffer[0].billingLike) flushStackBuffer();
+      let remaining: Extract<ProgramPage, { type: "text" }> | null = page;
+      while (remaining) {
+        const split = splitRoleListForBudget(remaining, getBillingStackBudget(densityMode) - stackUsed);
+        if (!split.head) {
+          if (stackBuffer.length) { flushStackBuffer(); continue; }
+          pages.push(remaining);
+          break;
+        }
+        const units = estimateStackUnits(split.head);
+        stackBuffer.push({ title: split.head.title, body: split.head.body, units, billingLike: true, originalPage: split.head });
+        stackUsed += units;
+        remaining = split.tail;
+        if (remaining) flushStackBuffer();
+      }
+      return;
+    }
     if (page.type === "bios" && options?.allowBiosCarry) {
       const units = estimateBiosStackUnits(page);
       const activeBudget = getStackPageBudget(densityMode);
@@ -1972,7 +2008,7 @@ async function buildRenderablePagesFromModules(
     for (let pageIndex = 0; pageIndex < renderedPages.length; pageIndex += 1) {
       const page = renderedPages[pageIndex];
       const allowBiosCarry = normalizedModuleType === "bios" && pageIndex === renderedPages.length - 1;
-      appendPackedPage(page, { allowBiosCarry });
+      appendPackedPage(page, { allowBiosCarry, allowRoleListSplit: isRoleListModule && roleListGroupingEnabled });
     }
   }
   flushStackBuffer();
