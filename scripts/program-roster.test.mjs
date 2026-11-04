@@ -23,7 +23,7 @@ test("a removed PM contributor is excluded while their original bio remains inta
   const people = [imported, standalone];
   const before = JSON.stringify(people);
   const result = filterPeople(people, [{ person_id: "someone-else" }]);
-  assert.deepEqual(result.map((p) => p.id), ["legacy"]);
+  assert.equal(result.length, 0);
   assert.equal(JSON.stringify(people), before);
 });
 
@@ -43,6 +43,15 @@ test("a contributor with another remaining role stays included once", () => {
 
 test("standalone bios remain supported without show-role assignments", () => {
   assert.equal(filterPeople([standalone], [])[0], standalone);
+});
+
+test("older unmarked people do not bypass an existing role roster", () => {
+  const oldEmily = { ...imported, submission_source: "playbill", production_management_person_id: "" };
+  assert.equal(filterPeople([oldEmily], [{ person_id: "current-music-director" }]).length, 0);
+});
+
+test("production-managed shows require roles even when every role has been removed", () => {
+  assert.equal(filterPeople([standalone], [], true).length, 0);
 });
 
 test("either PM provenance field identifies an imported contributor", () => {

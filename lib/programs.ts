@@ -1002,13 +1002,14 @@ function buildSongsListHtml(moduleTitle: string, songs: SongRow[], people: Perso
     .join("");
 }
 
-function filterProgramPeopleByRoles(people: PersonRecord[], roles: ShowRoleRecord[]) {
+function filterProgramPeopleByRoles(people: PersonRecord[], roles: ShowRoleRecord[], requireAssignments = false) {
   const assignedPersonIds = new Set(roles.map((role) => role.person_id).filter(Boolean));
+  const rosterIsAuthoritative = requireAssignments || roles.length > 0;
   return people.filter((person) => {
     const fromProductionManagement = person.submission_source === "production_management" ||
       Boolean(person.production_management_person_id);
-    // Imported bio records survive removal for history, but no longer belong in the program.
-    return !fromProductionManagement || assignedPersonIds.has(person.id);
+    // Older imported people may have no source marker. A show's role roster takes precedence.
+    return assignedPersonIds.has(person.id) || (!rosterIsAuthoritative && !fromProductionManagement);
   });
 }
 
@@ -1339,10 +1340,12 @@ function paginateTextModulePages(params: {
 function estimateStackUnits(page: ProgramPage) {
   if (page.type === "text" || page.type === "filler") {
     const textBody = page.body;
-    const lineEstimate = estimateRichTextLines(textBody);
     const titleUnits = page.title?.trim() ? 44 : 0;
-    const densityFactor = isBillingStyledPage(page) ? 7.4 : 11.5;
-    return titleUnits + Math.round(lineEstimate * densityFactor);
+    if (isBillingStyledPage(page)) {
+      // CSS uses single-line 10pt rows. Reserve room for headings and section gaps.
+      return titleUnits + countTag(textBody, "li") * 18 + countTag(textBody, "h3") * 48 + 48;
+    }
+    return titleUnits + Math.round(estimateRichTextLines(textBody) * 11.5);
   }
   return Number.MAX_SAFE_INTEGER;
 }
@@ -1384,13 +1387,23 @@ function getStackPageBudget(densityMode: DensityMode) {
 }
 
 function getBillingStackBudget(densityMode: DensityMode) {
-  if (densityMode === "compact") {
-    return 1450;
+  // A 5.5 x 8.5in page has about 747px inside its margins. Keep a safety allowance.
+  return densityMode === "loose" ? 600 : 640;
+}
+
+function paginateRoleListPages(idBase: string, title: string, rows: Array<{ role: string; name: string }>, showTitle: boolean, densityMode: DensityMode): ProgramPage[] {
+  const headingUnits = showTitle ? 48 : 0;
+  const rowsPerPage = Math.max(1, Math.floor((getBillingStackBudget(densityMode) - headingUnits - 48) / 18));
+  const pages: ProgramPage[] = [];
+  for (let offset = 0; offset < rows.length; offset += rowsPerPage) {
+    pages.push({
+      id: offset === 0 ? idBase : `${idBase}-${pages.length + 1}`,
+      type: "text",
+      title: "",
+      body: buildCategoryRoleListHtml(offset === 0 ? title : `${title} (cont.)`, rows.slice(offset, offset + rowsPerPage), showTitle)
+    });
   }
-  if (densityMode === "loose") {
-    return 1180;
-  }
-  return 1325;
+  return pages;
 }
 
 async function renderModulePages(
@@ -1484,9 +1497,10 @@ async function renderModulePages(
   }
 
   if (normalizedType === "cast_list") {
+    const rows = buildRoleListRowsByCategory(rosterPeople, showRoles, "cast");
     const body = buildCategoryRoleListHtml(
       moduleTitle,
-      buildRoleListRowsByCategory(rosterPeople, showRoles, "cast"),
+      rows,
       showHeader
     );
     if (!richTextHasContent(body)) {
@@ -1495,13 +1509,14 @@ async function renderModulePages(
         "Cast List is enabled, but no cast records were found. In People and Roles, confirm entries are assigned to category: cast."
       );
     }
-    return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
+    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode);
   }
 
   if (normalizedType === "creative_team") {
+    const rows = buildRoleListRowsByCategory(rosterPeople, showRoles, "creative");
     const body = buildCategoryRoleListHtml(
       moduleTitle,
-      buildRoleListRowsByCategory(rosterPeople, showRoles, "creative"),
+      rows,
       showHeader
     );
     if (!richTextHasContent(body)) {
@@ -1510,13 +1525,14 @@ async function renderModulePages(
         "Creative Team module is enabled, but no creative team records were found. Add people in People and Roles with category: creative."
       );
     }
-    return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
+    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode);
   }
 
   if (normalizedType === "production_team") {
+    const rows = buildRoleListRowsByCategory(rosterPeople, showRoles, "production");
     const body = buildCategoryRoleListHtml(
       moduleTitle,
-      buildRoleListRowsByCategory(rosterPeople, showRoles, "production"),
+      rows,
       showHeader
     );
     if (!richTextHasContent(body)) {
@@ -1525,13 +1541,14 @@ async function renderModulePages(
         "Production Team module is enabled, but no production records were found. Add people in People and Roles with category: production."
       );
     }
-    return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
+    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode);
   }
 
   if (normalizedType === "band") {
+    const rows = buildRoleListRowsByCategory(rosterPeople, showRoles, "band");
     const body = buildCategoryRoleListHtml(
       moduleTitle,
-      buildRoleListRowsByCategory(rosterPeople, showRoles, "band"),
+      rows,
       showHeader
     );
     if (!richTextHasContent(body)) {
@@ -1540,7 +1557,7 @@ async function renderModulePages(
         "Band module is enabled, but no band records were found. Add people in People and Roles with category: band."
       );
     }
-    return [{ id: idBase, type: "text", title: "", body }] satisfies ProgramPage[];
+    return paginateRoleListPages(idBase, moduleTitle, rows, showHeader, densityMode);
   }
 
   if (normalizedType === "bios") {
@@ -2480,7 +2497,7 @@ export async function getProgramBySlug(
     let modulePreviewPage: ProgramPage | null = null;
     const { data: show } = await db
       .from("shows")
-      .select("id, season_id, start_date, end_date")
+      .select("id, season_id, start_date, end_date, bio_intake_mode")
       .eq("program_id", String(program.id))
       .maybeSingle();
 
@@ -2499,7 +2516,7 @@ export async function getProgramBySlug(
           billing_order: row.billing_order === null ? null : Number(row.billing_order ?? null),
           bio_order: row.bio_order === null ? null : Number(row.bio_order ?? null)
         }));
-        normalizedPeople = filterProgramPeopleByRoles(normalizedPeople, showRoleAssignments);
+        normalizedPeople = filterProgramPeopleByRoles(normalizedPeople, showRoleAssignments, show.bio_intake_mode === "production_managed");
         const derived = derivePeopleForBiosFromRoles(normalizedPeople, showRoleAssignments);
         castPeople = derived.castPeople;
         productionPeople = derived.productionPeople;
