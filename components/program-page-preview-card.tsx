@@ -56,7 +56,7 @@ export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
     return (
       <article className="booklet-page">
         {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
-        <div className="bios-list">
+        <div className={page.compactBios ? "bios-list bios-list-compact" : "bios-list"}>
           {page.people.map((person) => (
             <section key={person.id} className="bio-row">
               {page.showHeadshots !== false && person.headshot_url ? (

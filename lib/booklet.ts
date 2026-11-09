@@ -10,13 +10,16 @@ export type BookletSpread<T> = {
   right: BookletPage<T>;
 };
 
+export function getBookletPageCount(count: number): number {
+  return Math.ceil(count / 4) * 4;
+}
+
 export function padToMultipleOf4<T>(items: T[], makePad: (index: number) => T): T[] {
-  const remainder = items.length % 4;
-  if (remainder === 0) {
+  const needed = getBookletPageCount(items.length) - items.length;
+  if (needed === 0) {
     return items;
   }
 
-  const needed = 4 - remainder;
   const padded = [...items];
   for (let i = 0; i < needed; i += 1) {
     padded.push(makePad(i));

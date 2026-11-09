@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
@@ -11,11 +12,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 const source = readFileSync(new URL("../lib/programs.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("programs.ts", source, ts.ScriptTarget.Latest, true);
+const bookletSource = readFileSync(new URL("../lib/booklet.ts", import.meta.url), "utf8");
 const names = new Set([
   "escapeHtml", "buildCategoryRoleListHtml", "countTag", "isBillingStyledPage", "isStackablePage",
   "estimateStackUnits", "getBillingStackBudget", "paginateRoleListPages", "splitRoleListForBudget", "getStackPageBudget",
   "getModulePlacementMode", "moduleDefaultPlacementMode", "normalizeModuleType", "buildRenderablePagesFromModules",
-  "estimateBiosStackUnits", "estimateBioRichTextLines", "estimateRichTextLines", "richTextToPlain"
+  "estimateBiosStackUnits", "estimateBioRichTextLines", "estimateRichTextLines", "richTextToPlain",
+  "estimateBioRowHeight", "buildBioMeasurementRow", "measureBioRows", "paginateBiosHeuristic", "paginateBios"
 ]);
 const selected = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text));
 assert.equal(selected.length, names.size);
@@ -23,6 +26,9 @@ const compiled = ts.transpileModule(selected.map((node) => node.getText(ast)).jo
   compilerOptions: { target: ts.ScriptTarget.ES2022 }
 }).outputText;
 const context = {
+  process, readFileSync, join, setTimeout,
+  sanitizeRichText: (html) => html,
+  launchMeasurementBrowser: () => chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL }),
   richTextHasContent: (html) => Boolean(html),
   async renderModulePages(module, index, ...args) {
     if (module.pages) return module.pages;
@@ -30,6 +36,10 @@ const context = {
   }
 };
 vm.runInNewContext(compiled, context);
+const booklet = { exports: {} };
+vm.runInNewContext(ts.transpileModule(bookletSource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS }
+}).outputText, booklet);
 const rows = (count) => Array.from({ length: count }, (_, i) => ({ role: `Assistant Production Electrician ${i + 1}`, name: `Contributor ${i + 1}` }));
 const moduleFor = (id, count, order = 0) => ({
   id, module_type: "production_team", display_title: id, module_order: order, visible: true,
@@ -54,6 +64,27 @@ const thanks = {
   pages: [{ id: "thanks", type: "text", title: "Special Thanks", textFit: "compact",
     body: "<h3>Production Work Study Students</h3><ul>" + rows(14).map(({ name }) => `<li>${name}</li>`).join("") + "</ul>" }]
 };
+
+test("compact bios fit more intact rows and can keep a 21-page proof on five sheets", async () => {
+  const people = Array.from({ length: 5 }, (_, index) => ({
+    full_name: `Contributor ${index + 1}`, role_title: "Production Assistant",
+    bio: `<p>${"They studied theatre and enjoy making productions with the rest of the company. ".repeat(4)}</p>`,
+    headshot_url: "https://example.test/portrait.png"
+  }));
+  const normal = await context.measureBioRows("Bios: Cast", people, true, "normal");
+  const compact = await context.measureBioRows("Bios: Cast", people, true, "compact");
+  const fits = (measurement) => measurement.rowHeights.reduce((sum, height) => sum + height, 0)
+    + (people.length - 1) * measurement.rowGap <= measurement.availableBodyHeight;
+  assert.equal(fits(normal), false);
+  assert.equal(fits(compact), true);
+  const normalPages = await context.paginateBios("Bios: Cast", "cast", people, "normal");
+  const compactPages = await context.paginateBios("Bios: Cast", "cast", people, "compact");
+  assert.equal(booklet.exports.getBookletPageCount(19 + normalPages.length), 24);
+  assert.equal(booklet.exports.getBookletPageCount(19 + compactPages.length), 20);
+  assert.equal(compactPages.length, 1);
+  assert.equal(compactPages[0].people.length, people.length);
+  assert.equal(compactPages[0].compactBios, true);
+});
 
 test("a short bio continuation can share with Special Thanks without losing the portrait or exposing email", async () => {
   const pages = await pack([bioModule(), thanks]);

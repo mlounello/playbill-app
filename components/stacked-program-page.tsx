@@ -9,7 +9,7 @@ export function StackedProgramPage({ page }: { page: Extract<ProgramPage, { type
           <section key={index} className={`stacked-section text-fit-${section.textFit ?? "normal"}`}>
             {section.title.trim() ? <h3 className="playbill-title stacked-section-title">{section.title}</h3> : null}
             {section.bios ? (
-              <div className="bios-list">
+              <div className={section.compactBios ? "bios-list bios-list-compact" : "bios-list"}>
                 {section.bios.map((person, personIndex) => (
                   <section key={personIndex} className="bio-row">
                     {section.showHeadshots !== false && person.headshot_url ? (

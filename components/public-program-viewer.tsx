@@ -77,7 +77,7 @@ function PublicRenderPage({ page }: { page: PublicProgramPage }) {
     return (
       <article className="booklet-page">
         <h2 className="section-title playbill-title">{page.title}</h2>
-        <div className="bios-list">
+        <div className={page.compactBios ? "bios-list bios-list-compact" : "bios-list"}>
           {page.people.map((person, index) => (
             <section key={`${person.full_name}-${person.role_title}-${index}`} className="bio-row">
               {page.showHeadshots !== false && person.headshot_url ? (

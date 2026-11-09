@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cache } from "react";
 import { z } from "zod";
 import { buildDepartmentInfoHtml } from "@/lib/departments";
@@ -7,7 +9,7 @@ import { buildSeasonCalendarHtml } from "@/lib/seasons";
 import { isSupportedAssetUrl, normalizeAssetUrl } from "@/lib/storage-assets";
 import { BIO_CHAR_LIMIT_DEFAULT, normalizeBioCharLimit } from "@/lib/submissions";
 import { APP_SCHEMA, getMissingSupabaseEnvVars, getSupabaseWriteClient, getSupabaseWriteClientRaw } from "@/lib/supabase";
-import { buildBookletSpreads, padToMultipleOf4 } from "@/lib/booklet";
+import { buildBookletSpreads, getBookletPageCount, padToMultipleOf4 } from "@/lib/booklet";
 import { richTextHasContent, sanitizeRichText } from "@/lib/rich-text";
 import { normalizeSongRows, normalizeSongShortNames, resolveSongs, paginateSongs, buildSongMeasurementHtml, readSongMeasurements, SONG_PAGE_CSS, type ResolvedSong, type SongMeasurements, type SongProgramPage } from "@/lib/songs";
 
@@ -52,6 +54,7 @@ type StackedSection = {
   textFit?: TextFitMode;
   bios?: ProgramBioPerson[];
   showHeadshots?: boolean;
+  compactBios?: boolean;
 };
 
 type CustomPageRecord = {
@@ -124,7 +127,7 @@ export type ProgramPage =
       imageSize: "small" | "medium" | "large" | "full";
     }
   | { id: string; type: "stacked"; title: string; sections: StackedSection[] }
-  | { id: string; type: "bios"; title: string; people: PersonRecord[]; showHeadshots?: boolean }
+  | { id: string; type: "bios"; title: string; people: PersonRecord[]; showHeadshots?: boolean; compactBios?: boolean }
   | { id: string; type: "image"; title: string; imageUrl: string }
   | { id: string; type: "photo_grid"; title: string; photos: string[] }
   | { id: string; type: "filler"; title: string; body: string };
@@ -255,11 +258,11 @@ function estimateBioRichTextLines(html: string, charsPerLine = 64) {
   return charLines + paragraphBlocks * 2 + hardBreaks;
 }
 
-function estimateBioWeight(person: PersonRecord, showHeadshots = true) {
-  const lineEstimate = estimateBioRichTextLines(person.bio);
-  const textWeight = Math.max(190, Math.round(lineEstimate * 26));
-  const headshotWeight = showHeadshots && person.headshot_url.trim() ? 180 : 36;
-  return 145 + textWeight + headshotWeight;
+function estimateBioRowHeight(person: PersonRecord, showHeadshots: boolean, compact: boolean) {
+  const hasHeadshot = showHeadshots && Boolean(person.headshot_url.trim());
+  const lines = Math.max(1, estimateBioRichTextLines(person.bio, hasHeadshot ? (compact ? 49 : 46) : (compact ? 68 : 64)) - 2);
+  const headingLines = Math.max(1, Math.ceil((person.full_name.length + person.role_title.length + 3) / (hasHeadshot ? 36 : 50)));
+  return Math.max(hasHeadshot ? (compact ? 104 : 116) : 0, lines * (compact ? 17 : 20) + headingLines * 22 + 5);
 }
 
 async function launchMeasurementBrowser() {
@@ -318,102 +321,21 @@ async function measureBioRows(
   }
 
   const densityScale = densityMode === "loose" ? 0.94 : 1;
-  const browser = await launchMeasurementBrowser();
+  let browser: Awaited<ReturnType<typeof launchMeasurementBrowser>> | undefined;
 
   try {
+    browser = await launchMeasurementBrowser();
     const page = await browser.newPage({ viewport: { width: 1200, height: 2000 } });
     const rowHtml = people.map((person) => buildBioMeasurementRow(person, showHeadshots)).join("");
-    const html = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      @import url("https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Oswald:wght@700&display=swap");
-      * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; background: #ffffff; }
-      body { font-family: "Merriweather", Georgia, serif; }
-      .booklet-page {
-        width: 5.5in;
-        height: 8.5in;
-        overflow: hidden;
-        padding: 0.36in;
-        background: #ffffff;
-        color: #000000;
-      }
-      .section-title {
-        margin-top: 0;
-        margin-bottom: 0.45rem;
-      }
-      .playbill-title {
-        color: #006b54;
-        font-family: "Oswald", "Helvetica Neue", Arial, sans-serif;
-        font-weight: 700;
-        font-size: 14pt;
-        line-height: 1.15;
-        text-transform: uppercase;
-        letter-spacing: 0.02em;
-      }
-      .page-body {
-        color: #000000;
-        font-family: "Merriweather", Georgia, serif;
-        font-weight: 400;
-        font-size: 10pt;
-        line-height: 1.45;
-      }
-      .rich-render p { margin: 0; }
-      .rich-render ul,
-      .rich-render ol {
-        margin: 0.2rem 0 0.2rem 1.15rem;
-        padding: 0;
-      }
-      .bio-name {
-        color: #006b54;
-        font-family: "Merriweather", Georgia, serif;
-        font-weight: 700;
-        font-size: 11pt;
-        margin-bottom: 0.3rem;
-      }
-      .bio-role-inline {
-        color: inherit;
-        font-family: inherit;
-        font-weight: inherit;
-        font-size: inherit;
-      }
-      .bio-body {
-        text-align: justify;
-        text-justify: inter-word;
-        hyphens: auto;
-      }
-      .bios-list {
-        display: grid;
-        gap: 0.2in;
-      }
-      .bio-row {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 0.16in;
-        align-items: start;
-        break-inside: avoid;
-      }
-      .headshot {
-        width: 1.2in;
-        height: 1.2in;
-        border: 1px solid #c9c3b2;
-      }
-      .measure-headshot {
-        background: transparent;
-      }
-    </style>
-  </head>
-  <body>
-    <article class="booklet-page">
-      <h2 class="section-title playbill-title">${escapeHtml(title)}</h2>
-      <div class="bios-list">${rowHtml}</div>
-    </article>
-  </body>
-</html>`;
+    const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf8");
+    const compactClass = densityMode === "compact" ? " bios-list-compact" : "";
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>${css}</style></head>
+<body><article class="booklet-page">
+<h2 class="section-title playbill-title">${escapeHtml(`${title} (cont.)`)}</h2>
+<div class="bios-list${compactClass}">${rowHtml}</div>
+</article></body></html>`;
 
-    await page.setContent(html, { waitUntil: "load" });
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 4000 });
     try {
       await page.waitForFunction(() => !("fonts" in document) || document.fonts.status === "loaded", { timeout: 2500 });
     } catch {
@@ -447,18 +369,8 @@ async function measureBioRows(
   } catch {
     return null;
   } finally {
-    await browser.close();
+    await browser?.close();
   }
-}
-
-function getBioPageBudget(densityMode: DensityMode) {
-  if (densityMode === "compact") {
-    return 2200;
-  }
-  if (densityMode === "loose") {
-    return 1700;
-  }
-  return 1900;
 }
 
 function paginateBiosHeuristic(
@@ -468,27 +380,30 @@ function paginateBiosHeuristic(
   densityMode: DensityMode = "normal",
   showHeadshots = true
 ) {
-  const PAGE_BUDGET = getBioPageBudget(densityMode);
+  const compactBios = densityMode === "compact";
+  const pageBudget = densityMode === "loose" ? 650 : 690;
+  const gap = compactBios ? 13 : 20;
   const pages: ProgramPage[] = [];
   let current: PersonRecord[] = [];
   let currentWeight = 0;
 
   for (const person of people) {
-    const weight = estimateBioWeight(person, showHeadshots);
-    if (current.length > 0 && currentWeight + weight > PAGE_BUDGET) {
+    const weight = estimateBioRowHeight(person, showHeadshots, compactBios);
+    if (current.length > 0 && currentWeight + gap + weight > pageBudget) {
       pages.push({
         id: `${idBase}-${pages.length + 1}`,
         type: "bios",
         title: pages.length === 0 ? title : `${title} (cont.)`,
         people: current,
-        showHeadshots
+        showHeadshots,
+        compactBios
       });
       current = [];
       currentWeight = 0;
     }
 
+    currentWeight += weight + (current.length ? gap : 0);
     current.push(person);
-    currentWeight += weight;
   }
 
   if (current.length > 0) {
@@ -497,7 +412,8 @@ function paginateBiosHeuristic(
       type: "bios",
       title: pages.length === 0 ? title : `${title} (cont.)`,
       people: current,
-      showHeadshots
+      showHeadshots,
+      compactBios
     });
   }
 
@@ -511,6 +427,7 @@ async function paginateBios(
   densityMode: DensityMode = "normal",
   showHeadshots = true
 ) {
+  const compactBios = densityMode === "compact";
   const measured = await Promise.race([
     measureBioRows(title, people, showHeadshots, densityMode),
     new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000))
@@ -535,7 +452,8 @@ async function paginateBios(
         type: "bios",
         title: pages.length === 0 ? title : `${title} (cont.)`,
         people: current,
-        showHeadshots
+        showHeadshots,
+        compactBios
       });
       current = [];
       usedHeight = 0;
@@ -557,7 +475,8 @@ async function paginateBios(
       type: "bios",
       title: pages.length === 0 ? title : `${title} (cont.)`,
       people: current,
-      showHeadshots
+      showHeadshots,
+      compactBios
     });
   }
 
@@ -1303,14 +1222,12 @@ function estimateStackUnits(page: ProgramPage) {
 
 function estimateBiosStackUnits(page: Extract<ProgramPage, { type: "bios" }>) {
   const titleUnits = page.title.trim() ? 44 : 0;
+  const gap = page.compactBios ? 13 : 20;
   const bodyUnits = page.people.reduce((total, person) => {
-    const hasHeadshot = page.showHeadshots !== false && Boolean(person.headshot_url.trim());
-    const lines = Math.max(1, estimateBioRichTextLines(person.bio, hasHeadshot ? 46 : 64) - 2);
-    const headingLines = Math.max(1, Math.ceil((person.full_name.length + person.role_title.length + 3) / (hasHeadshot ? 36 : 50)));
     // The portrait sits beside the text, so only the taller column uses page height.
-    return total + Math.max(hasHeadshot ? 116 : 0, lines * 20 + headingLines * 22 + 5) + 20;
+    return total + estimateBioRowHeight(person, page.showHeadshots !== false, page.compactBios ?? false) + gap;
   }, 0);
-  return titleUnits + Math.max(0, bodyUnits - 20);
+  return titleUnits + Math.max(0, bodyUnits - gap);
 }
 
 function getStackPageBudget(densityMode: DensityMode) {
@@ -1903,7 +1820,8 @@ async function buildRenderablePagesFromModules(
           title: page.title,
           body: "",
           bios: page.people.map(({ full_name, role_title, bio, headshot_url }) => ({ full_name, role_title, bio, headshot_url })),
-          showHeadshots: page.showHeadshots
+          showHeadshots: page.showHeadshots,
+          compactBios: page.compactBios
         },
         billingLike: false,
         originalPage: page
@@ -2662,12 +2580,7 @@ export async function getProgramBySlug(
     if (pageSequence.length === 0) {
       pageSequence = await buildRenderablePages(safeProgram, castPeople, productionPeople, appliedDensityMode);
     }
-    const stackedPageCount = pageSequence.filter((page) => page.type === "stacked").length;
-    if (stackedPageCount > 0) {
-      optimizationSteps.push(`Flow-packed ${stackedPageCount} combined page${stackedPageCount === 1 ? "" : "s"}.`);
-    }
-
-    const getPaddingNeeded = (count: number) => (4 - (count % 4)) % 4;
+    const getPaddingNeeded = (count: number) => getBookletPageCount(count) - count;
     let currentPaddingNeeded = getPaddingNeeded(pageSequence.length);
 
     if (currentPaddingNeeded > 0 && appliedDensityMode !== "compact" && normalizedModules.length > 0) {
@@ -2682,11 +2595,13 @@ export async function getProgramBySlug(
       );
       if (compactPages.length > 0) {
         const compactPaddingNeeded = getPaddingNeeded(compactPages.length);
-        if (compactPaddingNeeded < currentPaddingNeeded) {
+        const currentPrintedCount = getBookletPageCount(pageSequence.length);
+        const compactPrintedCount = getBookletPageCount(compactPages.length);
+        if (compactPrintedCount < currentPrintedCount) {
           pageSequence = compactPages;
           appliedDensityMode = "compact";
           currentPaddingNeeded = compactPaddingNeeded;
-          optimizationSteps.push("Applied compact density to reduce booklet padding.");
+          optimizationSteps.push(`Applied compact density to reduce the printed booklet from ${currentPrintedCount} to ${compactPrintedCount} pages.`);
         }
       }
     }
@@ -2711,7 +2626,7 @@ export async function getProgramBySlug(
             showRoleAssignments,
             appliedDensityMode
           );
-          if (rendered.length === 0) {
+          if (rendered.length === 0 || rendered.length > pageSequence.length + currentPaddingNeeded - candidatePages.length) {
             continue;
           }
           candidatePages.push(...rendered);
@@ -2731,6 +2646,11 @@ export async function getProgramBySlug(
           currentPaddingNeeded = nextPadding;
         }
       }
+    }
+
+    const stackedPageCount = pageSequence.filter((page) => page.type === "stacked").length;
+    if (stackedPageCount > 0) {
+      optimizationSteps.push(`Flow-packed ${stackedPageCount} combined page${stackedPageCount === 1 ? "" : "s"}.`);
     }
 
     const paddedPages = padToMultipleOf4<ProgramPage>(pageSequence, (index) => ({
