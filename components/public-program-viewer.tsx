@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { sanitizeRichText } from "@/lib/rich-text";
 import type { ProgramPage } from "@/lib/programs";
 import { SongProgramPageView } from "@/components/song-program-page";
+import { StackedProgramPage } from "@/components/stacked-program-page";
 
 type ProgramBioPage = Extract<ProgramPage, { type: "bios" }>;
 
@@ -39,7 +40,6 @@ function PublicRenderPage({ page }: { page: PublicProgramPage }) {
     return (
       <article
         className={`booklet-page actf-sponsorship-page actf-sponsorship-spacing-${page.spacing} actf-sponsorship-image-${page.imageSize}`}
-        style={{ backgroundColor: page.backgroundColor }}
       >
         {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
         {page.imageUrl ? <img src={page.imageUrl} alt={page.title || "ACTF Sponsorship"} className="actf-sponsorship-header-image" /> : null}
@@ -48,20 +48,7 @@ function PublicRenderPage({ page }: { page: PublicProgramPage }) {
     );
   }
 
-  if (page.type === "stacked") {
-    return (
-      <article className="booklet-page">
-        <div className="stacked-sections">
-          {page.sections.map((section, index) => (
-            <section key={`${page.id}-${index}`} className="stacked-section">
-              {section.title.trim() ? <h3 className="playbill-title stacked-section-title">{section.title}</h3> : null}
-              <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(section.body) }} />
-            </section>
-          ))}
-        </div>
-      </article>
-    );
-  }
+  if (page.type === "stacked") return <StackedProgramPage page={page} />;
 
   if (page.type === "image") {
     const imagePageClassName = page.title ? "booklet-page image-page" : "booklet-page image-page image-page-full";

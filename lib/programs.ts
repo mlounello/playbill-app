@@ -45,6 +45,15 @@ type PersonRecord = {
   production_management_person_id?: string;
 };
 
+export type ProgramBioPerson = Pick<PersonRecord, "full_name" | "role_title" | "bio" | "headshot_url">;
+type StackedSection = {
+  title: string;
+  body: string;
+  textFit?: TextFitMode;
+  bios?: ProgramBioPerson[];
+  showHeadshots?: boolean;
+};
+
 type CustomPageRecord = {
   title: string;
   kind: "text" | "image" | "photos";
@@ -111,11 +120,10 @@ export type ProgramPage =
       title: string;
       body: string;
       imageUrl: string;
-      backgroundColor: string;
       spacing: "compact" | "normal" | "relaxed";
       imageSize: "small" | "medium" | "large" | "full";
     }
-  | { id: string; type: "stacked"; title: string; sections: Array<{ title: string; body: string }> }
+  | { id: string; type: "stacked"; title: string; sections: StackedSection[] }
   | { id: string; type: "bios"; title: string; people: PersonRecord[]; showHeadshots?: boolean }
   | { id: string; type: "image"; title: string; imageUrl: string }
   | { id: string; type: "photo_grid"; title: string; photos: string[] }
@@ -233,15 +241,14 @@ function richTextToPlain(value: string) {
     .trim();
 }
 
-function estimateBioRichTextLines(html: string) {
+function estimateBioRichTextLines(html: string, charsPerLine = 64) {
   const plain = richTextToPlain(html);
   const words = plain.split(/\s+/).filter(Boolean);
   const emphasisTags =
     countTag(html, "em") + countTag(html, "i") + countTag(html, "strong") + countTag(html, "b");
   const longWordPressure = words.filter((word) => word.length >= 11).length;
-  const cappedLength = Math.min(plain.length, 375);
-  const effectiveLength = cappedLength + emphasisTags * 16 + longWordPressure * 8;
-  const charLines = Math.ceil(Math.max(1, effectiveLength) / 64);
+  const effectiveLength = plain.length + emphasisTags * 16 + longWordPressure * 8;
+  const charLines = Math.ceil(Math.max(1, effectiveLength) / charsPerLine);
   const paragraphBlocks = countTag(html, "p") + countTag(html, "li") + countTag(html, "blockquote");
   const hardBreaks = (html.match(/<br\s*\/?>/gi) ?? []).length;
 
@@ -310,7 +317,7 @@ async function measureBioRows(
     return { availableBodyHeight: 0, rowGap: 0, rowHeights: [] };
   }
 
-  const densityScale = densityMode === "compact" ? 1.06 : densityMode === "loose" ? 0.94 : 1;
+  const densityScale = densityMode === "loose" ? 0.94 : 1;
   const browser = await launchMeasurementBrowser();
 
   try {
@@ -330,7 +337,7 @@ async function measureBioRows(
         height: 8.5in;
         overflow: hidden;
         padding: 0.36in;
-        background: #fffef9;
+        background: #ffffff;
         color: #000000;
       }
       .section-title {
@@ -431,9 +438,9 @@ async function measureBioRows(
       const contentBottom = articleRect.bottom - paddingBottom;
       const availableBodyHeight = (contentBottom - listRect.top) * scale;
       const rowHeights = Array.from(list.querySelectorAll<HTMLElement>(".bio-row")).map(
-        (row) => row.getBoundingClientRect().height * scale
+        (row) => row.getBoundingClientRect().height
       );
-      return { availableBodyHeight, rowGap: rowGap * scale, rowHeights };
+      return { availableBodyHeight, rowGap, rowHeights };
     }, densityScale);
 
     return measured;
@@ -1294,30 +1301,16 @@ function estimateStackUnits(page: ProgramPage) {
   return Number.MAX_SAFE_INTEGER;
 }
 
-function buildBiosStackBody(people: PersonRecord[], showHeadshots = true) {
-  return `<div class="bios-list">${people
-    .map((person) => {
-      const safeBio = sanitizeRichText(person.bio);
-      const roleInline = person.role_title?.trim()
-        ? `<span class="bio-role-inline"> (${escapeHtml(person.role_title)})</span>`
-        : "";
-      const headshot = showHeadshots && person.headshot_url?.trim()
-        ? `<img src="${escapeHtml(person.headshot_url)}" alt="${escapeHtml(person.full_name)}" class="headshot" />`
-        : "";
-      return `<section class="bio-row">${headshot}<div><div class="bio-name">${escapeHtml(person.full_name)}${roleInline}</div><div class="page-body rich-render bio-body">${safeBio}</div></div></section>`;
-    })
-    .join("")}</div>`;
-}
-
 function estimateBiosStackUnits(page: Extract<ProgramPage, { type: "bios" }>) {
-  const titleUnits = page.title.trim() ? 64 : 0;
+  const titleUnits = page.title.trim() ? 44 : 0;
   const bodyUnits = page.people.reduce((total, person) => {
-    const lineEstimate = estimateBioRichTextLines(person.bio);
-    const textUnits = Math.max(120, Math.round(lineEstimate * 14));
-    const headshotUnits = (page.showHeadshots ?? true) && person.headshot_url.trim() ? 68 : 20;
-    return total + textUnits + headshotUnits + 42;
+    const hasHeadshot = page.showHeadshots !== false && Boolean(person.headshot_url.trim());
+    const lines = Math.max(1, estimateBioRichTextLines(person.bio, hasHeadshot ? 46 : 64) - 2);
+    const headingLines = Math.max(1, Math.ceil((person.full_name.length + person.role_title.length + 3) / (hasHeadshot ? 36 : 50)));
+    // The portrait sits beside the text, so only the taller column uses page height.
+    return total + Math.max(hasHeadshot ? 116 : 0, lines * 20 + headingLines * 22 + 5) + 20;
   }, 0);
-  return titleUnits + bodyUnits;
+  return titleUnits + Math.max(0, bodyUnits - 20);
 }
 
 function getStackPageBudget(densityMode: DensityMode) {
@@ -1668,7 +1661,6 @@ async function renderModulePages(
   if (normalizedType === "actf_sponsorship") {
     const body = String(module.settings.body ?? "");
     const imageUrl = normalizeAssetUrl(String(module.settings.image_url ?? ""));
-    const backgroundColor = String(module.settings.background_color ?? "#fffef9");
     const spacingRaw = String(module.settings.spacing ?? "normal").toLowerCase();
     const spacing: "compact" | "normal" | "relaxed" =
       spacingRaw === "compact" || spacingRaw === "relaxed" ? spacingRaw : "normal";
@@ -1687,7 +1679,6 @@ async function renderModulePages(
         title: "",
         body,
         imageUrl,
-        backgroundColor,
         spacing,
         imageSize
       }
@@ -1847,7 +1838,7 @@ async function buildRenderablePagesFromModules(
   const pages: ProgramPage[] = [];
   const visibleModules = modules.filter((module) => module.visible).sort((a, b) => a.module_order - b.module_order);
   let stackCounter = 0;
-  let stackBuffer: Array<{ title: string; body: string; units: number; originalPage: ProgramPage; billingLike: boolean }> = [];
+  let stackBuffer: Array<{ section: StackedSection; originalPage: ProgramPage; billingLike: boolean }> = [];
   let stackUsed = 0;
 
   const flushStackBuffer = () => {
@@ -1860,15 +1851,12 @@ async function buildRenderablePagesFromModules(
       stackUsed = 0;
       return;
     }
-    const firstTitle = stackBuffer.find((section) => section.title.trim())?.title ?? "Combined Sections";
+    const firstTitle = stackBuffer.find(({ section }) => section.title.trim())?.section.title ?? "Combined Sections";
     pages.push({
       id: `stacked-${stackCounter + 1}`,
       type: "stacked",
       title: firstTitle,
-      sections: stackBuffer.map((section) => ({
-        title: section.title,
-        body: section.body
-      }))
+      sections: stackBuffer.map(({ section }) => section)
     });
     stackCounter += 1;
     stackBuffer = [];
@@ -1887,7 +1875,7 @@ async function buildRenderablePagesFromModules(
           break;
         }
         const units = estimateStackUnits(split.head);
-        stackBuffer.push({ title: split.head.title, body: split.head.body, units, billingLike: true, originalPage: split.head });
+        stackBuffer.push({ section: { title: split.head.title, body: split.head.body }, billingLike: true, originalPage: split.head });
         stackUsed += units;
         remaining = split.tail;
         if (remaining) flushStackBuffer();
@@ -1896,7 +1884,7 @@ async function buildRenderablePagesFromModules(
     }
     if (page.type === "bios" && options?.allowBiosCarry) {
       const units = estimateBiosStackUnits(page);
-      const activeBudget = getStackPageBudget(densityMode);
+      const activeBudget = getBillingStackBudget(densityMode);
       if (units > activeBudget) {
         flushStackBuffer();
         pages.push(page);
@@ -1911,9 +1899,12 @@ async function buildRenderablePagesFromModules(
       }
 
       stackBuffer.push({
-        title: page.title,
-        body: buildBiosStackBody(page.people, page.showHeadshots ?? true),
-        units,
+        section: {
+          title: page.title,
+          body: "",
+          bios: page.people.map(({ full_name, role_title, bio, headshot_url }) => ({ full_name, role_title, bio, headshot_url })),
+          showHeadshots: page.showHeadshots
+        },
         billingLike: false,
         originalPage: page
       });
@@ -1930,7 +1921,9 @@ async function buildRenderablePagesFromModules(
 
     const billingLike = isBillingStyledPage(page);
     const units = estimateStackUnits(page);
-    const activeBudget = billingLike ? getBillingStackBudget(densityMode) : getStackPageBudget(densityMode);
+    const activeBudget = billingLike || stackBuffer.some(({ section }) => section.bios)
+      ? getBillingStackBudget(densityMode)
+      : getStackPageBudget(densityMode);
 
     if (units > activeBudget) {
       flushStackBuffer();
@@ -1949,9 +1942,7 @@ async function buildRenderablePagesFromModules(
 
     if (page.type === "text" || page.type === "filler") {
       stackBuffer.push({
-        title: page.title,
-        body: page.body,
-        units,
+        section: { title: page.title, body: page.body, textFit: page.type === "text" ? page.textFit : undefined },
         billingLike,
         originalPage: page
       });

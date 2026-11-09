@@ -22,7 +22,7 @@ function summarizePage(page: ProgramPage) {
   }
   if (page.type === "stacked") {
     return page.sections
-      .map((section) => `${section.title ? `${section.title}: ` : ""}${stripHtml(section.body)}`)
+      .map((section) => `${section.title ? `${section.title}: ` : ""}${section.bios ? section.bios.map((person) => person.full_name).join(", ") : stripHtml(section.body)}`)
       .join(" | ");
   }
   if (page.type === "image") {

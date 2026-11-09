@@ -1,6 +1,7 @@
 import { sanitizeRichText } from "@/lib/rich-text";
 import type { ProgramPage } from "@/lib/programs";
 import { SongProgramPageView } from "@/components/song-program-page";
+import { StackedProgramPage } from "@/components/stacked-program-page";
 
 export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
   if (!page) {
@@ -30,7 +31,6 @@ export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
     return (
       <article
         className={`booklet-page actf-sponsorship-page actf-sponsorship-spacing-${page.spacing} actf-sponsorship-image-${page.imageSize}`}
-        style={{ backgroundColor: page.backgroundColor }}
       >
         {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
         {page.imageUrl ? <img src={page.imageUrl} alt={page.title || "ACTF Sponsorship"} className="actf-sponsorship-header-image" /> : null}
@@ -57,7 +57,7 @@ export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
       <article className="booklet-page">
         {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
         <div className="bios-list">
-          {page.people.slice(0, 3).map((person) => (
+          {page.people.map((person) => (
             <section key={person.id} className="bio-row">
               {page.showHeadshots !== false && person.headshot_url ? (
                 <img src={person.headshot_url} alt={person.full_name} className="headshot" />
@@ -76,20 +76,7 @@ export function ProgramPagePreviewCard({ page }: { page: ProgramPage | null }) {
     );
   }
 
-  if (page.type === "stacked") {
-    return (
-      <article className="booklet-page">
-        <div className="stacked-sections">
-          {page.sections.map((section, index) => (
-            <section key={`${page.id}-${index}`} className="stacked-section">
-              {section.title.trim() ? <h3 className="playbill-title stacked-section-title">{section.title}</h3> : null}
-              <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(section.body) }} />
-            </section>
-          ))}
-        </div>
-      </article>
-    );
-  }
+  if (page.type === "stacked") return <StackedProgramPage page={page} />;
 
   return (
     <article className={`booklet-page ${page.type === "text" ? `text-fit-${page.textFit ?? "normal"}` : ""}`.trim()}>

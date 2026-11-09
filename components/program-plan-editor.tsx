@@ -449,14 +449,6 @@ function ModuleSettings({
           ) : null}
           <div className="row-wrap">
             <label>
-              Page background
-              <input
-                type="color"
-                value={String(item.settings.background_color ?? "#fffef9")}
-                onChange={(event) => setSetting("background_color", event.target.value)}
-              />
-            </label>
-            <label>
               Spacing
               <select
                 value={String(item.settings.spacing ?? "normal")}
@@ -628,7 +620,6 @@ export function ProgramPlanEditor({
           allow_multiple_pages: newModuleType === "bios" || newModuleType === "custom_pages",
           ...(newModuleType === "actf_sponsorship"
             ? {
-                background_color: "#fffef9",
                 spacing: "normal"
               }
             : {})
@@ -824,7 +815,7 @@ export function ProgramPlanEditor({
                       </label>
                     )}
 
-                    <fieldset className="plain-fieldset">
+                    {!["cast_list", "creative_team", "production_team", "band"].includes(item.module_type) ? <fieldset className="plain-fieldset">
                       <legend>Page placement</legend>
                       <label className="checkbox-inline">
                         <input
@@ -852,7 +843,7 @@ export function ProgramPlanEditor({
                         />
                         <span>Start this section on its own page</span>
                       </label>
-                    </fieldset>
+                    </fieldset> : null}
 
                     <label className="checkbox-inline">
                       <input

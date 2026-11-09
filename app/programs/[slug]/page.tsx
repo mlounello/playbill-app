@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SongProgramPageView } from "@/components/song-program-page";
+import { StackedProgramPage } from "@/components/stacked-program-page";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/print-button";
 import { requireRole } from "@/lib/auth";
@@ -31,7 +32,6 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
     return (
       <article
         className={`booklet-page actf-sponsorship-page actf-sponsorship-spacing-${page.spacing} actf-sponsorship-image-${page.imageSize}`}
-        style={{ backgroundColor: page.backgroundColor }}
       >
         {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
         {page.imageUrl ? <img src={page.imageUrl} alt={page.title || "ACTF Sponsorship"} className="actf-sponsorship-header-image" /> : null}
@@ -40,25 +40,12 @@ function RenderPageContent({ page }: { page: ProgramPage }) {
     );
   }
 
-  if (page.type === "stacked") {
-    return (
-      <article className="booklet-page">
-        <div className="stacked-sections">
-          {page.sections.map((section, index) => (
-            <section key={`${page.id}-${index}`} className="stacked-section">
-              {section.title.trim() ? <h3 className="playbill-title stacked-section-title">{section.title}</h3> : null}
-              <div className="page-body rich-render" dangerouslySetInnerHTML={{ __html: sanitizeRichText(section.body) }} />
-            </section>
-          ))}
-        </div>
-      </article>
-    );
-  }
+  if (page.type === "stacked") return <StackedProgramPage page={page} />;
 
   if (page.type === "image") {
     return (
-      <article className="booklet-page image-page">
-        <h2 className="section-title playbill-title">{page.title}</h2>
+      <article className={page.title ? "booklet-page image-page" : "booklet-page image-page image-page-full"}>
+        {page.title ? <h2 className="section-title playbill-title">{page.title}</h2> : null}
         <img src={page.imageUrl} alt={page.title} className="full-page-image" />
       </article>
     );

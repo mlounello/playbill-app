@@ -5,13 +5,17 @@ import vm from "node:vm";
 import ts from "typescript";
 import { chromium } from "playwright";
 import { PDFDocument } from "pdf-lib";
+import { createRequire } from "node:module";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const source = readFileSync(new URL("../lib/programs.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("programs.ts", source, ts.ScriptTarget.Latest, true);
 const names = new Set([
   "escapeHtml", "buildCategoryRoleListHtml", "countTag", "isBillingStyledPage", "isStackablePage",
   "estimateStackUnits", "getBillingStackBudget", "paginateRoleListPages", "splitRoleListForBudget", "getStackPageBudget",
-  "getModulePlacementMode", "moduleDefaultPlacementMode", "normalizeModuleType", "buildRenderablePagesFromModules"
+  "getModulePlacementMode", "moduleDefaultPlacementMode", "normalizeModuleType", "buildRenderablePagesFromModules",
+  "estimateBiosStackUnits", "estimateBioRichTextLines", "estimateRichTextLines", "richTextToPlain"
 ]);
 const selected = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text));
 assert.equal(selected.length, names.size);
@@ -21,6 +25,7 @@ const compiled = ts.transpileModule(selected.map((node) => node.getText(ast)).jo
 const context = {
   richTextHasContent: (html) => Boolean(html),
   async renderModulePages(module, index, ...args) {
+    if (module.pages) return module.pages;
     return context.paginateRoleListPages(module.id, module.display_title, module.rows, true, args.at(-1), module.settings.role_list_grouping_enabled !== false);
   }
 };
@@ -31,6 +36,65 @@ const moduleFor = (id, count, order = 0) => ({
   settings: { role_list_grouping_enabled: true }, rows: rows(count)
 });
 const pack = (modules, density = "normal") => context.buildRenderablePagesFromModules({ custom_pages: [] }, [], [], [], [], modules, density);
+
+const bioModule = (settings = {}) => ({
+  ...moduleFor("bios", 0), module_type: "bios", settings: { placement_mode: "flow", ...settings },
+  pages: [{
+    id: "bios-tail", type: "bios", title: "Bios: Production Team (cont.)",
+    showHeadshots: settings.include_headshots ?? true,
+    people: [{
+      full_name: "Example Contributor", role_title: "Stage Manager",
+      bio: "<p>They are excited to share this production with the community. " + "They study theatre and work backstage. ".repeat(9) + "</p>",
+      headshot_url: "https://example.test/portrait.png", email: "private@example.test"
+    }]
+  }]
+});
+const thanks = {
+  ...moduleFor("thanks", 0, 1), module_type: "special_thanks", settings: { placement_mode: "flow" },
+  pages: [{ id: "thanks", type: "text", title: "Special Thanks", textFit: "compact",
+    body: "<h3>Production Work Study Students</h3><ul>" + rows(14).map(({ name }) => `<li>${name}</li>`).join("") + "</ul>" }]
+};
+
+test("a short bio continuation can share with Special Thanks without losing the portrait or exposing email", async () => {
+  const pages = await pack([bioModule(), thanks]);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].type, "stacked");
+  assert.equal(pages[0].sections[0].bios[0].headshot_url, "https://example.test/portrait.png");
+  assert.equal(pages[0].sections[0].bios[0].email, undefined);
+  assert.equal(pages[0].sections[1].textFit, "compact");
+  assert.equal((await pack([bioModule({ placement_mode: "isolated" }), thanks])).length, 2);
+});
+
+test("shared bio pages and contained images render on white paper without clipping", async () => {
+  const require = createRequire(import.meta.url);
+  const component = readFileSync(new URL("../components/stacked-program-page.tsx", import.meta.url), "utf8");
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(component, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
+  }).outputText, { exports, require: (id) => id === "@/lib/rich-text" ? { sanitizeRichText: (html) => html } : require(id) });
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL });
+  try {
+    const page = await browser.newPage();
+    await page.route("**/*", (route) => route.abort());
+    for (const include_headshots of [true, false]) {
+      const [model] = await pack([bioModule({ include_headshots }), thanks]);
+      const html = renderToStaticMarkup(createElement(exports.StackedProgramPage, { page: model }));
+      await page.setContent(`<style>${css}</style>${html}<article class="booklet-page image-page"><h2 class="section-title playbill-title">Sponsor</h2><img class="full-page-image" width="800" height="1800" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='1800'/%3E"></article>`);
+      assert.equal(await page.locator(".headshot").count(), Number(include_headshots));
+      for (const media of ["screen", "print"]) {
+        await page.emulateMedia({ media });
+        const metrics = await page.locator(".booklet-page").evaluateAll((articles) => articles.map((article) => ({
+          white: getComputedStyle(article).backgroundColor === "rgb(255, 255, 255)",
+          fits: article.lastElementChild.getBoundingClientRect().bottom <= article.getBoundingClientRect().bottom - parseFloat(getComputedStyle(article).paddingBottom) + 1
+        })));
+        assert.deepEqual(metrics, [{ white: true, fits: true }, { white: true, fits: true }]);
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
 
 test("long team lists split into intact rows with continuation headings", () => {
   for (const density of ["compact", "normal", "loose"]) {
