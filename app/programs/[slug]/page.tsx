@@ -149,6 +149,9 @@ export default async function ProgramPage({
             </div>
 
             <section className="card hide-print" style={{ marginBottom: "1rem" }}>
+              {isBookletView ? (
+                <p>Print on US Letter in landscape at actual size (100%), double-sided, flipping on the short edge. The cover has a white border for non-borderless printers. Do not select an additional booklet layout.</p>
+              ) : null}
               <strong>Booklet Summary:</strong> {program.pageSequence.length} designed pages, padded to {program.paddedPages.length} for saddle-stitch (multiple of 4), {program.paddedPages.length / 4} sheets total.
               <br />
               <strong>Density used:</strong> {program.appliedDensityMode}

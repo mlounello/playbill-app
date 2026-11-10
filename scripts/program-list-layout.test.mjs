@@ -127,6 +127,34 @@ test("shared bio pages and contained images render on white paper without clippi
   }
 });
 
+test("the booklet cover is centered within print-safe margins without changing the full-page proof", async () => {
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL });
+  try {
+    const page = await browser.newPage();
+    await page.route("https://fonts.googleapis.com/**", (route) => route.abort());
+    const poster = '<article class="booklet-page poster-page"><img class="poster-image" alt="" /></article>';
+    await page.setContent(`<!doctype html><style>${css}</style><main class="print-booklet">${poster}</main><main class="print-proof">${poster}</main>`);
+    for (const media of ["screen", "print"]) {
+      await page.emulateMedia({ media });
+      const [booklet, proof] = await page.locator(".poster-page").evaluateAll((pages) => pages.map((paper) => {
+        const outer = paper.getBoundingClientRect();
+        const inner = paper.firstElementChild.getBoundingClientRect();
+        return {
+          edges: [inner.left - outer.left, outer.right - inner.right, inner.top - outer.top, outer.bottom - inner.bottom],
+          fit: getComputedStyle(paper.firstElementChild).objectFit
+        };
+      }));
+      assert.ok(booklet.edges.every((edge) => Math.abs(edge - 0.36 * 96) < 2));
+      assert.equal(booklet.fit, "contain");
+      assert.ok(proof.edges.every((edge) => Math.abs(edge) < 2));
+      assert.equal(proof.fit, "cover");
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 test("long team lists split into intact rows with continuation headings", () => {
   for (const density of ["compact", "normal", "loose"]) {
     const pages = context.paginateRoleListPages("production", "Production Team", rows(75), true, density);

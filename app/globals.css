@@ -2272,6 +2272,16 @@ body.density-compact .admin-surface textarea {
   object-fit: cover;
 }
 
+.print-booklet .poster-page {
+  padding: 0.36in;
+}
+
+.print-booklet .poster-image {
+  display: block;
+  object-fit: contain;
+  object-position: center;
+}
+
 .image-page {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
