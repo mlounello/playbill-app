@@ -290,7 +290,7 @@ async function getShowContext(showId: string) {
   const { data: show } = await db
     .from("shows")
     .select(
-      "id, title, slug, reminders_paused, reminder_automation_enabled, reminder_cadence_days, reminder_due_soon_days, reminder_send_last_day"
+      "id, title, slug, is_published, reminders_paused, reminder_automation_enabled, reminder_cadence_days, reminder_due_soon_days, reminder_send_last_day"
     )
     .eq("id", showId)
     .maybeSingle();
@@ -303,6 +303,7 @@ async function getShowContext(showId: string) {
     title: String(show.title ?? "Show"),
     slug: String(show.slug ?? ""),
     programSlug: String(program?.slug ?? show.slug ?? ""),
+    isPublished: Boolean(show.is_published),
     remindersPaused: Boolean(show.reminders_paused),
     reminderAutomationEnabled:
       show.reminder_automation_enabled === undefined ? true : Boolean(show.reminder_automation_enabled),
@@ -1071,6 +1072,9 @@ async function dispatchReminderRun(
   if (!context) {
     return { sent: 0, total: 0 };
   }
+  if (context.isPublished) {
+    return { sent: 0, total: 0 };
+  }
   if (context.remindersPaused) {
     return { sent: 0, total: 0 };
   }
@@ -1188,7 +1192,11 @@ export async function streamReminderDispatchForShow(
 export async function runReminderCron() {
   const supabase = getSupabaseWriteClient();
   const db = supabase.schema(APP_SCHEMA);
-  const { data: shows } = await db.from("shows").select("id").eq("reminders_paused", false);
+  const { data: shows } = await db
+    .from("shows")
+    .select("id")
+    .eq("reminders_paused", false)
+    .eq("is_published", false);
   let sent = 0;
   let total = 0;
   for (const show of shows ?? []) {
